@@ -43,8 +43,10 @@ struct SegmentParams {
 
 /// Spans sorted by source_start, non-overlapping (monophonic). The id is "n" + start in milliseconds
 /// (6 digits; a collision gets "_1", "_2"). separation_in is soft when the previous note ends within
-/// 20 ms of this note's start, else hard. confidence_prob = mean voiced posterior over the note times
-/// the Viterbi margin (0..1). Time clamps: every time lies in [0, last pitch frame time] (grid.start + (n_frames - 1) * hop;
+/// 20 ms of this note's start, else hard. confidence_prob = mean voicing probability over the note
+/// times the share of its voiced frames within 60 cents of its pitch (0..1). A run shorter than
+/// min_note (or than 10 pitch frames) is absorbed by an adjacent longer run (a glide becomes the
+/// attack of the note it reaches; a scoop belongs to its note) or dropped if it has none. Time clamps: every time lies in [0, last pitch frame time] (grid.start + (n_frames - 1) * hop;
 /// the < 1 hop after the last frame is not analysed); a preroll never reaches into the previous note (start >= previous end);
 /// an end never passes the next start; the four times are made ordered. The only inputs are the pitch
 /// track (f0, voicing, confidence) and the onsets (the energy cue is carried by the onset strengths;
@@ -54,7 +56,7 @@ struct SegmentParams {
 /// Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const OnsetList& onsets, const SegmentParams& params);
 ```
-Method (Mauch & Dixon 2014 note HMM, with onset fusion): the f0 curve is smoothed in cents over `vibrato_smooth` so vibrato does not flip the pitch bin. States: for each pitch bin an **attack** and a **stable** state, plus one **silence** state. Observation: Gaussian of the smoothed f0 around the bin centre (`pitch_sigma_cents`) times the voicing probability (silence emits `1 - voicing`). Transitions: attack→stable, stable→stable (`stay_stable`), stable→attack of a neighbouring or equal bin (a new note, including the same pitch repeated), stable→silence, silence→attack. Attack transitions are multiplied by `onset_boost` within ±30 ms of an onset from `OnsetList`, so a repeated same-pitch note needs an onset to split (the most common failure, a named test) and a vibrato cannot split a note without one. Viterbi → runs of attack+stable states of one bin = notes; notes shorter than `min_note` are dropped or merged into the neighbour with the nearest pitch.
+Method (Mauch & Dixon 2014 note HMM, with onset fusion): the f0 curve is smoothed in cents over `vibrato_smooth` (a moving mean over the voiced frames of the window that lie within 120 cents of the frame's own value, so a vibrato is averaged but a note change is not blurred) so vibrato does not flip the pitch bin. States: for each pitch bin an **attack** and a **stable** state, plus one **silence** state. Observation: Gaussian of the smoothed f0 around the bin centre (`pitch_sigma_cents`) times the voicing probability (silence emits `1 - voicing`). Transitions: attack→stable, stable→stable (`stay_stable`), stable→attack of a neighbouring or equal bin (a new note, including the same pitch repeated), stable→silence, silence→attack. Attack transitions are multiplied by `onset_boost` within ±30 ms of an onset from `OnsetList`, so a repeated same-pitch note needs an onset to split (the most common failure, a named test) and a vibrato cannot split a note without one. Viterbi → runs of attack+stable states of one bin = notes; notes shorter than `min_note` are dropped or merged into the neighbour with the nearest pitch.
 Times: `source_start` = the earlier of the HMM start and a consonant/attack onset within `preroll_max` before it (the consonant belongs to the note); `source_end` = last voiced frame + one hop (or the next note's start when abutting). `attack_end` = first time the f0 stays within `stable_band` of the note pitch for `stable_min` (never before the voiced start), `release_start` = the symmetric last stable time; the four times satisfy start ≤ attack_end ≤ release_start ≤ end (clamped).
 
 ## 2. Pitch curve description
