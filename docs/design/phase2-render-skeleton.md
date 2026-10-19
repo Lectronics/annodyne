@@ -1,264 +1,315 @@
 # Design note: Phase 2 — render pipeline skeleton (passthrough)
 
 - **Phase:** 2
-- **Status:** draft
+- **Status:** reviewed (round 1 findings fixed; see Review log)
 - **Spec sections:** architecture §4.5 (engines), §4.6 (render), §5.5 (pipeline), §5.6 (change-only
-  rendering); ADR-0002 (`OutputAudio`), ADR-0005 (§16 Flex-style handles); AUDIO_VERIFICATION §1-3.
+  rendering); ADR-0002, ADR-0005 §16; ADR-0006 (render API, this phase), ADR-0007 (JSON);
+  AUDIO_VERIFICATION §1-3.
 - **Folders / targets:** `src/core/dsp` (layer 0, new), `src/core/synthesis/engine` and
   `src/core/synthesis/passthrough` (layer 2, new), `src/core/render` (layer 4, new),
-  `src/cli/scenario` and `src/cli/commands` (layer 7), test-only `tests/support/` (checks, gain engine).
+  `src/cli/scenario` (json-free data + synthetic analysis), `src/cli/scenario_json` (parser, links
+  nlohmann), `src/cli/commands` (layer 7). Test-only: `tests/support/` (checks, gain engine).
 
 ## Purpose
-Prove the plumbing from edits to audio before any synthesis exists: pick the notes that need work,
-ask an engine for them, blend the result into a copy of the original with crossfades, cache it, and
-verify with objective checks that "no edit" and "outside the edit" are bit-identical to the source.
-The only engines are `PassthroughEngine` (returns the source segment) and a **test-only** gain
-engine that applies `EffectiveNote::gain`, to give the checks something real to measure.
+Prove the plumbing from edits to audio before any synthesis exists: pick the edited notes, ask an
+engine for them, blend the results into a copy of the original with crossfades, cache it, and verify
+with objective checks that "no edit" and "outside the edit" are bit-identical to the source. Engines:
+`PassthroughEngine` (returns the source segment) and a **test-only** gain engine.
 
 ## Scope decisions
-1. **No analysis exists until Phase 3.** The renderer takes an `AnalysisResult` it is given. Tests
-   and the CLI build one from explicit note spans (`make_scenario_analysis`: flat synthetic notes,
-   valid per `validate`). Phase 3 swaps in real analysis without changing the renderer.
-2. **Timing edits are not rendered yet.** `render_region` builds the `TimeMap` (Phase 1, with
-   `source_end` = source duration) and returns `unsupported` if it is not the identity. Stretching
-   audio is Phase 6; the Flex semantics are already in the map. A `PassthroughEngine` handed a
-   non-identity map returns the same error (defence in depth).
-3. **No `Project` type exists** (layer 6, Phase 7). `render_region(project, track_id, ...)` in the
-   spec becomes `render_region(const RenderInputs&, const RenderRequest&)` with explicit inputs.
-4. **No real-time block read yet.** `render_block` and the audio-thread cache path are Phase 9.
-   `RenderCache` here is a mutex-guarded LRU, **not** real-time safe; this is stated in its doc.
-5. **Crossfade shape default is `equal_power`** as the spec says. For two highly correlated signals
-   (original vs a lightly edited copy) equal-power sums to up to +3 dB at the midpoint, and `linear`
-   is the amplitude-correct choice. This is exposed as `RenderParams::crossfade_shape` and flagged
-   for the Phase 4 listening session; it is not decided here.
-6. **JSON.** `render --edits` and `audition` need JSON. ADR-0006 adds nlohmann/json (header-only,
-   MIT, `FetchContent` like Catch2), linkable only from `cli*` and tests. `core/` never sees JSON;
-   the project file format stays Phase 7.
+1. **No analysis until Phase 3.** The renderer takes an `AnalysisResult` it is given. Tests and the
+   CLI build one from explicit note spans (`make_scenario_analysis`, flat synthetic notes valid per
+   `validate`). Phase 3 replaces it.
+2. **Timing edits are not rendered yet.** `render_region` builds the TimeMap (`source_end` = source
+   duration) and returns `not_implemented` if it is not the identity. Because of the Flex semantics
+   (ADR-0005 §16) *one* timing edit anywhere makes the whole map non-identity, so any region of such
+   a project is refused until Phase 6; that is accepted. Edits that `build_time_map` ignores
+   (inactive or orphaned notes, edits past the undo cursor) do not trigger it. An empty source
+   (0 frames) returns an empty buffer before the map is built (`source_end` would be the "unknown"
+   origin value). Phase 6 replaces `not_implemented` with a stretch path; **the cache key must then
+   include `time_map.anchors()`** (comment at the key builder, and a test added then).
+3. **No `Project` type** (Phase 7): `render_region(project, track_id, …)` becomes explicit inputs.
+4. **No real-time path** (`render_block`, lock-free reader) until Phase 9. `RenderCache` is a
+   mutex-guarded LRU, documented not real-time safe.
+5. **Crossfade shape default `equal_power`** per spec. For correlated signals it overshoots by up to
+   +3 dB at the midpoint, and `linear` is amplitude-correct; this is exposed as
+   `RenderParams::crossfade_shape` and flagged for the Phase 4 listening. To keep the passthrough
+   engine exactly "the source" regardless, the blend **skips a zone whose engine output equals the
+   pristine slice bit for bit** (a memcmp), so `PassthroughEngine` + any edits == source.
+6. **JSON:** ADR-0007 (nlohmann/json, `cli*` and tests only). `core/` never sees JSON.
+7. **Fades:** `EffectiveNote::fade_in/out/fade_shape` and every field except `gain` are ignored by the
+   renderer. Engines decide what they realise; the test engine returns `not_implemented` for any
+   edited field other than `gain`.
+8. **Determinism is per build.** `sin/cos` and fused multiply-add differ across platforms, so gains
+   are computed in `double`, cast once, and `core/dsp` and `core/render` compile with
+   `-ffp-contract=off`. Stored golden hashes are never compared across platforms.
 
 ## Public types
 
-### core/dsp — `crossfade.h` (layer 0)
+### core/dsp — `crossfade.h`
 ```cpp
 struct CrossfadeGains { float outgoing; float incoming; };
 
-/// Gains at position t in [0,1] (0 = all outgoing, 1 = all incoming). Pre: t in [0,1] (clamped in
-/// release, asserted in debug). equal_power: sin/cos so out^2+in^2 = 1. linear: 1-t, t.
-/// log: gains linear in dB from -60 dB to 0 dB (outgoing mirrored), reaching exactly 0 / 1 at the
-/// ends. Pure; real-time safe.
+/// Gains at t in (0,1) (0 = all outgoing). Computed in double, cast once.
+///  equal_power: outgoing = cos(t*pi/2), incoming = sin(t*pi/2).
+///  linear:      outgoing = 1-t, incoming = t.
+///  log:         incoming = 10^(-60 (1-t) / 20), outgoing = 10^(-60 t / 20): linear in dB from -60 dB
+///               at the far end to 0 dB. It never reaches zero (a step of up to 0.001 remains at the
+///               far end); use it only where that is acceptable.
+/// Pre: 0 <= t <= 1 (asserted in debug, clamped in release). Pure; real-time safe.
 [[nodiscard]] CrossfadeGains crossfade_gains(FadeShape shape, double t) noexcept;
 
-/// out[i] = a[i]*g_out(t_i) + b[i]*g_in(t_i), t_i = (i + 0.5) / n. Pre: spans have equal size; `out`
-/// may alias `a` or `b`. n == 0 is a no-op. Real-time safe (no allocation).
+/// A slice of a longer ramp: out[i] = a[i]*g.outgoing + b[i]*g.incoming with
+/// t_i = (ramp_offset + i + 0.5) / ramp_length (the half-sample offset keeps t strictly inside
+/// (0,1)). Pre: spans have equal size; ramp_length >= 1; ramp_offset >= 0;
+/// ramp_offset + size <= ramp_length. `out` may alias `a` or `b`. Real-time safe, no allocation.
+/// The whole-span fade is ramp_offset = 0, ramp_length = size.
 void crossfade(std::span<const float> a, std::span<const float> b, std::span<float> out,
-               FadeShape shape) noexcept;
+               FadeShape shape, std::int64_t ramp_offset, std::int64_t ramp_length) noexcept;
 ```
-`FadeShape` already lives in `core/types/edit.h`. The half-sample offset keeps both ends strictly
-inside (0,1): the first output sample is almost all `a`, never a duplicate of a boundary sample.
+A ramp of length 0 (hard splice) never reaches this code: the renderer copies instead (no division
+by zero).
 
-### core/synthesis/engine — `synthesis_engine.h` (layer 2)
+### core/synthesis/engine — `synthesis_engine.h`
 ```cpp
 class SynthesisEngine {
 public:
     virtual ~SynthesisEngine() = default;
-    /// Stable name, e.g. "passthrough"; part of the cache key.
-    [[nodiscard]] virtual std::string_view name() const noexcept = 0;
-    /// Bytes that change when the engine's settings change; part of the cache key. May be empty.
-    [[nodiscard]] virtual std::string settings_key() const = 0;
+    [[nodiscard]] virtual std::string_view name() const noexcept = 0;   // e.g. "passthrough"
+    [[nodiscard]] virtual std::uint32_t version() const noexcept = 0;   // bump when output changes
+    [[nodiscard]] virtual std::string settings_key() const = 0;         // bytes; may be empty
 
-    /// The edited audio of `note` over `out_range` (output axis; the renderer passes the note span
-    /// widened by the crossfade margin, clamped to the recording). The edit is applied as if the
-    /// note extended over the whole range. Returns OutputAudio whose range equals `out_range` to the
-    /// sample. Errors: unsupported if it cannot realise `eff` (e.g. non-identity time_map for the
-    /// passthrough engine); invalid_argument on a bad range; out_of_range from the source.
-    /// Thread-safe if the engine is const-correct (all engines here are); not real-time safe.
+    /// The edited audio of `note` over `out_range` (output axis). The renderer always passes the
+    /// **whole blend zone** of the note (note span widened by the crossfade length, clamped to the
+    /// recording) and slices the result itself, so engines never need sub-range consistency. The
+    /// edit is applied as if the note extended over the whole range. Returns OutputAudio whose range
+    /// equals `out_range` to the sample, with the source's channel count and sample rate (the
+    /// renderer returns `internal` on a mismatch).
+    /// Errors: not_implemented if it cannot realise `eff` (e.g. non-identity time_map);
+    /// invalid_argument on a bad range; out_of_range from the source.
+    /// Const and thread-safe; not real-time safe.
     [[nodiscard]] virtual Result<OutputAudio> render_note(const AudioSource& src, const Note& note,
                                                           const EffectiveNote& eff,
                                                           const TimeMap& time_map,
                                                           OutputRange out_range) const = 0;
 };
 ```
-(Allowed interface, coding-standards §5 join rule 5.) `ErrorCode::unsupported` is new (ADR-0006,
-"the request is valid but this build or engine cannot do it yet").
+(Interface with one product implementation is allowed for `SynthesisEngine`; the test engine is the
+second implementation from day one. The spec folder `core/synthesis/interface/` is named `engine/`
+here, ADR-0006.)
 
-### core/synthesis/passthrough — `passthrough_engine.h`
-`class PassthroughEngine final : public SynthesisEngine`; `name() == "passthrough"`, empty
-`settings_key()`. `render_note` requires `time_map.is_identity()` and returns
-`src.read(start_index, count)` placed at `out_range.start()`; the samples are bit-identical to the
-source. It ignores `eff` by design: it is the "nothing to synthesise" engine.
+### core/synthesis/passthrough — `PassthroughEngine final`
+`name() == "passthrough"`, `version() == 1`, empty `settings_key()`. Requires
+`time_map.is_identity()`; returns `src.read(range)` placed at `out_range.start()`; ignores `eff`.
 
 ### core/render — `render.h`, `render_cache.h`, `render_key.h` (layer 4)
 ```cpp
+inline constexpr Seconds k_max_crossfade{0.020};  // in core/edits/dirty_regions.h (see below)
+
 struct RenderInputs {
     AudioSource source;
-    std::shared_ptr<const AnalysisResult> analysis;  // immutable snapshot
-    EditList edits;                                   // value; its track_id selects the track
+    std::shared_ptr<const AnalysisResult> analysis;  // must not be null
+    std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
 };
 
 struct RenderParams {
-    const SynthesisEngine* engine;        // required, not owned; outlives the call
-    Seconds crossfade_length{0.010};      // each side of an edited note; 5-20 ms (spec §5.5)
+    Seconds crossfade_length{0.010};       // 0 <= xf <= k_max_crossfade; 0 = hard splice (tests)
     FadeShape crossfade_shape = FadeShape::equal_power;
-    RenderCache* cache = nullptr;         // optional, not owned
+    RenderCache* cache = nullptr;          // optional, not owned
 };
 
 struct RenderResult {
-    OutputAudio buffer;                   // exactly the requested range (ADR-0002)
-    SourceRange source_range;             // part of the recording that was read
-    std::string cache_key;                // canonical bytes, collision-free (see below)
-    std::vector<NoteId> notes_rendered;   // edited notes the engine was asked for, in source order
-    bool passthrough = false;             // true if no note intersected the range: pure copy
+    OutputAudio buffer;                    // the request snapped to whole samples (see below)
+    SourceRange source_range;              // with an identity map: the same samples on the source axis
+    std::string cache_id;                  // short hex of the key; for reports, not unique
+    std::vector<NoteId> notes_rendered;    // edited notes with a zone in the region, source order
+    bool passthrough = false;              // exactly notes_rendered.empty()
 };
 
-[[nodiscard]] Result<RenderResult> render_region(const RenderInputs&, OutputRange region,
-                                                 const RenderParams&);
+[[nodiscard]] Result<std::shared_ptr<const RenderResult>>
+render_region(const RenderInputs& inputs, OutputRange region, const SynthesisEngine& engine,
+              const RenderParams& params);
 ```
-Spec `quality: "preview"|"final"` is dropped until an engine needs it (Phase 4); adding it later is
-a `RenderParams` field, not a signature change.
+`quality` is dropped until an engine needs it (a `RenderParams` field later).
 
-**Algorithm (`render_region`)**, as a list of steps over small named helpers:
-1. Validate: `engine != nullptr`; `analysis->source_id == source.id()`; analysis valid; edits'
-   `track_id` matches the notes (validated by `build_time_map`); `crossfade_length <= dirty margin`
-   (see contract 4); region inside `[0, source duration]` (else `out_of_range`).
-2. `build_time_map(notes, edits, {source_end = source duration})`; not identity → `unsupported`.
-   `repaired_notes` is ignored with an identity map (no timing edits means none).
-3. Convert `region` to sample indices (`Rounding::nearest` on the start and on the end; the region
-   is half-open and must satisfy `start <= end`; an empty region returns an empty buffer).
-4. `out` = `source.read(region)`: the original, bit for bit.
-5. For each active note in source order, `eff = effective_state(note, edits)`; skip unless
-   `eff.is_edited`. The note's blend zone is `[start - xf, end + xf]` in samples, clamped to the
-   recording; skip it if it does not intersect the region.
-6. Ask the engine for the zone ∩ region (the engine renders only what is needed; the zone is
-   always larger than the part kept because the ramp lies inside it).
-7. Blend: inside the note span the weight is 1 (the engine output replaces the original); in each
-   margin the original fades out and the engine output fades in (or the reverse) with
-   `crossfade_gains`. Samples whose weight is exactly 0 are **not touched**. Notes are blended in
-   source order, so overlapping margins of neighbouring edited notes are well-defined.
-8. Cache: if `params.cache`, look up `cache_key` first and return a hit; store on a miss.
+**Crossfade length vs dirty margin (B5).** `k_max_crossfade` (20 ms, the spec's upper bound) lives in
+`core/edits/dirty_regions.h` next to `DirtyParams`, with
+`static_assert(k_max_crossfade.value() + 0.001 <= DirtyParams{}.crossfade_margin.value())`. Render
+rejects `crossfade_length` outside `[0, k_max_crossfade]`. Callers of `dirty_regions` must use
+`crossfade_margin >= k_max_crossfade + 1 sample` (documented on `DirtyParams`); the two fields are
+the same concept at two layers (guard band vs actual ramp), so the names stay different and the doc
+says so.
 
-Blend zone and weights, per sample `i` (zone `[z0, z1)`, note `[n0, n1)`, margin `m = round(xf*sr)`):
-`t = (i - z0 + 0.5) / m` on the rising ramp `i in [z0, n0)`; the falling ramp is its mirror; `m == 0`
-gives a hard splice (allowed, the click detector will flag it).
+**Snapping (B6).** The region is converted with `Rounding::nearest` at both ends; the returned
+`buffer.start` is `to_time_point<OutputAxis>(start_index, sr)`, so `output_range(buffer)` is the
+request snapped to whole samples (differs from the request by at most half a sample). An empty
+region returns an empty buffer.
 
-**Cache key.** `cache_key` is a canonical byte string, not a hash: source id, analysis version,
-engine `name` + `settings_key`, crossfade length and shape, region (sample range and sample rate),
-and for each active note intersecting the zone-widened region its id, source span (bit patterns) and
-a field-by-field serialisation of `EffectiveNote` *only if* `is_edited`. Undo returns to an earlier
-key and hits the earlier entry. Equality is exact, so there are no hash collisions to reason about;
-`std::hash<std::string>` is used only for bucketing.
+**Algorithm.** Named internal steps (`validate_inputs`, `plan_runs`, `render_zone`, `blend_run`,
+`make_cache_key`), data passed in a `RenderPlan` struct:
+1. Validate: non-null analysis/edits; `analysis->source_id == source.id()`; `validate(*analysis)`;
+   edit track vs notes (checked by `build_time_map`); `0 <= xf <= k_max_crossfade`; region inside
+   `[0, duration]` (`out_of_range`), region end >= start. Empty source → empty buffer.
+2. `build_time_map`; non-identity → `not_implemented`.
+3. Snap the region to samples. Compute `eff` for every active note; the **edited** ones
+   (`eff.is_edited`) become candidates. Notes are sorted and non-overlapping (Phase 1).
+4. **Runs.** Let `m = round(xf * sr)` and, for note k, span `[n0,n1)` in samples (nearest) and zone
+   `[n0-m, n1+m)` clamped to the recording. For consecutive edited notes k, k+1 with gap
+   `g = n0(k+1) - n1(k)` samples:
+   - `g <= m`: **merged**. The engines crossfade into each other, centred on the gap midpoint
+     `c = n1(k) + g/2`, ramp length `L = 2m - g` (>= m), over `[c - L/2, c + L/2)`. Both engines
+     cover that range because each zone extends `m` past its note (`c + L/2 = n1(k) + m`).
+   - `m < g <= 2m`: **separate**, but each note's outer ramp to the original is shortened to
+     `r = g/2` on the facing side so the two ramps meet at the midpoint and never overlap.
+   - `g > 2m`: separate, full ramps `r = m`.
+   An *edited run* is a maximal sequence of merged notes. Ramps to the original exist only at the
+   outer edges of a run, of length `r` as above (`m` on a free side). Ramps are defined on
+   **unclamped sample coordinates** and truncated at sample 0 / the end, so a note 3 ms from the
+   start has a shorter visible ramp, never a rescaled one. `m == 0`: all ramps are hard splices.
+5. If a cache is given: build the key (below) and look it up; **a hit returns here**, before any
+   engine call.
+6. Pristine `P = source.read(region)`; `out = P` (copy). For each run intersecting the region: ask
+   the engine for the **whole zone of every note in the run** (never a sub-range), check channels and
+   sample rate, and **skip the note if its zone equals the pristine slice bit for bit**.
+7. Blend each run from the **pristine** slice, never from the partially blended `out`:
+   - inside a note's span, away from any inter-note ramp: `out = engine` (a copy, no multiply);
+   - inter-note ramp (merged): `crossfade(engine_k, engine_k+1, …)`;
+   - outer edge ramp: `crossfade(pristine, engine, …)` rising, mirrored falling;
+   - samples outside every zone are not written at all (bit-exact, rule 5). Multichannel: per
+     channel, same weights.
+8. Store in the cache (if any) and return.
 
+**Cache key (B4).** A canonical byte string, every variable-length field **length-prefixed** (no
+`"ab"+"c"` vs `"a"+"bc"` ambiguity): format version, source id, analysis `version`, engine `name`,
+`version`, `settings_key`, crossfade length (bits) and shape, snapped region (sample range, sample
+rate), and for each *edited* note whose zone intersects the region: id, span (bit patterns), a
+field-by-field serialisation of its `EffectiveNote`, and a **128-bit content fingerprint of the
+whole `Note`** (two independent 64-bit FNV-1a streams; the analysis `version` alone is not
+content-unique in tests and scenarios). Everything but that fingerprint compares exactly; the
+fingerprint's collision probability is ~2^-128 and is stated as such in the header. Undo returns to
+an earlier key and hits the earlier entry.
 ```cpp
 class RenderCache {
 public:
     explicit RenderCache(std::size_t max_bytes);
-    /// Returns the cached result, or empty. Marks the entry most recently used. Thread-safe.
-    [[nodiscard]] std::optional<std::shared_ptr<const RenderResult>> get(std::string_view key);
-    /// Inserts (or replaces) an entry; evicts least-recently-used entries while over budget. An
-    /// entry larger than the whole budget is not stored. Thread-safe.
+    /// Null on a miss. Marks the entry most recently used. Thread-safe; allocates; not RT-safe.
+    [[nodiscard]] std::shared_ptr<const RenderResult> get(std::string_view key);
+    /// Inserts or replaces; evicts least-recently-used entries while over budget. An entry larger
+    /// than the whole budget is dropped silently. Thread-safe.
     void put(std::string key, std::shared_ptr<const RenderResult> value);
+    /// Bytes counted: audio samples + the key string + notes_rendered ids of every entry.
     [[nodiscard]] std::size_t size_bytes() const;
     [[nodiscard]] std::size_t entry_count() const;
     void clear();
 };
 ```
-Class: invariant `size_bytes() <= max_bytes`; members `mutex_`, LRU list, map, bytes, budget (5).
-`get`/`put` take a lock and allocate: **not real-time safe** (Phase 9 adds a lock-free reader).
+Class invariant `size_bytes() <= max_bytes` (5 members: mutex, LRU list, index, bytes, budget).
+Hits return the shared pointer: no audio copy (S8).
+
+### Error codes
+`ErrorCode::not_implemented` (ADR-0006): "valid request that this build or engine cannot do yet".
+Distinct from `unsupported_format` (a file format). Added to `to_string(ErrorCode)` and its test.
+
+### core/types additions (`edit.h`)
+`to_string` and `parse_*` for `EditCategory`, `EditOp`, `EditParam`, `FadeShape` (pure, total,
+real-time safe; round-trip tested for every enumerator).
 
 ### Test-only (not in `src/`)
-- `tests/support/gain_engine.h`: `GainTestEngine` multiplies the source segment by
-  `to_linear_gain(eff.gain)`. Stays under `tests/` so no product code can select it; Phase 4 deletes
-  it. It also checks `eff.gain` is the only edited field (else `unsupported`).
-- `tests/support/audio_checks.h`: the objective checks as plain functions on `AudioBuffer`:
-  `bit_identical`, `first_difference`, `find_clicks`, `sanity` (NaN/Inf count, DC offset dBFS, peak),
-  `hash_audio`, `length_matches`. Each has unit tests on synthetic signals with known answers
-  (sine, injected step, injected NaN). Thresholds from `tests/tolerances.h`; new engineering
-  tolerances (click threshold) are added there with a justification, never loosened to pass.
+- `tests/support/gain_engine.h`: `GainTestEngine` multiplies the zone by `to_linear_gain(eff.gain)`;
+  `not_implemented` if any other field is edited. Deleted in Phase 4.
+- `tests/support/audio_checks.h`: `bit_identical`, `first_difference`, `find_clicks`, `sanity`
+  (NaN/Inf count, DC dBFS, peak), `hash_audio`, `length_matches`, unit-tested on synthetic signals.
+  The click threshold is a new *initial* engineering tolerance in `tests/tolerances.h`, recorded in
+  the report as "pending human review". Two permanent calibration tests pin it: a 10 ms crossfade is
+  clean and a 0 ms splice is detected.
+- `tests/CMakeLists.txt` gains `add_subdirectory(audio)` with the `audio` label.
 
-### CLI and scenarios (layer 7)
-- `src/cli/scenario` (`anno::cli::Scenario`): parses the scenario JSON of AUDIO_VERIFICATION §2,
-  extended for Phase 2 with an explicit `notes` list (`[{"id","start_s","end_s"}]`, replaced by real
-  analysis in Phase 3) and `edits` as `{category, op, param, value, target:{note_id|note_index}}`
-  using the closed `EditParam` names (`to_string(EditParam)` / `parse_edit_param`, new in
-  `core/types/edit.h`, pure and total). Errors are `Result` with the JSON path in the message.
-  Returns `Scenario { std::string name; source path; std::vector<ScenarioNote>; std::vector<EditSpec>
-  grouped as one EditList::add group per scenario edit }`.
-- `anno-cli render <scenario.json|--source wav --edits edits.json> --out out.wav [--engine
-  passthrough]`. Writes float32 WAV. Exit codes as `info`.
-- `anno-cli audition <scenario.json> --out <dir>`: writes `original.wav`, `edited.wav`,
-  `original_matched.wav` (original scaled by the RMS ratio so A/B level is fair; the scale is
-  reported), `difference.wav`, `edits.json`, `report.md` (the objective checks with measured values
-  and PASS/FAIL), and `INDEX.md` (AUDIO_VERIFICATION §3). Report text never judges sound quality.
-- Engines the CLI can pick are wired here (layer 7): `passthrough` only. The gain test engine is not
-  in `src/`, so scenarios that need it run only from the audio tests.
+### CLI and scenarios
+- `cli/scenario` (json-free): `Scenario`, `ScenarioNote {id, start_s, end_s}`,
+  `make_scenario_analysis`. Tests may link it (layer-7 targets are free for tests; no JSON leaks).
+- `cli/scenario_json`: `parse_scenario(path)`. Fields per AUDIO_VERIFICATION §2 plus `notes`. Rules:
+  unknown top-level keys are errors (with the JSON path); `expect` and `algorithm` are accepted,
+  ignored by the checks, and echoed in `report.md`; `source` resolves relative to the scenario file,
+  falling back to the repo root; edits use the `parse_*` names and target `{note_id}` or
+  `{note_index}`. Each scenario edit is one `EditList::add` group.
+- `anno-cli render <scenario.json> --out out.wav` and
+  `render --source a.wav --notes notes.json --edits e.json --out out.wav`; `--engine passthrough`.
+- `anno-cli audition <scenario.json> --out <dir>`: `original.wav`, `edited.wav`,
+  `original_matched.wav` (original scaled by the RMS ratio; the ratio is reported), `difference.wav`,
+  `edits.json`, `report.md` (objective checks with measured values and PASS/FAIL, never a quality
+  judgement), `INDEX.md`.
+- Only `passthrough` is selectable in the CLI.
 
-## Public functions added elsewhere
-`std::string_view to_string(EditParam)`, `std::optional<EditParam> parse_edit_param(string_view)`,
-`to_string(EditCategory/EditOp/FadeShape)` + parsers in `core/types/edit.h` (pure, real-time safe);
-`ErrorCode::unsupported`.
+## Dependencies and CMake (B2)
+`dsp` → types. `synthesis/engine` → types. `synthesis/passthrough` → engine, types. `render` → types,
+dsp, edits, timemap, engine, plus `Threads::Threads` (mutex). `cli/scenario` → types, edits.
+`cli/scenario_json` → scenario, `nlohmann_json::nlohmann_json`. `cli/commands` → render, passthrough,
+io, scenario, scenario_json. Exact `anno_external_allowed` edits:
+- `core/render` may link `Threads::Threads`;
+- `^cli(/[a-z0-9_]+)?$` may link `nlohmann_json::nlohmann_json`.
+Layer-rule tests added: `core/render` linking nlohmann is rejected; `cli/scenario_json` linking it is
+accepted. `scripts/check_includes.py` is checked against the new include paths. `core/dsp` and
+`core/render` get `-ffp-contract=off`.
 
 ## Effect on audio
-First rendering code. With an empty edit list or only non-edited notes the output is the source,
-bit-identical (rule 5). With a gain edit (test engine) only `[start - xf, end + xf]` changes. Notes
-whose edits cancel (`is_edited == false`) are bit-identical. Objective checks (all `audio` label):
-null, undo-null, untouched-region, click detector, sanity, determinism, length. Pitch/timing/level
-round-trips arrive with the engines that change them. No audition package is a listening gate this
-phase (a gain step is not a quality question), but one is built so the CLI path is exercised.
+First rendering code. Empty edit list or non-edited notes: output == source, bit-identical. With a
+gain edit (test engine) only each edited note's zone `[start - xf, end + xf]` changes; the weight-1
+interior is a copy of the engine output, not `x * 1.0f`. Objective checks (`audio` label): null,
+undo-null, untouched-region, click detector, sanity, determinism, length. Round-trips arrive with the
+engines that change pitch/timing/level. No listening gate this phase (a gain step is not a quality
+question); a package is still built to exercise the CLI.
 
 ## Split / join decisions
-- `crossfade_gains` (one point) and `crossfade` (a span) are separate: the renderer needs the weight
-  per sample inside a larger loop; the span form is the reusable kernel (§5 split 4).
-- `render_region` is an orchestrator of named steps (`validate_inputs`, `plan_blends`,
-  `apply_blend`, `make_cache_key`) in `core/render/` internals; no step takes more than three
-  parameters except through a `BlendPlan` struct (data clump, §5 join-classes 1).
-- Interface + one engine in separate folders despite "one implementation": allowed for
-  `SynthesisEngine`; the test engine is a second implementation from day one.
-- `RenderCache` is separate from `render_region` (different reason to change: eviction policy vs
-  rendering).
-
-## Dependencies
-`core/dsp` → `core/types`. `synthesis/engine` → `core/types`. `synthesis/passthrough` → engine,
-types. `render` → types, dsp, edits, timemap, `synthesis/engine`. `cli/scenario` → types, edits;
-`cli/commands` → render, passthrough, io, scenario. nlohmann/json: `cli/scenario` and tests only.
-The layer table already contains every folder; `anno_external_allowed` gets one rule
-(`nlohmann_json` for `cli*`), recorded in ADR-0006. No cycles.
+- `crossfade_gains` + sliced `crossfade` kernel: the renderer calls the kernel, so the ramp formula
+  exists once (§5 split 4, rule of three).
+- `render_region` is an orchestrator of the named steps above; `RenderPlan` bundles run/zone data
+  (data clump, join-classes 1).
+- `RenderCache` separate from the renderer: different reason to change (eviction vs rendering).
+- `cli/scenario` split from `cli/scenario_json` so nothing but the parser depends on JSON.
 
 ## Thread safety / real time
-`crossfade*`, `to_string`/parsers: real-time safe. Everything else is analysis-thread code:
-allocates, may fail with `Result`. `render_region` is thread-safe for distinct inputs; sharing a
-`RenderCache` across threads is safe (mutex). Nothing here runs on the audio thread (Phase 9).
+`crossfade*`, `to_string`/`parse_*`: real-time safe. Everything else analysis-thread: allocates, may
+fail with `Result`. `render_region` is thread-safe for distinct inputs; a shared `RenderCache` is
+safe (mutex). Nothing runs on the audio thread.
 
 ## Errors
 | Where | Code | When |
 |---|---|---|
-| `render_region` | `invalid_argument` | null engine, source/analysis id mismatch, invalid analysis, `crossfade_length` < 0 or > the dirty margin, region end < start, edit track mismatch |
+| `render_region` | `invalid_argument` | null analysis/edits, source/analysis id mismatch, invalid analysis, `crossfade_length` outside `[0, k_max_crossfade]`, region end < start, track mismatch |
 | | `out_of_range` | region outside `[0, duration]` |
-| | `unsupported` | non-identity TimeMap (Phase 6) or an engine that cannot realise `eff` |
-| engines | as above | |
-| `RenderCache::put` | none | oversize entries are dropped silently, documented |
-| scenario parse | `invalid_argument`, `not_found`, `corrupt_data` | bad JSON path / missing file / malformed |
+| | `not_implemented` | non-identity TimeMap, or an engine that cannot realise `eff` |
+| | `internal` | engine returned the wrong range, channel count or sample rate |
+| `RenderCache::put` | none | oversize entries dropped silently |
+| scenario parse | `invalid_argument`, `not_found`, `corrupt_data` | bad field (with JSON path) / missing file / malformed JSON |
 
 ## Tests
-- Unit: `crossfade` (energy/amplitude sums, endpoints, aliasing, shapes), `edit` name parsers
-  (round-trip every enum value), `PassthroughEngine`, `RenderCache` (LRU order, budget, oversize,
-  thread test under TSan), `render_region` (errors, empty region, hard splice, neighbour margins
-  overlapping, cancelled-out edit), `audio_checks` on synthetic signals, scenario parser.
-- Contract (property, 300 seeded cases, `tests/support/random_scenarios.h`): (1) empty edit list →
-  render == source, bit-exact, for random regions; (2) random edits then full undo → bit-exact
-  (undo-null); (3) gain edits on random notes: every sample outside `dirty_regions` (old=empty, new=edits,
-  margin = DirtyParams default) is bit-identical; (4) `crossfade_length` accepted only up to the dirty
-  margin; (5) render(region A ∪ B) == render(A) ++ render(B) sample for sample (region
-  independence); (6) determinism: two renders hash equal; cache hit == miss result.
-- Audio (`ctest -L audio`): null, undo-null, untouched-region, click detector (0 detections on a
-  gain edit with a 10 ms crossfade, and *does* detect a 0 ms splice), sanity, determinism, length.
-- CLI process tests: `render` and `audition` on a generated fixture WAV; exit codes.
+- Unit: `crossfade` (sums per shape, slices of a ramp concatenate to the whole ramp, aliasing, log
+  formula), name parsers (round-trip), `PassthroughEngine`, `RenderCache` (LRU order, budget,
+  oversize, TSan thread test), `render_region` (every error, empty region/empty source, snapped
+  start, hard splice, **blend runs: gap 0, gap < m, m < gap <= 2m, gap > 2m, note within m of sample
+  0 and of the end**, cancelled-out edit, timing edit on an inactive/orphaned note is not an error,
+  a timing edit refused for a far region, `passthrough == notes_rendered.empty()`), key tests (two
+  analyses differing only in `pitch_center` give different keys; engine version/settings change the
+  key; length-prefix ambiguity), `audio_checks` on synthetic signals, scenario parsers.
+- Contract (300 seeded cases): (1) empty edits → render == source, random regions; (2) random edits
+  then full undo → bit-exact; (3) gain edits: every sample outside `dirty_regions` (margin default,
+  xf at `k_max_crossfade`) is bit-identical; (4) `PassthroughEngine` over random edits == source;
+  (5) `render(A ∪ B) == render(A) ++ render(B)` for **aligned** regions; (6) determinism (hash) and
+  cache hit == miss; (7) an engine returning a different channel count is `internal`.
+- Audio (`ctest -L audio`): null, undo-null, untouched, click (clean at 10 ms, detects a 0 ms
+  splice), sanity, determinism, length.
+- CLI process tests: `render` and `audition` on a generated fixture; exit codes.
 
-## Open questions
-1. Crossfade default `equal_power` vs `linear` for correlated material (decided at Phase 4 listening).
-2. Scenario `notes` list is a Phase 2 stand-in; Phase 3 replaces it with `"analysis": "auto"`.
-3. Whether the `RenderResult` should hold `shared_ptr<const OutputAudio>` to avoid copies on cache
-   hits; Phase 2 copies on return and stores shared in the cache. Revisit with the Phase 9 block path.
-4. Click detector threshold: the spec gives the method ("high-pass, jump vs local RMS") but no
-   number. The first value is an engineering tolerance chosen against the synthetic cases and
-   reported; a human should review it before Phase 4 relies on it.
+## Open questions (for a human, non-blocking)
+1. Crossfade default `equal_power` vs `linear` (decide at Phase 4 listening).
+2. Click-detector threshold (initial value, review before Phase 4 relies on it).
+3. `notes` list in scenarios is a Phase 2 stand-in until Phase 3 analysis.
 
 ## Review log
-(pending: structure-reviewer)
+Round 1 (structure-reviewer): CHANGES REQUIRED, 6 blocking, 11 should-fix. All addressed above:
+B1 ADR-0006/0007 written; B2 CMake edits listed; B3 runs and ramp rules; B4 key reorder, length
+prefixes, note fingerprint, engine `version()`; B5 `k_max_crossfade`; B6 snapping; S1 bit-exact skip;
+S2 sliced kernel; S3 `cli/scenario` split; S4 scenario rules; S5 `not_implemented`; S6 log formula;
+S7 whole-zone engine calls; S8 shared_ptr results, `cache_id`, `shared_ptr<const EditList>`; S9
+timing-edit consequences; S10 click threshold pending review; S11 per-build determinism and
+`-ffp-contract=off`.
