@@ -41,6 +41,8 @@ They are linked by a **TimeMap**, a monotonic piecewise-linear function `τ = M(
 
 ## 3. Core data types
 
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
+
 These live in `core/types/`. Every analysis function returns one of these; every tool and macro reads them.
 
 ```python
@@ -182,6 +184,8 @@ Notation: `→` shows the return type. Parameters list the main controls only; e
 
 ### 4.4 Edits — `core/edits/`
 
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
+
 | Function | Returns | Notes |
 |---|---|---|
 | `EditList.add(edit)` | new `EditList` version | Append-only; returns the new head |
@@ -240,6 +244,8 @@ class RenderResult:
 ## 5. How edits change the sound
 
 ### 5.1 The edit record
+
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
 
 ```python
 class Edit:
@@ -342,6 +348,8 @@ harmonic_amp'(t, k) += harmonic_gains_db[k]                      # Sound Editor
 **Noise part:** never pitch-shifted. It keeps its original band energies (plus its gain and the formant warp), and is time-mapped with the same TimeMap, but sibilant regions use a stretch ratio closer to 1.
 
 ### 5.4 The TimeMap
+
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
 
 `build_time_map(notes, edits)` turns timing edits into anchor points `(s_i, τ_i)`:
 

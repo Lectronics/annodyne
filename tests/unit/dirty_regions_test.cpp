@@ -77,15 +77,14 @@ TEST_CASE("undoing_an_edit_dirties_the_note_again", "[dirty_regions]") {
     CHECK(dirty_regions(three_notes(), after, undone, params()).value().size() == 1);
 }
 
-TEST_CASE("a_timing_change_dirties_from_the_previous_notes_start_to_the_end_of_the_source",
-          "[dirty_regions]") {
+TEST_CASE("a_timing_change_dirties_from_the_origin_to_the_end_of_the_source", "[dirty_regions]") {
     const auto shift =
         make_spec("b", EditCategory::time, EditParam::onset_shift, EditOp::add, Seconds{0.2});
     const auto regions =
         dirty_regions(three_notes(), EditList{TrackId{"t1"}}, list_of({shift}), params()).value();
     REQUIRE(regions.size() == 1);
-    CHECK(start_s(regions[0]) == 0.95);  // previous note starts at 1.0, minus margin
-    CHECK(end_s(regions[0]) == 10.0);    // includes the tail after the last note
+    CHECK(start_s(regions[0]) == 0.0);  // stretched back to the origin (Flex-style handles)
+    CHECK(end_s(regions[0]) == 10.0);   // includes the tail after the last note
 }
 
 TEST_CASE("a_timing_change_on_the_first_note_starts_at_the_origin", "[dirty_regions]") {

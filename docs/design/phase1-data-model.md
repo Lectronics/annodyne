@@ -596,3 +596,13 @@ Answered by a safe default now; a human decides at audit #1. Each is cheap to ch
 - Convention: `effective_state` is the hot-loop primitive and aborts on a track mismatch
   (`ANNO_EXPECTS`); `dirty_regions`, `build_time_map` and `remap_after_reanalysis` are the
   validating layer and return `invalid_argument`.
+
+## Time handles are Flex-style (owner decision, 2026-10-19)
+Supersedes the `build_time_map` steps 2-4 and Open question 1 above (rigid push of the later note).
+Authoritative text: ADR-0005 §16 and the doc comment of `build_time_map`. In short: only notes with
+a timing edit pin anchors; the origin and `TimeMapParams::source_end` are fixed anchors; the map is
+linear between neighbouring anchors, so audio on both sides of a moved handle is stretched up to the
+next changed handle or the file ends. Repair: push later, pull back from the fixed end, coincident
+boundary takes the later output, unedited timeline if there is no room. `dirty_regions` dirties
+origin..end for a timing change. Open for a human: stretch-then-pitch or pitch-then-stretch in the
+renderer.

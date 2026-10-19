@@ -113,28 +113,35 @@ TEST_CASE("timing_that_is_undone_gives_the_identity_again", "[time_map_contract]
     }
 }
 
-TEST_CASE("an_unedited_note_keeps_its_length_unless_pushed", "[time_map_contract]") {
-    // Edit only the last note: everything before it must be untouched (consonant protection and
-    // "nothing else moves" for earlier audio).
+TEST_CASE("unedited_audio_before_an_edit_is_stretched_uniformly_back_to_the_origin",
+          "[time_map_contract]") {
+    // Flex-style handles: a note shifted by d moves its start from s to s + d, the origin and the
+    // end of the file stay fixed, and the unedited notes before it are scaled by (s + d) / s.
     for (int seed = 0; seed < k_property_cases; ++seed) {
         INFO("seed " << seed);
         Rng rng{static_cast<std::uint64_t>(seed)};
         const auto notes = random_notes(rng, 4);
         const std::string last = notes.back().id.value;
+        const double d = uniform(rng, 0.0, 1.0);
         EditList list{TrackId{"t1"}};
         list = list.add(std::vector{make_spec(last, EditCategory::time, EditParam::onset_shift,
-                                              EditOp::add, Seconds{uniform(rng, 0.0, 1.0)})},
+                                              EditOp::add, Seconds{d})},
                         k_t0)
                    .value();
-        const auto built = build_time_map(notes, list, TimeMapParams{});
+        const double file_end = raw(notes.back().source_end) + 2.0;
+        const auto built = build_time_map(notes, list, TimeMapParams{.source_end = src(file_end)});
         REQUIRE(built.has_value());
+        CHECK(built->repaired_notes == 0);
+        CHECK(raw(built->map.to_output(src(0.0))) == 0.0);
+        CHECK(raw(built->map.to_output(src(file_end))) == file_end);
         const double last_start = raw(notes.back().source_start);
+        const double ratio = (last_start + d) / last_start;
         for (const Note& n : notes) {
-            if (raw(n.source_end) >= last_start) {
-                continue;  // an abutting boundary is shared
+            if (raw(n.source_end) > last_start) {
+                continue;
             }
-            CHECK(raw(built->map.to_output(n.source_start)) == raw(n.source_start));
-            CHECK(raw(built->map.to_output(n.source_end)) == raw(n.source_end));
+            CHECK(std::abs(raw(built->map.to_output(n.source_start)) -
+                           raw(n.source_start) * ratio) < 1e-9);
         }
     }
 }

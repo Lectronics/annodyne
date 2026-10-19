@@ -23,9 +23,10 @@ struct DirtyParams {
 ///  - Only active notes (is_active) take part. For each whose EffectiveNote differs between the
 ///    lists: [source_start - margin, source_end + margin], clamped at the source origin.
 ///  - If a timing field differs (onset_shift, length_scale, handles, attack_time_scale), the
-///    TimeMap changes there and overlap repair can cascade, so everything from the start of the
-///    previous active note (or the origin) minus margin up to params.source_end is dirty. The
-///    previous note's start, not its end: an abutting neighbour's last segment is stretched.
+///    TimeMap changes: audio is stretched back to the previous changed handle or the origin and
+///    forward to the next one or the end, and repair can cascade both ways. So everything from the
+///    origin to the end of the recording (params.source_end or the end of the last active note)
+///    is dirty.
 /// Result: sorted, merged, non-overlapping. Empty when nothing changed.
 /// Preconditions: `notes` sorted by source_start. Errors: invalid_argument if the lists belong to
 /// different tracks, a note's track differs, or notes are unsorted.

@@ -1,7 +1,7 @@
 # ADR-0005: Edit model refinements
 
 - **Date:** 2026-10-19
-- **Status:** proposed (written while no human was available; confirm or change at structure audit #1)
+- **Status:** accepted 2026-10-19 (decisions 1-3 and 5-7 as written; decision 4 changed by the owner, see item 16)
 - **Phase:** 1
 
 ## Context
@@ -50,12 +50,27 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
       from the orphan list.
     - `build_time_map(notes, edits, TimeMapParams) -> Result<TimeMapBuild>`.
     - `dirty_regions(notes, old, new, DirtyParams)`; it is content-dirty and deliberately coarse for
-      timing edits (previous active note's start to the end of the source), verified against the
-      TimeMap by a contract test.
-16. TimeMap policy choices that need a human (see design note, Open questions 1 and 6): the later
-    note is pushed rigidly on overlap (spec §5.4 step 5 says to stretch the neighbour's boundary
-    region), time handles are absolute output anchors, handles outside a note's body are ignored,
-    `min_segment` = 1 ms, `k_min_time_scale` = 1e-3.
+      timing edits (origin to the end of the source), verified against the TimeMap by a contract
+      test.
+16. **Time handles are Flex-style (owner decision, replaces the "push the neighbour" policy).**
+    Moving a time handle (or shifting/scaling a note) stretches the audio on both sides of it, up to
+    the next *changed* handle or to the end of the file (and back to the start of the file).
+    - Only notes with a timing edit pin anchors; unedited notes between two changed handles are
+      stretched along with the gaps.
+    - The source origin and `TimeMapParams::source_end` are fixed anchors, so handle edits keep the
+      file length. If `source_end` is unknown (the origin) the tail after the last handle is shifted
+      instead.
+    - Handles are absolute output anchors; handles outside a note's body are ignored;
+      `min_segment` = 1 ms, `k_min_time_scale` = 1e-3.
+    - Conflicts (crossing handles, a handle pushed past the fixed end) are repaired and counted in
+      `repaired_notes`: outputs are pushed later and pulled back from the fixed end; with no room at
+      all the unedited timeline is used. A note ending after `source_end` is `invalid_argument`.
+    - `dirty_regions` therefore dirties origin..end for any timing change.
+    - **Open, for a human, before Phase 4/6: order of stretch and pitch correction.** Whether the
+      renderer time-stretches first and then corrects pitch, the reverse, or either per case is not
+      decided; it affects the render pipeline (spec §5.4) and may depend on the synthesis engine.
+      Nothing in the Phase 1 data model fixes it (both orders are expressible from the same
+      `EffectiveNote`). Decide it before the first renderer that handles timing and pitch together.
 17. Naming. Units go in the type or name (ADR-0003), so spec field names changed:
     `loudness_lu` → `loudness` (LUFS), `amp_db` → `amp`, `confidence` → `confidence_prob`,
     `tuning_ref_hz` → `tuning_ref`, `f0_cents` → `f0` (absolute cents, A4 = 6900),
@@ -83,18 +98,12 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
 `docs/specs/annodyne-core-architecture.md` §3 (`Note`, `AnalysisResult`), §4.4 (`dirty_regions`,
 `EditList`) and §5.1 (`Edit`, `EditTarget`) get a pointer to this ADR once it is accepted.
 
-## Decisions a human must confirm
-In order of how expensive they are to change after Phase 7 persistence exists:
-1. `Edit` has no `id`; `seq` is the identity (§1).
-2. `set` is per parameter, not per category (§6).
-3. Linear undo with superseded branches in `discarded()` (§7).
-4. Overlap policy and absolute handles (§16).
-5. Renames (§17) and absolute cents for `f0`.
-6. `EditSpec` vs `Edit`, `created_at` as an argument (§2).
-7. Match thresholds (0.8 / 0.5), neutral fade shape `linear`.
+## Decisions confirmed by the owner (2026-10-19)
+1-3 (seq as identity, per-parameter `set`, linear undo with `discarded()`), 5 (renames, absolute cents
+for `f0`), 6 (`EditSpec` vs `Edit`, `created_at` as an argument) and 7 (match thresholds 0.8 / 0.5,
+neutral fade shape `linear`, "fine for now" so tunable) are accepted as built. 4 was changed to the
+Flex-style policy in item 16.
 
-## Provisional status
-Accepted by nobody yet. Until a human accepts it: no `EditList` persistence format (Phase 7), no
-edits to `docs/specs/`, and the Phase 1 exit gate is conditional. Decisions 1, 6 and 7 (seq as
-identity, per-parameter `set`, `discarded()` history) are the ones that must not be frozen without a
-human. Product policies left open: absolute time handles, and pushing a neighbour on overlap.
+## Still open
+Order of time-stretch and pitch correction in the renderer (item 16). The match thresholds and
+`min_segment` are tunable and need real material (Phases 2-3) before they are final.

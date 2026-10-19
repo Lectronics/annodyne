@@ -27,6 +27,11 @@ TimeMapBuild build(const std::vector<Note>& notes, const EditList& edits) {
     return build_time_map(notes, edits, TimeMapParams{}).value();
 }
 
+// With the end of the recording known (6 s) the audio after the last handle is stretched to it.
+TimeMapBuild build_to_end(const std::vector<Note>& notes, const EditList& edits) {
+    return build_time_map(notes, edits, TimeMapParams{.source_end = src(6.0)}).value();
+}
+
 double out_of(const TimeMap& m, double s) {
     return m.to_output(src(s)).unchecked_since_origin().value();
 }
@@ -59,22 +64,43 @@ TEST_CASE("identity_holds_for_touching_notes_a_note_at_zero_and_a_zero_length_at
     CHECK(built.repaired_notes == 0);
 }
 
-TEST_CASE("onset_shift_moves_the_note_and_stretches_the_gaps_around_it", "[build_time_map]") {
-    const auto built =
-        build(notes3(), edits_of({timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.5})}));
+TEST_CASE("onset_shift_moves_the_note_and_stretches_the_audio_on_both_sides", "[build_time_map]") {
+    const auto built = build_to_end(
+        notes3(), edits_of({timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.5})}));
     const TimeMap& m = built.map;
     CHECK(out_of(m, 3.0) == 3.5);
     CHECK(out_of(m, 4.0) == 4.5);
-    CHECK(out_of(m, 2.0) == 2.0);  // neighbours stay
-    CHECK(out_of(m, 5.0) == 5.0);
-    CHECK(out_of(m, 2.5) == 2.75);  // gap before b is stretched 1 s -> 1.5 s
-    CHECK(out_of(m, 4.5) == 4.75);  // gap after b is compressed to 0.5 s
+    CHECK(out_of(m, 0.0) == 0.0);  // the ends of the file are fixed
+    CHECK(out_of(m, 6.0) == 6.0);
+    // Everything before b is stretched uniformly back to the origin (3 s -> 3.5 s), including the
+    // unedited note a; everything after b is compressed up to the end (2 s -> 1.5 s).
+    CHECK(std::abs(out_of(m, 1.5) - 1.75) < 1e-12);
+    CHECK(std::abs(out_of(m, 5.0) - 5.25) < 1e-12);
     CHECK(built.repaired_notes == 0);
 }
 
-TEST_CASE("length_scale_stretches_the_body_and_protects_the_attack", "[build_time_map]") {
+TEST_CASE("without_a_known_end_the_tail_after_the_last_handle_is_shifted", "[build_time_map]") {
     const auto built =
-        build(notes3(), edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{2.0})}));
+        build(notes3(), edits_of({timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.5})}));
+    CHECK(std::abs(out_of(built.map, 5.0) - 5.5) < 1e-12);
+}
+
+TEST_CASE("stretching_stops_at_the_next_changed_handle", "[build_time_map]") {
+    const auto built = build_to_end(
+        notes3(), edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{0.2}),
+                            timing("c", EditParam::onset_shift, EditOp::add, Seconds{-0.2})}));
+    const TimeMap& m = built.map;
+    // b lies between the two changed notes: it is stretched between a's end (2.2) and c's start
+    // (4.8).
+    CHECK(std::abs(out_of(m, 2.0) - 2.2) < 1e-12);
+    CHECK(std::abs(out_of(m, 5.0) - 4.8) < 1e-12);
+    CHECK(std::abs(out_of(m, 3.5) - 3.5) < 1e-12);  // midpoint of an unchanged-length span
+    CHECK(std::abs(m.stretch_ratio(src(3.5)).value() - 2.6 / 3.0) < 1e-12);
+}
+
+TEST_CASE("length_scale_stretches_the_body_and_protects_the_attack", "[build_time_map]") {
+    const auto built = build_to_end(
+        notes3(), edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{2.0})}));
     const TimeMap& m = built.map;
     // note a: attack 1.0..1.1 keeps slope 1, body 1.1..2.0 doubles (0.9 s -> 1.8 s)
     CHECK(out_of(m, 1.0) == 1.0);
@@ -82,8 +108,9 @@ TEST_CASE("length_scale_stretches_the_body_and_protects_the_attack", "[build_tim
     CHECK(m.stretch_ratio(src(1.05)) == Ratio{1.0});
     CHECK(std::abs(m.stretch_ratio(src(1.5)).value() - 2.0) < 1e-12);
     CHECK(std::abs(out_of(m, 2.0) - 2.9) < 1e-12);
-    // b is unedited and the gap absorbs it: b still starts at 3.0 (gap 2.9 -> 3.0)
-    CHECK(out_of(m, 3.0) == 3.0);
+    // b and c are unedited and are compressed into the remaining 3.1 s up to the fixed end
+    CHECK(std::abs(out_of(m, 3.0) - (2.9 + 3.1 / 4.0)) < 1e-12);
+    CHECK(out_of(m, 6.0) == 6.0);
 }
 
 TEST_CASE("attack_time_scale_changes_only_the_attack_segment", "[build_time_map]") {
@@ -123,20 +150,43 @@ TEST_CASE("crossing_handles_are_clamped_and_counted", "[build_time_map]") {
     CHECK(h2 > h1);
 }
 
-TEST_CASE("moving_a_note_onto_its_neighbour_pushes_the_neighbour_rigidly", "[build_time_map]") {
-    // a [1,2] shifted +2.5 s lands at 3.5..4.5, over b [3,4].
-    const auto built =
-        build(notes3(), edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{2.5})}));
+TEST_CASE("moving_a_note_past_its_neighbour_stretches_the_audio_between", "[build_time_map]") {
+    // a [1,2] shifted +2.5 s lands at 3.5..4.5, past b [3,4]; b is not pushed, it is stretched.
+    const auto built = build_to_end(
+        notes3(), edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{2.5})}));
     const TimeMap& m = built.map;
-    CHECK(built.repaired_notes == 2);  // b is pushed over a, and c is pushed over b
+    CHECK(built.repaired_notes == 0);
     CHECK(out_of(m, 1.0) == 3.5);
-    const double b_start = out_of(m, 3.0);
-    CHECK(b_start >= out_of(m, 2.0) + 0.001 - 1e-12);
-    // b keeps its length and attack shape (rigid shift)
-    CHECK(std::abs((out_of(m, 4.0) - b_start) - 1.0) < 1e-12);
-    CHECK(std::abs((out_of(m, 3.1) - b_start) - 0.1) < 1e-12);
-    // c is pushed only if needed to stay after b; strictly increasing overall
-    CHECK(out_of(m, 5.0) > out_of(m, 4.0));
+    CHECK(out_of(m, 2.0) == 4.5);
+    CHECK(std::abs(out_of(m, 3.0) - (4.5 + 1.5 / 4.0)) < 1e-12);
+    CHECK(out_of(m, 3.0) > out_of(m, 2.0));
+}
+
+TEST_CASE("a_handle_pushed_past_the_fixed_end_is_pulled_back_and_counted", "[build_time_map]") {
+    const auto built = build_to_end(
+        notes3(), edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{5.5})}));
+    CHECK(built.repaired_notes == 1);
+    CHECK(out_of(built.map, 2.0) < 6.0);
+    CHECK(out_of(built.map, 2.0) > out_of(built.map, 1.0));
+    CHECK(out_of(built.map, 6.0) == 6.0);
+}
+
+TEST_CASE("no_room_between_the_fixed_ends_falls_back_to_the_unedited_timeline",
+          "[build_time_map]") {
+    std::vector<Note> notes{make_note("a", 0.0002, 0.0004)};
+    const auto built =
+        build_time_map(notes,
+                       edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{1.0})}),
+                       TimeMapParams{.source_end = src(0.0006)})
+            .value();
+    CHECK(built.map.is_identity());
+    CHECK(built.repaired_notes == 1);
+}
+
+TEST_CASE("an_end_before_a_note_is_an_error", "[build_time_map]") {
+    CHECK(build_time_map(notes3(), EditList{TrackId{"t1"}}, TimeMapParams{.source_end = src(5.5)})
+              .error()
+              .code == ErrorCode::invalid_argument);
 }
 
 TEST_CASE("a_negative_shift_before_the_origin_is_repaired_not_an_error", "[build_time_map]") {
@@ -157,18 +207,16 @@ TEST_CASE("abutting_notes_share_one_boundary_anchor", "[build_time_map]") {
     CHECK(std::abs((out_of(m, 3.0) - out_of(m, 2.0)) - 1.0) < 1e-12);  // b keeps its length
 }
 
-TEST_CASE("unedited_notes_with_sub_millisecond_gaps_stay_identity_next_to_an_edit",
-          "[build_time_map]") {
+TEST_CASE("sub_millisecond_gaps_between_notes_survive_a_timing_edit", "[build_time_map]") {
     std::vector<Note> notes{make_note("a", 1.0, 2.0), make_note("b", 2.0004, 3.0),
                             make_note("c", 3.0002, 4.0)};
     notes[2].source_start = src(3.0002);
-    const auto built = build(notes, edits_of({pitch_add("a", 5)}));  // pitch only
-    CHECK(built.map.is_identity());
-    // a timing edit on the LAST note must not disturb a, b, c's earlier boundaries
+    CHECK(build(notes, edits_of({pitch_add("a", 5)})).map.is_identity());  // pitch only
     const auto edited =
         build(notes, edits_of({timing("c", EditParam::onset_shift, EditOp::add, Seconds{0.2})}));
-    CHECK(out_of(edited.map, 2.0004) == 2.0004);
-    CHECK(out_of(edited.map, 3.0) == 3.0);
+    CHECK(out_of(edited.map, 3.0002) == 3.2002);
+    CHECK(out_of(edited.map, 2.0004) > out_of(edited.map, 2.0));
+    CHECK(edited.repaired_notes == 0);
 }
 
 TEST_CASE("inactive_notes_are_ignored", "[build_time_map]") {
