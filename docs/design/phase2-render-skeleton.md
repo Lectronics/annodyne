@@ -122,7 +122,7 @@ struct RenderResult {
     OutputAudio buffer;                    // the request snapped to whole samples (see below)
     SourceRange source_range;              // with an identity map: the same samples on the source axis
     std::string cache_id;                  // short hex of the key; for reports, not unique
-    std::vector<NoteId> notes_rendered;    // edited notes with a zone in the region, source order
+    std::vector<NoteId> notes_rendered;    // edited notes whose zone intersects the region, before any skip, source order
     bool passthrough = false;              // exactly notes_rendered.empty()
 };
 
@@ -153,25 +153,35 @@ region returns an empty buffer.
 2. `build_time_map`; non-identity → `not_implemented`.
 3. Snap the region to samples. Compute `eff` for every active note; the **edited** ones
    (`eff.is_edited`) become candidates. Notes are sorted and non-overlapping (Phase 1).
-4. **Runs.** Let `m = round(xf * sr)` and, for note k, span `[n0,n1)` in samples (nearest) and zone
-   `[n0-m, n1+m)` clamped to the recording. For consecutive edited notes k, k+1 with gap
-   `g = n0(k+1) - n1(k)` samples:
-   - `g <= m`: **merged**. The engines crossfade into each other, centred on the gap midpoint
-     `c = n1(k) + g/2`, ramp length `L = 2m - g` (>= m), over `[c - L/2, c + L/2)`. Both engines
-     cover that range because each zone extends `m` past its note (`c + L/2 = n1(k) + m`).
-   - `m < g <= 2m`: **separate**, but each note's outer ramp to the original is shortened to
-     `r = g/2` on the facing side so the two ramps meet at the midpoint and never overlap.
-   - `g > 2m`: separate, full ramps `r = m`.
-   An *edited run* is a maximal sequence of merged notes. Ramps to the original exist only at the
-   outer edges of a run, of length `r` as above (`m` on a free side). Ramps are defined on
-   **unclamped sample coordinates** and truncated at sample 0 / the end, so a note 3 ms from the
-   start has a shorter visible ramp, never a rescaled one. `m == 0`: all ramps are hard splices.
+4. **Blend plan** (one rule, no case split). `m = round(xf * sr)`. Let e_1..e_n be the edited notes
+   in source order, with sample spans `[a_i, b_i)` (nearest; an empty span from a very short note is
+   tolerated, its weight-1 interior is just empty) and zones `[a_i - m, b_i + m)` clamped to the
+   recording. Gaps are measured **between edited notes**, so an unedited note lying between two
+   edited ones is part of the gap `g = a_{i+1} - b_i`. Nominal ramps, as half-open sample intervals
+   on **unclamped coordinates** (truncated at sample 0 / the end only when applied):
+   - outer: rising `[a_1 - m, a_1)` (pristine → engine 1), falling `[b_n, b_n + m)` (engine n →
+     pristine);
+   - between i and i+1, if `g <= m`: one engine→engine ramp `[a_{i+1} - m, b_i + m)` (length
+     `2m - g`, exactly the intersection of the two zones, so both engines cover it; for odd g the
+     bounds are still integers);
+   - otherwise two edge ramps: falling `[b_i, b_i + m)` and rising `[a_{i+1} - m, a_{i+1})`.
+   Order all ramps by start. **Walk left to right; whenever a ramp's end exceeds the next ramp's
+   start, both meet at `p = next.start + floor((prev.end - next.start) / 2)`** (`prev.end = p`,
+   `next.start = p`). A ramp shrunk to length 0 is a hard switch with no `crossfade` call; `m == 0`
+   makes every ramp length 0 (engine→engine switches hard at the boundary). Shrunk ramps stay inside
+   both zones, so engine coverage holds. This reproduces `r = g/2` for `m < g <= 2m`, and also
+   handles three consecutive merged notes and notes shorter than `m`. Between ramps a sample is
+   engine i (weight 1, a copy) or pristine (untouched). For odd overlaps one sample keeps its
+   earlier-ramp weight; the rule is deterministic.
 5. If a cache is given: build the key (below) and look it up; **a hit returns here**, before any
    engine call.
-6. Pristine `P = source.read(region)`; `out = P` (copy). For each run intersecting the region: ask
-   the engine for the **whole zone of every note in the run** (never a sub-range), check channels and
-   sample rate, and **skip the note if its zone equals the pristine slice bit for bit**.
-7. Blend each run from the **pristine** slice, never from the partially blended `out`:
+6. `out` = `source.read(region)` (the original, copied). For each edited note whose zone intersects
+   the region, ask the engine for the **whole zone** (never a sub-range), check channel count and
+   sample rate, and read the source over the whole zone to compare. If the engine output equals the
+   pristine zone bit for bit, **use the pristine zone as that note's engine signal**: a shortcut
+   only. The plan (ramps, lengths) is computed in step 4 from the edited flags and is independent
+   of this equality.
+7. Blend the plan from the **pristine** slice, never from the partially blended `out`:
    - inside a note's span, away from any inter-note ramp: `out = engine` (a copy, no multiply);
    - inter-note ramp (merged): `crossfade(engine_k, engine_k+1, …)`;
    - outer edge ramp: `crossfade(pristine, engine, …)` rising, mirrored falling;
@@ -182,7 +192,10 @@ region returns an empty buffer.
 **Cache key (B4).** A canonical byte string, every variable-length field **length-prefixed** (no
 `"ab"+"c"` vs `"a"+"bc"` ambiguity): format version, source id, analysis `version`, engine `name`,
 `version`, `settings_key`, crossfade length (bits) and shape, snapped region (sample range, sample
-rate), and for each *edited* note whose zone intersects the region: id, span (bit patterns), a
+rate), the snapped sample length `m`, the **plan segments (step 4, after shrinking) that intersect the
+region** (each ramp's start, end and the engines it joins, so a neighbour whose zone lies outside the
+region but changes a ramp length changes the key), and for each *edited* note whose zone intersects
+the region: id, snapped span `[a, b)` in samples, a
 field-by-field serialisation of its `EffectiveNote`, and a **128-bit content fingerprint of the
 whole `Note`** (two independent 64-bit FNV-1a streams; the analysis `version` alone is not
 content-unique in tests and scenarios). Everything but that fingerprint compares exactly; the
@@ -242,7 +255,7 @@ real-time safe; round-trip tested for every enumerator).
 
 ## Dependencies and CMake (B2)
 `dsp` → types. `synthesis/engine` → types. `synthesis/passthrough` → engine, types. `render` → types,
-dsp, edits, timemap, engine, plus `Threads::Threads` (mutex). `cli/scenario` → types, edits.
+dsp, edits (effective_state, `k_max_crossfade`), timemap, engine, plus `Threads::Threads` (mutex). `cli/scenario` → types, edits.
 `cli/scenario_json` → scenario, `nlohmann_json::nlohmann_json`. `cli/commands` → render, passthrough,
 io, scenario, scenario_json. Exact `anno_external_allowed` edits:
 - `core/render` may link `Threads::Threads`;
@@ -286,15 +299,18 @@ safe (mutex). Nothing runs on the audio thread.
 - Unit: `crossfade` (sums per shape, slices of a ramp concatenate to the whole ramp, aliasing, log
   formula), name parsers (round-trip), `PassthroughEngine`, `RenderCache` (LRU order, budget,
   oversize, TSan thread test), `render_region` (every error, empty region/empty source, snapped
-  start, hard splice, **blend runs: gap 0, gap < m, m < gap <= 2m, gap > 2m, note within m of sample
-  0 and of the end**, cancelled-out edit, timing edit on an inactive/orphaned note is not an error,
+  start, hard splice, **blend plan: gap 0, odd gap, gap < m, m < gap <= 2m, gap > 2m, three consecutive merged notes
+  shorter than m, a short first note with gap 0, an unedited note between two edited ones, an empty
+  rounded span, a gain-1.0 note next to a gain-2.0 note (same output with or without the skip), a
+  note within m of sample 0 and of the end, equal-power ramps sum continuously**, cancelled-out edit, timing edit on an inactive/orphaned note is not an error,
   a timing edit refused for a far region, `passthrough == notes_rendered.empty()`), key tests (two
-  analyses differing only in `pitch_center` give different keys; engine version/settings change the
+  analyses differing only in `pitch_center` give different keys; moving a neighbour whose zone is
+  outside the region but changes a ramp length changes the key; engine version/settings change the
   key; length-prefix ambiguity), `audio_checks` on synthetic signals, scenario parsers.
 - Contract (300 seeded cases): (1) empty edits → render == source, random regions; (2) random edits
   then full undo → bit-exact; (3) gain edits: every sample outside `dirty_regions` (margin default,
   xf at `k_max_crossfade`) is bit-identical; (4) `PassthroughEngine` over random edits == source;
-  (5) `render(A ∪ B) == render(A) ++ render(B)` for **aligned** regions; (6) determinism (hash) and
+  (5) `render(A ∪ B) == render(A) ++ render(B)` for **aligned** regions (both have integer-sample bounds, so snapping is the identity); (6) determinism (hash) and
   cache hit == miss; (7) an engine returning a different channel count is `internal`.
 - Audio (`ctest -L audio`): null, undo-null, untouched, click (clean at 10 ms, detects a 0 ms
   splice), sanity, determinism, length.
