@@ -7,11 +7,19 @@ namespace anno {
 
 namespace {
 
-double raw(SourceTime t) { return t.unchecked_since_origin().value(); }
-double raw(OutputTime t) { return t.unchecked_since_origin().value(); }
+double raw(SourceTime t) {
+    return t.unchecked_since_origin().value();
+}
+double raw(OutputTime t) {
+    return t.unchecked_since_origin().value();
+}
 
-SourceTime make_source(double v) { return SourceTime::unchecked_from_origin(Seconds{v}); }
-OutputTime make_output(double v) { return OutputTime::unchecked_from_origin(Seconds{v}); }
+SourceTime make_source(double v) {
+    return SourceTime::unchecked_from_origin(Seconds{v});
+}
+OutputTime make_output(double v) {
+    return OutputTime::unchecked_from_origin(Seconds{v});
+}
 
 /// Index of the last anchor whose coordinate is <= x, or -1 if x is before the first.
 template <class Key>
@@ -41,7 +49,7 @@ Result<TimeMap> TimeMap::from_anchors(std::vector<TimePair> anchors) {
         if (!std::isfinite(s) || !std::isfinite(t)) {
             return fail(ErrorCode::invalid_argument, "time map anchor is not finite");
         }
-        if (i > 0 && !(s > raw(anchors[i - 1].source) && t > raw(anchors[i - 1].output))) {
+        if (i > 0 && (s <= raw(anchors[i - 1].source) || t <= raw(anchors[i - 1].output))) {
             return fail(ErrorCode::invalid_argument,
                         "time map anchors must be strictly increasing in source and output");
         }

@@ -84,11 +84,12 @@ struct ParamInfo {
     EditCategory category;
     ValueKind kind;
     bool allows_add;    // offsets (cents, decibels, seconds)
-    bool allows_scale;  // multipliers (ratio with neutral 1); amounts such as within_note_flatten allow set only
+    bool allows_scale;  // multipliers (ratio with neutral 1); amounts such as within_note_flatten
+                        // allow set only
     double neutral;     // 0 for offsets, 1 for multipliers; unused for fade_shape/time_handle
     double set_min;     // legal range of a `set` value (inclusive)
     double set_max;
-    double scale_min;   // legal lower bound (exclusive) of a `scale` value
+    double scale_min;  // legal lower bound (exclusive) of a `scale` value
 };
 
 /// Table lookup. Pure; real-time safe.
@@ -103,8 +104,9 @@ inline constexpr Seconds k_handle_key{1e-6};
 
 /// Who an edit applies to.
 struct EditTarget {
-    std::vector<NoteId> note_ids;           // live targets
-    std::vector<NoteId> orphaned_note_ids;  // re-analysis could not re-attach these; kept, ignored by the fold
+    std::vector<NoteId> note_ids;  // live targets
+    std::vector<NoteId>
+        orphaned_note_ids;  // re-analysis could not re-attach these; kept, ignored by the fold
 };
 
 /// What a tool or macro returns: the content of one edit, without bookkeeping.

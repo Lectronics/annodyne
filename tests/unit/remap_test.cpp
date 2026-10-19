@@ -1,5 +1,4 @@
 #include "core/edits/remap.h"
-
 #include "support/test_data.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,11 +10,13 @@ using namespace anno::test;
 
 namespace {
 
-const WallTime k_t0{};
+constexpr WallTime k_t0{};
 
 const RemapEntry& entry(const NoteMatching& m, const char* id) {
     for (const auto& e : m.entries) {
-        if (e.old_id == NoteId{id}) return e;
+        if (e.old_id == NoteId{id}) {
+            return e;
+        }
     }
     FAIL("no entry for " << id);
     return m.entries.front();
@@ -23,7 +24,9 @@ const RemapEntry& entry(const NoteMatching& m, const char* id) {
 
 std::vector<NoteId> ids(std::initializer_list<const char*> list) {
     std::vector<NoteId> out;
-    for (const char* s : list) out.push_back(NoteId{s});
+    for (const char* s : list) {
+        out.push_back(NoteId{s});
+    }
     return out;
 }
 
@@ -113,8 +116,10 @@ TEST_CASE("remap_moves_edits_to_the_matching_notes_and_reports_each_old_note", "
     EditList edits{TrackId{"t1"}};
     edits = edits.add(std::vector{pitch_add("a", 10), pitch_add("b", 20), pitch_add("c", 30)}, k_t0)
                 .value();
-    const auto old_a = analysis_of({make_note("a", 1, 2), make_note("b", 3, 5), make_note("c", 7, 8)});
-    const auto new_a = analysis_of({make_note("a", 1, 2), make_note("b1", 3, 4), make_note("b2", 4, 5)});
+    const auto old_a =
+        analysis_of({make_note("a", 1, 2), make_note("b", 3, 5), make_note("c", 7, 8)});
+    const auto new_a =
+        analysis_of({make_note("a", 1, 2), make_note("b1", 3, 4), make_note("b2", 4, 5)});
     const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
 
     const auto& targets = result.edits.active();

@@ -1,6 +1,5 @@
 #include "core/types/edit.h"
 #include "core/types/effective_note.h"
-
 #include "support/test_data.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -98,9 +97,9 @@ TEST_CASE("spec_rejects_non_finite_and_out_of_range_values", "[edit_types]") {
     CHECK_FALSE(validate(make_spec("a", EditCategory::time, EditParam::length_scale, EditOp::scale,
                                    Ratio{-1.0}))
                     .has_value());
-    CHECK_FALSE(validate(make_spec("a", EditCategory::fade, EditParam::fade_in, EditOp::set,
-                                   Seconds{-0.1}))
-                    .has_value());
+    CHECK_FALSE(
+        validate(make_spec("a", EditCategory::fade, EditParam::fade_in, EditOp::set, Seconds{-0.1}))
+            .has_value());
     // mod_scale may be negative (inverted vibrato).
     CHECK(validate(make_spec("a", EditCategory::pitch_mod, EditParam::mod_scale, EditOp::set,
                              Ratio{-1.0}))
@@ -108,9 +107,9 @@ TEST_CASE("spec_rejects_non_finite_and_out_of_range_values", "[edit_types]") {
 }
 
 TEST_CASE("reset_takes_no_value_except_a_handle_to_remove", "[edit_types]") {
-    CHECK(validate(make_spec("a", EditCategory::pitch, std::nullopt, EditOp::reset,
-                             std::monostate{}))
-              .has_value());
+    CHECK(
+        validate(make_spec("a", EditCategory::pitch, std::nullopt, EditOp::reset, std::monostate{}))
+            .has_value());
     CHECK(validate(make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::reset,
                              std::monostate{}))
               .has_value());
@@ -132,8 +131,8 @@ TEST_CASE("target_rules_differ_between_add_and_recorded", "[edit_types]") {
     spec.target.note_ids.clear();
     CHECK_FALSE(validate(spec).has_value());  // nothing targeted at all
     spec.target.orphaned_note_ids = {NoteId{"gone"}};
-    CHECK(validate(spec).has_value());               // recorded edit with only orphans
-    CHECK_FALSE(validate_for_add(spec).has_value()); // but not accepted by add
+    CHECK(validate(spec).has_value());                // recorded edit with only orphans
+    CHECK_FALSE(validate_for_add(spec).has_value());  // but not accepted by add
     spec = pitch_add("a", 1.0);
     spec.target.note_ids.push_back(NoteId{"a"});
     CHECK_FALSE(validate(spec).has_value());  // duplicate id
@@ -143,7 +142,10 @@ TEST_CASE("target_rules_differ_between_add_and_recorded", "[edit_types]") {
 }
 
 TEST_CASE("noise_gain_for_silence_is_zero_db", "[edit_types]") {
-    const NoiseGains gains{Decibels{1}, Decibels{2}, Decibels{3}, Decibels{4}};
+    const NoiseGains gains{.voiced = Decibels{1},
+                           .sibilant = Decibels{2},
+                           .breath = Decibels{3},
+                           .plosive = Decibels{4}};
     CHECK(noise_gain(gains, FrameClass::voiced) == Decibels{1});
     CHECK(noise_gain(gains, FrameClass::sibilant) == Decibels{2});
     CHECK(noise_gain(gains, FrameClass::breath) == Decibels{3});

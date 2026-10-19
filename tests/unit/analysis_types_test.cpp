@@ -2,7 +2,6 @@
 #include "core/types/frame_grid.h"
 #include "core/types/note.h"
 #include "core/types/tracks.h"
-
 #include "support/test_data.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,7 +15,7 @@ namespace {
 
 Note note_with_grid(std::int64_t n) {
     Note note = make_note("a", 1.0, 2.0);
-    note.grid = FrameGrid{Seconds{0.005}, note.source_start, n};
+    note.grid = FrameGrid{.hop = Seconds{0.005}, .start = note.source_start, .n_frames = n};
     note.pitch_drift.assign(static_cast<std::size_t>(n), Cents{});
     note.pitch_mod.assign(static_cast<std::size_t>(n), Cents{});
     note.amp.assign(static_cast<std::size_t>(n), Decibels{-20.0});
@@ -26,7 +25,7 @@ Note note_with_grid(std::int64_t n) {
 }  // namespace
 
 TEST_CASE("frame_time_is_start_plus_index_times_hop", "[analysis_types]") {
-    const FrameGrid grid{Seconds{0.01}, src(2.0), 100};
+    const FrameGrid grid{.hop = Seconds{0.01}, .start = src(2.0), .n_frames = 100};
     CHECK((frame_time(grid, 50) - src(2.0)).value() == 0.5);
 }
 
@@ -48,12 +47,12 @@ TEST_CASE("frame_matrix_size_must_match_shape", "[analysis_types]") {
 
 TEST_CASE("pitch_track_arrays_must_match_the_grid", "[analysis_types]") {
     PitchTrack track;
-    track.grid = FrameGrid{Seconds{0.005}, src(0), 3};
+    track.grid = FrameGrid{.hop = Seconds{0.005}, .start = src(0), .n_frames = 3};
     track.f0.assign(3, Cents{6900});
     track.confidence_prob.assign(3, 0.5);
     track.voicing_prob.assign(3, 1.0);
     CHECK(validate(track).has_value());
-    track.alternates.push_back(std::vector<Cents>(2));
+    track.alternates.emplace_back(2);
     CHECK_FALSE(validate(track).has_value());
     track.alternates.clear();
     track.voicing_prob[1] = 1.5;
@@ -91,8 +90,9 @@ TEST_CASE("note_curve_length_must_equal_grid_frames", "[analysis_types]") {
 
 TEST_CASE("note_nested_grid_must_be_empty_or_equal", "[analysis_types]") {
     Note note = note_with_grid(10);
-    note.noise.grid = FrameGrid{Seconds{0.005}, note.source_start, 10};
-    note.noise.band_energy_linear = FrameMatrix{10, 2, std::vector<float>(20)};
+    note.noise.grid = FrameGrid{.hop = Seconds{0.005}, .start = note.source_start, .n_frames = 10};
+    note.noise.band_energy_linear =
+        FrameMatrix{.rows = 10, .cols = 2, .data = std::vector<float>(20)};
     note.noise.frame_class.assign(10, FrameClass::voiced);
     CHECK(validate(note).has_value());
     note.noise.grid.hop = Seconds{0.01};

@@ -8,10 +8,13 @@ namespace anno {
 
 namespace {
 
-Seconds length(const Note& n) { return n.source_end - n.source_start; }
+Seconds length(const Note& n) {
+    return n.source_end - n.source_start;
+}
 
 Seconds overlap(const Note& a, const Note& b) {
-    const Seconds d = std::min(a.source_end, b.source_end) - std::max(a.source_start, b.source_start);
+    const Seconds d =
+        std::min(a.source_end, b.source_end) - std::max(a.source_start, b.source_start);
     return std::max(d, Seconds{0.0});
 }
 
@@ -23,7 +26,9 @@ struct Candidate {
 std::vector<const Note*> active_only(std::span<const Note> notes) {
     std::vector<const Note*> out;
     for (const Note& n : notes) {
-        if (n.is_active) out.push_back(&n);
+        if (n.is_active) {
+            out.push_back(&n);
+        }
     }
     return out;
 }
@@ -51,7 +56,8 @@ std::vector<std::size_t> find_split(const Note& old_note, const std::vector<cons
     double covered = 0.0;
     for (std::size_t i = 0; i < news.size(); ++i) {
         const double ov = overlap(old_note, *news[i]).value();
-        if (length(*news[i]).value() > 0.0 && ov >= p.child_coverage.value() * length(*news[i]).value()) {
+        if (length(*news[i]).value() > 0.0 &&
+            ov >= p.child_coverage.value() * length(*news[i]).value()) {
             children.push_back(i);
             covered += ov;
         }
@@ -67,8 +73,8 @@ std::optional<std::size_t> find_merge(const Note& old_note, const std::vector<co
     double best_ov = 0.0;
     for (std::size_t i = 0; i < news.size(); ++i) {
         const double ov = overlap(old_note, *news[i]).value();
-        if (length(old_note).value() > 0.0 && ov >= p.child_coverage.value() * length(old_note).value() &&
-            ov > best_ov) {
+        if (length(old_note).value() > 0.0 &&
+            ov >= p.child_coverage.value() * length(old_note).value() && ov > best_ov) {
             best = i;
             best_ov = ov;
         }
@@ -76,15 +82,16 @@ std::optional<std::size_t> find_merge(const Note& old_note, const std::vector<co
     return best;
 }
 
-Candidate classify(const Note& old_note, const std::vector<const Note*>& news, const MatchParams& p) {
+Candidate classify(const Note& old_note, const std::vector<const Note*>& news,
+                   const MatchParams& p) {
     if (const auto keep = find_keep(old_note, news, p)) {
-        return {RemapOutcome::kept, {*keep}};
+        return {.outcome = RemapOutcome::kept, .targets = {*keep}};
     }
     if (auto children = find_split(old_note, news, p); !children.empty()) {
-        return {RemapOutcome::split, std::move(children)};
+        return {.outcome = RemapOutcome::split, .targets = std::move(children)};
     }
     if (const auto merge = find_merge(old_note, news, p)) {
-        return {RemapOutcome::kept, {*merge}};
+        return {.outcome = RemapOutcome::kept, .targets = {*merge}};
     }
     return {};
 }
@@ -105,6 +112,7 @@ NoteMatching match_notes(std::span<const Note> old_notes, std::span<const Note> 
     const auto news = active_only(new_notes);
 
     std::vector<Candidate> candidates;
+    candidates.reserve(olds.size());
     for (const Note* o : olds) {
         candidates.push_back(classify(*o, news, params));
     }
@@ -116,21 +124,28 @@ NoteMatching match_notes(std::span<const Note> old_notes, std::span<const Note> 
         }
     }
     for (auto& [new_index, old_indices] : claimed) {
-        if (old_indices.size() < 2) continue;
+        if (old_indices.size() < 2) {
+            continue;
+        }
         std::size_t winner = old_indices.front();
         for (const std::size_t i : old_indices) {
-            if (length(*olds[i]) > length(*olds[winner])) winner = i;  // ties: earliest stays
+            if (length(*olds[i]) > length(*olds[winner])) {
+                winner = i;  // ties: earliest stays
+            }
         }
         for (const std::size_t i : old_indices) {
-            candidates[i].outcome = i == winner ? RemapOutcome::merged_kept : RemapOutcome::merged_away;
-            if (i != winner) candidates[i].targets.clear();
+            candidates[i].outcome =
+                i == winner ? RemapOutcome::merged_kept : RemapOutcome::merged_away;
+            if (i != winner) {
+                candidates[i].targets.clear();
+            }
         }
         (void)new_index;
     }
 
     NoteMatching matching;
     for (std::size_t i = 0; i < olds.size(); ++i) {
-        RemapEntry entry{olds[i]->id, candidates[i].outcome, {}};
+        RemapEntry entry{.old_id = olds[i]->id, .outcome = candidates[i].outcome, .new_ids = {}};
         for (const std::size_t t : candidates[i].targets) {
             entry.new_ids.push_back(news[t]->id);
         }
@@ -139,7 +154,8 @@ NoteMatching match_notes(std::span<const Note> old_notes, std::span<const Note> 
     return matching;
 }
 
-Result<RemapResult> remap_after_reanalysis(const EditList& edits, const AnalysisResult& old_analysis,
+Result<RemapResult> remap_after_reanalysis(const EditList& edits,
+                                           const AnalysisResult& old_analysis,
                                            const AnalysisResult& new_analysis,
                                            const MatchParams& params) {
     if (!(old_analysis.source_id == new_analysis.source_id)) {
@@ -158,11 +174,13 @@ Result<RemapResult> remap_after_reanalysis(const EditList& edits, const Analysis
     collect(parts.edits);
     collect(parts.discarded);
 
-    RemapResult result{edits.retargeted(map), {}};
+    RemapResult result{.edits = edits.retargeted(map), .report = {}};
     for (const NoteId& id : targeted) {
         const auto it = std::ranges::find(matching.entries, id, &RemapEntry::old_id);
-        result.report.push_back(it != matching.entries.end() ? *it
-                                                             : RemapEntry{id, RemapOutcome::orphaned, {}});
+        result.report.push_back(
+            it != matching.entries.end()
+                ? *it
+                : RemapEntry{.old_id = id, .outcome = RemapOutcome::orphaned, .new_ids = {}});
     }
     return result;
 }

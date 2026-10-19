@@ -29,9 +29,9 @@ struct RemapEntry {
 
 /// Thresholds on source-span overlap. Untuned guesses until Phase 7 has real re-analysis data.
 struct MatchParams {
-    Ratio keep_overlap{0.8};     // overlap / max(len old, len new) to call it the same note; also the
-                                 // share of the old note the children of a split must cover
-    Ratio child_coverage{0.5};   // share of a new note (split child) or old note (merge) overlapped
+    Ratio keep_overlap{0.8};  // overlap / max(len old, len new) to call it the same note; also the
+                              // share of the old note the children of a split must cover
+    Ratio child_coverage{0.5};  // share of a new note (split child) or old note (merge) overlapped
 };
 
 /// One entry per active old note, in `old_notes` order.

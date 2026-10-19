@@ -16,9 +16,9 @@ namespace anno {
 /// The pieces of an EditList, for persistence (Phase 7) and tests. See EditList::from_parts.
 struct EditListParts {
     TrackId track;
-    std::vector<Edit> edits;       // active prefix [0, cursor) plus the redo tail
+    std::vector<Edit> edits;  // active prefix [0, cursor) plus the redo tail
     std::size_t cursor = 0;
-    std::vector<Edit> discarded;   // superseded branches
+    std::vector<Edit> discarded;  // superseded branches
     EditSeq next_seq{1};
 };
 
@@ -83,7 +83,7 @@ private:
              std::vector<Edit> discarded, EditSeq next_seq);
 
     TrackId track_;
-    std::vector<Edit> edits_;      // [0, cursor_) active, [cursor_, end) redo tail
+    std::vector<Edit> edits_;  // [0, cursor_) active, [cursor_, end) redo tail
     std::size_t cursor_ = 0;
     std::vector<Edit> discarded_;
     EditSeq next_seq_{1};

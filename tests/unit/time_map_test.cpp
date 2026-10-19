@@ -1,5 +1,4 @@
 #include "core/types/time_map.h"
-
 #include "support/test_data.h"
 #include "tolerances.h"
 
@@ -14,12 +13,18 @@ namespace {
 
 // 0->0, 1->2 (slope 2), 3->3 (slope 0.5), then slope 1.
 TimeMap sample_map() {
-    return TimeMap::from_anchors({{src(0.0), out(0.0)}, {src(1.0), out(2.0)}, {src(3.0), out(3.0)}})
+    return TimeMap::from_anchors({{.source = src(0.0), .output = out(0.0)},
+                                  {.source = src(1.0), .output = out(2.0)},
+                                  {.source = src(3.0), .output = out(3.0)}})
         .value();
 }
 
-double s(OutputTime t) { return t.unchecked_since_origin().value(); }
-double s(SourceTime t) { return t.unchecked_since_origin().value(); }
+double s(OutputTime t) {
+    return t.unchecked_since_origin().value();
+}
+double s(SourceTime t) {
+    return t.unchecked_since_origin().value();
+}
 
 }  // namespace
 
@@ -33,7 +38,9 @@ TEST_CASE("identity_returns_its_input_exactly", "[time_map]") {
 }
 
 TEST_CASE("an_anchor_list_with_equal_source_and_output_is_identity", "[time_map]") {
-    const auto map = TimeMap::from_anchors({{src(0.0), out(0.0)}, {src(0.3), out(0.3)}}).value();
+    const auto map = TimeMap::from_anchors({{.source = src(0.0), .output = out(0.0)},
+                                            {.source = src(0.3), .output = out(0.3)}})
+                         .value();
     CHECK(map.is_identity());
     CHECK_FALSE(sample_map().is_identity());
 }
@@ -47,9 +54,9 @@ TEST_CASE("forward_map_interpolates_between_anchors", "[time_map]") {
 
 TEST_CASE("slope_is_one_outside_the_anchors", "[time_map]") {
     const TimeMap map = sample_map();
-    CHECK(s(map.to_output(src(4.0))) == 4.0);   // 3 -> 3, then slope 1
+    CHECK(s(map.to_output(src(4.0))) == 4.0);  // 3 -> 3, then slope 1
     CHECK(s(map.to_output(src(-1.0))) == -1.0);
-    const auto shifted = TimeMap::from_anchors({{src(1.0), out(1.5)}}).value();
+    const auto shifted = TimeMap::from_anchors({{.source = src(1.0), .output = out(1.5)}}).value();
     CHECK(s(shifted.to_output(src(0.0))) == 0.5);
     CHECK(s(shifted.to_output(src(2.0))) == 2.5);
 }

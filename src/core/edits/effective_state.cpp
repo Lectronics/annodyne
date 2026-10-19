@@ -29,7 +29,8 @@ bool same_key(const TimePair& a, const TimePair& b) {
 }
 
 void apply_handle(Fold& fold, EditOp op, const TimePair& pair) {
-    const auto it = std::ranges::find_if(fold.handles, [&](const TimePair& h) { return same_key(h, pair); });
+    const auto it =
+        std::ranges::find_if(fold.handles, [&](const TimePair& h) { return same_key(h, pair); });
     if (op == EditOp::set) {
         if (it != fold.handles.end()) {
             *it = pair;
@@ -43,9 +44,9 @@ void apply_handle(Fold& fold, EditOp op, const TimePair& pair) {
 
 void reset_param(Fold& fold, EditParam p) {
     switch (p) {
-        case EditParam::fade_shape: fold.fade_shape = FadeShape::linear; break;
-        case EditParam::time_handle: fold.handles.clear(); break;
-        default: fold.at(p) = param_info(p).neutral; break;
+    case EditParam::fade_shape: fold.fade_shape = FadeShape::linear; break;
+    case EditParam::time_handle: fold.handles.clear(); break;
+    default: fold.at(p) = param_info(p).neutral; break;
     }
 }
 
@@ -97,8 +98,12 @@ void apply(Fold& fold, const EditSpec& spec) {
     }
 }
 
-double snap_offset(double v) { return std::abs(v) <= k_neutral_snap_offset ? 0.0 : v; }
-double snap_ratio(double v) { return std::abs(v - 1.0) <= k_neutral_snap_ratio ? 1.0 : v; }
+double snap_offset(double v) {
+    return std::abs(v) <= k_neutral_snap_offset ? 0.0 : v;
+}
+double snap_ratio(double v) {
+    return std::abs(v - 1.0) <= k_neutral_snap_ratio ? 1.0 : v;
+}
 
 bool targets(const EditSpec& spec, const NoteId& id) {
     return std::ranges::find(spec.target.note_ids, id) != spec.target.note_ids.end();
@@ -122,8 +127,10 @@ void finish(Fold& fold) {
     clamp_to(EditParam::fade_in, 0.0, std::numeric_limits<double>::infinity());
     clamp_to(EditParam::fade_out, 0.0, std::numeric_limits<double>::infinity());
     clamp_to(EditParam::within_note_flatten, 0.0, 1.0);
-    clamp_to(EditParam::length_scale, k_min_time_scale.value(), std::numeric_limits<double>::infinity());
-    clamp_to(EditParam::attack_time_scale, k_min_time_scale.value(), std::numeric_limits<double>::infinity());
+    clamp_to(EditParam::length_scale, k_min_time_scale.value(),
+             std::numeric_limits<double>::infinity());
+    clamp_to(EditParam::attack_time_scale, k_min_time_scale.value(),
+             std::numeric_limits<double>::infinity());
     if (fold.at(EditParam::fade_in) == 0.0 && fold.at(EditParam::fade_out) == 0.0) {
         fold.fade_shape = FadeShape::linear;
     }
@@ -170,10 +177,10 @@ EffectiveNote effective_state(const Note& note, const EditList& edits) {
     eff.fade_in = Seconds{fold.at(EditParam::fade_in)};
     eff.fade_out = Seconds{fold.at(EditParam::fade_out)};
     eff.fade_shape = fold.fade_shape;
-    eff.noise_gain = NoiseGains{Decibels{fold.at(EditParam::noise_gain_voiced)},
-                                Decibels{fold.at(EditParam::noise_gain_sibilant)},
-                                Decibels{fold.at(EditParam::noise_gain_breath)},
-                                Decibels{fold.at(EditParam::noise_gain_plosive)}};
+    eff.noise_gain = NoiseGains{.voiced = Decibels{fold.at(EditParam::noise_gain_voiced)},
+                                .sibilant = Decibels{fold.at(EditParam::noise_gain_sibilant)},
+                                .breath = Decibels{fold.at(EditParam::noise_gain_breath)},
+                                .plosive = Decibels{fold.at(EditParam::noise_gain_plosive)}};
     eff.onset_shift = Seconds{fold.at(EditParam::onset_shift)};
     eff.length_scale = Ratio{fold.at(EditParam::length_scale)};
     eff.handles = std::move(fold.handles);

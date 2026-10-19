@@ -31,22 +31,22 @@ struct NoiseGains {
 struct EffectiveNote {
     NoteId note_id;
 
-    Cents center{};                // analysed pitch_center + folded pitch offset, absolute
-    Ratio mod_scale{1.0};          // 1 = original, 0 = flat, -1 = inverted
+    Cents center{};        // analysed pitch_center + folded pitch offset, absolute
+    Ratio mod_scale{1.0};  // 1 = original, 0 = flat, -1 = inverted
     Ratio drift_scale{1.0};
     Ratio transition_in_scale{1.0};
     Ratio transition_out_scale{1.0};
     Cents formant_offset{};
     Decibels gain{};
-    Ratio within_note_flatten{};   // 0..1
-    Seconds fade_in{};             // >= 0
-    Seconds fade_out{};            // >= 0
+    Ratio within_note_flatten{};               // 0..1
+    Seconds fade_in{};                         // >= 0
+    Seconds fade_out{};                        // >= 0
     FadeShape fade_shape = FadeShape::linear;  // neutral value when both fades are 0
     NoiseGains noise_gain{};
-    Seconds onset_shift{};         // output position of the note start relative to its source
-    Ratio length_scale{1.0};       // >= k_min_time_scale
-    std::vector<TimePair> handles; // sorted by source
-    Ratio attack_time_scale{1.0};  // >= k_min_time_scale
+    Seconds onset_shift{};          // output position of the note start relative to its source
+    Ratio length_scale{1.0};        // >= k_min_time_scale
+    std::vector<TimePair> handles;  // sorted by source
+    Ratio attack_time_scale{1.0};   // >= k_min_time_scale
 
     /// False: the renderer passes the original audio through, bit-exact (CLAUDE.md rule 5).
     bool is_edited = false;

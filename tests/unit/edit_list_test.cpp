@@ -1,5 +1,4 @@
 #include "core/edits/edit_list.h"
-
 #include "support/test_data.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -9,9 +8,11 @@ using namespace anno::test;
 
 namespace {
 
-const WallTime k_t0{};
+constexpr WallTime k_t0{};
 
-EditList empty_list() { return EditList{TrackId{"t1"}}; }
+EditList empty_list() {
+    return EditList{TrackId{"t1"}};
+}
 
 EditList added(const EditList& list, std::vector<EditSpec> group) {
     return list.add(group, k_t0).value();
@@ -79,10 +80,10 @@ TEST_CASE("undo_and_redo_report_out_of_range_when_there_is_nothing_to_do", "[edi
 }
 
 TEST_CASE("add_after_undo_keeps_the_old_branch_as_history", "[edit_list]") {
-    EditList list = added(empty_list(), {pitch_add("a", 1)});    // seq 1
-    list = added(list, {pitch_add("a", 2)});                     // seq 2
+    EditList list = added(empty_list(), {pitch_add("a", 1)});  // seq 1
+    list = added(list, {pitch_add("a", 2)});                   // seq 2
     list = list.undo().value();
-    list = added(list, {pitch_add("a", 3)});                     // seq 3, seq 2 discarded
+    list = added(list, {pitch_add("a", 3)});  // seq 3, seq 2 discarded
     REQUIRE(list.active().size() == 2);
     CHECK(list.active()[1].seq == EditSeq{3});
     REQUIRE(list.discarded().size() == 1);
@@ -91,21 +92,41 @@ TEST_CASE("add_after_undo_keeps_the_old_branch_as_history", "[edit_list]") {
 }
 
 TEST_CASE("seqs_are_never_reused_across_double_branching", "[edit_list]") {
-    EditList list = added(empty_list(), {pitch_add("a", 1)});                   // 1 (A)
-    list = added(list, {pitch_add("a", 2)});                                    // 2 (B)
-    list = added(list, {pitch_add("a", 3)});                                    // 3 (C)
-    list = list.undo().value().undo().value();                                  // cursor at A
-    list = added(list, {pitch_add("a", 4)});                                    // 4 (D)
-    list = added(list, {pitch_add("a", 5), pitch_add("a", 6)});                 // 5,6 (E F)
-    list = list.undo().value();                                                 // cursor at D
-    list = added(list, {pitch_add("a", 7)});                                    // 7 (G)
+    EditList list = added(empty_list(), {pitch_add("a", 1)});    // 1 (A)
+    list = added(list, {pitch_add("a", 2)});                     // 2 (B)
+    list = added(list, {pitch_add("a", 3)});                     // 3 (C)
+    list = list.undo().value().undo().value();                   // cursor at A
+    list = added(list, {pitch_add("a", 4)});                     // 4 (D)
+    list = added(list, {pitch_add("a", 5), pitch_add("a", 6)});  // 5,6 (E F)
+    list = list.undo().value();                                  // cursor at D
+    list = added(list, {pitch_add("a", 7)});                     // 7 (G)
     std::vector<std::uint64_t> active;
-    for (const Edit& e : list.active()) active.push_back(e.seq.value);
+    for (const Edit& e : list.active()) {
+        active.push_back(e.seq.value);
+    }
     std::vector<std::uint64_t> dead;
-    for (const Edit& e : list.discarded()) dead.push_back(e.seq.value);
+    for (const Edit& e : list.discarded()) {
+        dead.push_back(e.seq.value);
+    }
     CHECK(active == std::vector<std::uint64_t>{1, 4, 7});
     CHECK(dead == std::vector<std::uint64_t>{2, 3, 5, 6});
     // The result must round-trip through from_parts (all invariants hold).
+    CHECK(EditList::from_parts(list.to_parts()).has_value());
+}
+
+TEST_CASE("discarded_stays_sorted_when_undo_goes_past_an_older_branch_point", "[edit_list]") {
+    // Regression: found by the history property test (edit_model_contract_test).
+    EditList list = added(empty_list(), {pitch_add("a", 1)});  // 1
+    list = added(list, {pitch_add("a", 2)});                   // 2
+    list = list.undo().value();
+    list = added(list, {pitch_add("a", 3)});    // 3; 2 discarded
+    list = list.undo().value().undo().value();  // cursor 0, tail [1, 3]
+    list = added(list, {pitch_add("a", 4)});    // 4; discarded 1, 2, 3
+    std::vector<std::uint64_t> dead;
+    for (const Edit& e : list.discarded()) {
+        dead.push_back(e.seq.value);
+    }
+    CHECK(dead == std::vector<std::uint64_t>{1, 2, 3});
     CHECK(EditList::from_parts(list.to_parts()).has_value());
 }
 
@@ -155,13 +176,13 @@ TEST_CASE("retargeted_rewrites_ids_and_orphans_the_rest", "[edit_list]") {
 TEST_CASE("retargeted_removes_duplicates_and_covers_every_partition", "[edit_list]") {
     EditList list = added(empty_list(), {pitch_add("a", 1)});
     list = added(list, {pitch_add("a", 2)});
-    list = list.undo().value();                 // seq 2 in the redo tail
-    list = added(list, {pitch_add("a", 3)});    // seq 2 -> discarded
+    list = list.undo().value();               // seq 2 in the redo tail
+    list = added(list, {pitch_add("a", 3)});  // seq 2 -> discarded
     list = added(list, {pitch_add("b", 4)});
-    list = list.undo().value();                 // seq 4 in the redo tail
+    list = list.undo().value();  // seq 4 in the redo tail
     NoteIdMap map;
     map[NoteId{"a"}] = {NoteId{"x"}};
-    map[NoteId{"b"}] = {NoteId{"x"}};            // merge: both point at x
+    map[NoteId{"b"}] = {NoteId{"x"}};  // merge: both point at x
     const EditList out = list.retargeted(map);
     CHECK(out.discarded()[0].spec.target.note_ids == std::vector<NoteId>{NoteId{"x"}});
     CHECK(out.redo_tail()[0].spec.target.note_ids == std::vector<NoteId>{NoteId{"x"}});
@@ -174,7 +195,8 @@ TEST_CASE("an_edit_targeting_two_notes_that_merge_lists_the_new_id_once", "[edit
     NoteIdMap map;
     map[NoteId{"a"}] = {NoteId{"m"}};
     map[NoteId{"b"}] = {NoteId{"m"}};
-    CHECK(list.retargeted(map).active()[0].spec.target.note_ids == std::vector<NoteId>{NoteId{"m"}});
+    CHECK(list.retargeted(map).active()[0].spec.target.note_ids ==
+          std::vector<NoteId>{NoteId{"m"}});
 }
 
 TEST_CASE("a_retargeted_list_with_orphan_only_edits_round_trips_through_parts", "[edit_list]") {
@@ -187,8 +209,8 @@ TEST_CASE("a_retargeted_list_with_orphan_only_edits_round_trips_through_parts", 
 }
 
 TEST_CASE("from_parts_rejects_broken_invariants", "[edit_list]") {
-    const EditList list = added(added(empty_list(), {pitch_add("a", 1), pitch_add("a", 2)}),
-                                {pitch_add("a", 3)});
+    const EditList list =
+        added(added(empty_list(), {pitch_add("a", 1), pitch_add("a", 2)}), {pitch_add("a", 3)});
     const EditListParts good = list.to_parts();
     REQUIRE(EditList::from_parts(good).has_value());
 

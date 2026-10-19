@@ -18,7 +18,9 @@ struct Span {
     SourceTime end;
 };
 
-SourceTime clamp_at_origin(SourceTime t) { return std::max(t, SourceTime{}); }
+SourceTime clamp_at_origin(SourceTime t) {
+    return std::max(t, SourceTime{});
+}
 
 /// Sorts and merges overlapping or touching spans into ranges.
 Result<std::vector<SourceRange>> merged(std::vector<Span> spans) {
@@ -40,7 +42,8 @@ Result<std::vector<SourceRange>> merged(std::vector<Span> spans) {
 
 Result<void> check_inputs(std::span<const Note> notes, const EditList& a, const EditList& b) {
     if (!(a.track_id() == b.track_id())) {
-        return fail(ErrorCode::invalid_argument, "dirty_regions: edit lists are for different tracks");
+        return fail(ErrorCode::invalid_argument,
+                    "dirty_regions: edit lists are for different tracks");
     }
     for (std::size_t i = 0; i < notes.size(); ++i) {
         if (!(notes[i].track_id == a.track_id())) {
@@ -55,8 +58,9 @@ Result<void> check_inputs(std::span<const Note> notes, const EditList& a, const 
 
 }  // namespace
 
-Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes, const EditList& old_edits,
-                                               const EditList& new_edits, const DirtyParams& params) {
+Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
+                                               const EditList& old_edits, const EditList& new_edits,
+                                               const DirtyParams& params) {
     if (auto r = check_inputs(notes, old_edits, new_edits); !r) {
         return Unexpected{r.error()};
     }
@@ -69,12 +73,12 @@ Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes, cons
         const EffectiveNote before = effective_state(note, old_edits);
         const EffectiveNote after = effective_state(note, new_edits);
         if (before != after) {
-            spans.push_back({clamp_at_origin(note.source_start - params.crossfade_margin),
-                             note.source_end + params.crossfade_margin});
+            spans.push_back({.start = clamp_at_origin(note.source_start - params.crossfade_margin),
+                             .end = note.source_end + params.crossfade_margin});
         }
         if (timing_differs(before, after)) {
-            spans.push_back({clamp_at_origin(previous_end - params.crossfade_margin),
-                             std::max(params.source_end, note.source_end)});
+            spans.push_back({.start = clamp_at_origin(previous_end - params.crossfade_margin),
+                             .end = std::max(params.source_end, note.source_end)});
         }
         previous_end = note.source_end;
     }

@@ -34,15 +34,15 @@ struct OnsetList {
 /// Harmonics of one note: matrices are frames x K (harmonic k = column k - 1).
 struct HarmonicTrack {
     FrameGrid grid;
-    FrameMatrix freq_hz;       // measured frequency of each harmonic
-    FrameMatrix amp_linear;    // linear amplitude
-    FrameMatrix phase_rad;     // radians, for phase-coherent resynthesis
+    FrameMatrix freq_hz;     // measured frequency of each harmonic
+    FrameMatrix amp_linear;  // linear amplitude
+    FrameMatrix phase_rad;   // radians, for phase-coherent resynthesis
 };
 
 /// Noise residual of one note.
 struct NoiseTrack {
     FrameGrid grid;
-    FrameMatrix band_energy_linear;     // frames x bands
+    FrameMatrix band_energy_linear;  // frames x bands
     std::vector<FrameClass> frame_class;
 };
 

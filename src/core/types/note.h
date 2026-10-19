@@ -23,14 +23,14 @@ struct Note {
 
     // All on the source axis. start <= attack_end <= release_start <= end.
     SourceTime source_start;
-    SourceTime attack_end;      // end of the transient/consonant
+    SourceTime attack_end;  // end of the transient/consonant
     SourceTime release_start;
     SourceTime source_end;
 
-    Cents perceived_pitch;      // musically weighted pitch (blob position), absolute
-    Cents pitch_center;         // stability-weighted centre, absolute
+    Cents perceived_pitch;  // musically weighted pitch (blob position), absolute
+    Cents pitch_center;     // stability-weighted centre, absolute
 
-    FrameGrid grid;                // grid of the three curves below
+    FrameGrid grid;                  // grid of the three curves below
     std::vector<Cents> pitch_drift;  // slow component, relative to pitch_center
     std::vector<Cents> pitch_mod;    // fast component (vibrato), relative to pitch_center
     std::vector<Decibels> amp;       // level over the note, dBFS

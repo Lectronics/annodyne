@@ -33,9 +33,9 @@ struct AnalysisResult {
     Algorithm algorithm = Algorithm::melodic;
     std::optional<PitchTrack> pitch;
     OnsetList onsets;
-    std::vector<Note> notes;  // sorted by source_start, then voice
+    std::vector<Note> notes;             // sorted by source_start, then voice
     std::optional<NoiseTrack> residual;  // energy not explained by any note (polyphonic)
-    Hz tuning_ref{440.0};     // detected reference for A4
+    Hz tuning_ref{440.0};                // detected reference for A4
 };
 
 /// Errors: invalid_argument if a note, track or the onset list is invalid, note ids are not

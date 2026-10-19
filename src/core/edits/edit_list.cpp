@@ -78,11 +78,8 @@ EditList::EditList(TrackId track) : track_{std::move(track)} {}
 
 EditList::EditList(TrackId track, std::vector<Edit> edits, std::size_t cursor,
                    std::vector<Edit> discarded, EditSeq next_seq)
-    : track_{std::move(track)},
-      edits_{std::move(edits)},
-      cursor_{cursor},
-      discarded_{std::move(discarded)},
-      next_seq_{next_seq} {
+    : track_{std::move(track)}, edits_{std::move(edits)}, cursor_{cursor},
+      discarded_{std::move(discarded)}, next_seq_{next_seq} {
     ANNO_ASSERT(cursor_ <= edits_.size());
 }
 
@@ -109,7 +106,11 @@ Result<EditList> EditList::from_parts(EditListParts parts) {
 }
 
 EditListParts EditList::to_parts() const {
-    return EditListParts{track_, edits_, cursor_, discarded_, next_seq_};
+    return EditListParts{.track = track_,
+                         .edits = edits_,
+                         .cursor = cursor_,
+                         .discarded = discarded_,
+                         .next_seq = next_seq_};
 }
 
 std::span<const Edit> EditList::active() const noexcept {
@@ -133,10 +134,14 @@ Result<EditList> EditList::add(std::span<const EditSpec> group, WallTime created
     std::vector<Edit> discarded = discarded_;
     discarded.insert(discarded.end(), edits_.begin() + static_cast<std::ptrdiff_t>(cursor_),
                      edits_.end());
+    // The tail can hold older seqs than earlier branches (undo past an old branch point), and
+    // groups occupy consecutive seqs, so sorting keeps both the order and the group runs.
+    std::ranges::sort(discarded, {}, &Edit::seq);
     std::uint64_t seq = next_seq_.value;
     const GroupId group_id{seq};
     for (const EditSpec& spec : group) {
-        edits.push_back(Edit{EditSeq{seq++}, group_id, created_at, spec});
+        edits.push_back(
+            Edit{.seq = EditSeq{seq++}, .group = group_id, .created_at = created_at, .spec = spec});
     }
     const std::size_t cursor = edits.size();
     return EditList{track_, std::move(edits), cursor, std::move(discarded), EditSeq{seq}};

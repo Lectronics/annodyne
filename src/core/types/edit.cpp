@@ -15,18 +15,50 @@ namespace {
 constexpr double k_inf = std::numeric_limits<double>::infinity();
 
 constexpr ParamInfo offset_row(EditParam p, EditCategory c, ValueKind k, double min = -k_inf) {
-    return {p, c, k, true, false, 0.0, min, k_inf, -k_inf};
+    return {.param = p,
+            .category = c,
+            .kind = k,
+            .allows_add = true,
+            .allows_scale = false,
+            .neutral = 0.0,
+            .set_min = min,
+            .set_max = k_inf,
+            .scale_min = -k_inf};
 }
 constexpr ParamInfo multiplier_row(EditParam p, EditCategory c, double min, double max,
                                    double scale_min) {
-    return {p, c, ValueKind::ratio, false, true, 1.0, min, max, scale_min};
+    return {.param = p,
+            .category = c,
+            .kind = ValueKind::ratio,
+            .allows_add = false,
+            .allows_scale = true,
+            .neutral = 1.0,
+            .set_min = min,
+            .set_max = max,
+            .scale_min = scale_min};
 }
 /// An amount in [min, max] with neutral 0: set only (scaling a neutral 0 means nothing).
 constexpr ParamInfo amount_row(EditParam p, EditCategory c, double min, double max) {
-    return {p, c, ValueKind::ratio, false, false, 0.0, min, max, -k_inf};
+    return {.param = p,
+            .category = c,
+            .kind = ValueKind::ratio,
+            .allows_add = false,
+            .allows_scale = false,
+            .neutral = 0.0,
+            .set_min = min,
+            .set_max = max,
+            .scale_min = -k_inf};
 }
 constexpr ParamInfo keyed_row(EditParam p, EditCategory c, ValueKind k) {
-    return {p, c, k, false, false, 0.0, -k_inf, k_inf, -k_inf};
+    return {.param = p,
+            .category = c,
+            .kind = k,
+            .allows_add = false,
+            .allows_scale = false,
+            .neutral = 0.0,
+            .set_min = -k_inf,
+            .set_max = k_inf,
+            .scale_min = -k_inf};
 }
 
 constexpr double k_min_scale = 1e-3;  // k_min_time_scale.value(); constexpr-friendly copy
@@ -69,20 +101,26 @@ std::optional<double> number_of(const EditValue& value) {
 
 bool kind_matches(ValueKind kind, const EditValue& value) {
     switch (kind) {
-        case ValueKind::cents: return std::holds_alternative<Cents>(value);
-        case ValueKind::ratio: return std::holds_alternative<Ratio>(value);
-        case ValueKind::decibels: return std::holds_alternative<Decibels>(value);
-        case ValueKind::seconds: return std::holds_alternative<Seconds>(value);
-        case ValueKind::fade_shape: return std::holds_alternative<FadeShape>(value);
-        case ValueKind::time_pair: return std::holds_alternative<TimePair>(value);
+    case ValueKind::cents: return std::holds_alternative<Cents>(value);
+    case ValueKind::ratio: return std::holds_alternative<Ratio>(value);
+    case ValueKind::decibels: return std::holds_alternative<Decibels>(value);
+    case ValueKind::seconds: return std::holds_alternative<Seconds>(value);
+    case ValueKind::fade_shape: return std::holds_alternative<FadeShape>(value);
+    case ValueKind::time_pair: return std::holds_alternative<TimePair>(value);
     }
     return false;
 }
 
 std::optional<double> scalar_of(const EditValue& value) {
-    if (auto v = number_of<Cents>(value)) return v;
-    if (auto v = number_of<Ratio>(value)) return v;
-    if (auto v = number_of<Decibels>(value)) return v;
+    if (auto v = number_of<Cents>(value)) {
+        return v;
+    }
+    if (auto v = number_of<Ratio>(value)) {
+        return v;
+    }
+    if (auto v = number_of<Decibels>(value)) {
+        return v;
+    }
     return number_of<Seconds>(value);
 }
 
@@ -179,11 +217,11 @@ Result<void> validate_for_add(const EditSpec& spec) {
 
 Decibels noise_gain(const NoiseGains& gains, FrameClass frame_class) noexcept {
     switch (frame_class) {
-        case FrameClass::voiced: return gains.voiced;
-        case FrameClass::sibilant: return gains.sibilant;
-        case FrameClass::breath: return gains.breath;
-        case FrameClass::plosive: return gains.plosive;
-        case FrameClass::silence: break;
+    case FrameClass::voiced: return gains.voiced;
+    case FrameClass::sibilant: return gains.sibilant;
+    case FrameClass::breath: return gains.breath;
+    case FrameClass::plosive: return gains.plosive;
+    case FrameClass::silence: break;
     }
     return Decibels{0.0};
 }

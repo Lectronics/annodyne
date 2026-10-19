@@ -1,5 +1,4 @@
 #include "core/types/analysis_result.h"
-
 #include "core/types/frame_grid.h"
 #include "core/types/note.h"
 #include "core/types/tracks.h"
@@ -8,6 +7,7 @@
 #include <cmath>
 #include <set>
 #include <string>
+#include <utility>
 
 namespace anno {
 
@@ -17,13 +17,17 @@ Unexpected invalid(std::string message) {
     return fail(ErrorCode::invalid_argument, std::move(message));
 }
 
-bool is_prob(double p) { return p >= 0.0 && p <= 1.0; }  // false for NaN
+bool is_prob(double p) {
+    return p >= 0.0 && p <= 1.0;
+}  // false for NaN
 
-bool all_prob(const std::vector<double>& values) { return std::ranges::all_of(values, is_prob); }
+bool all_prob(const std::vector<double>& values) {
+    return std::ranges::all_of(values, is_prob);
+}
 
 /// A frame-aligned array/matrix has exactly grid.n_frames entries; an empty track has none.
 bool matches(const FrameGrid& grid, std::size_t size) {
-    return static_cast<std::int64_t>(size) == grid.n_frames;
+    return std::cmp_equal(size, grid.n_frames);
 }
 
 bool matrix_matches(const FrameGrid& grid, const FrameMatrix& m) {
@@ -61,7 +65,8 @@ Result<void> validate(const PitchTrack& track) {
     if (auto r = validate(track.grid); !r) {
         return r;
     }
-    if (!matches(track.grid, track.f0.size()) || !matches(track.grid, track.confidence_prob.size()) ||
+    if (!matches(track.grid, track.f0.size()) ||
+        !matches(track.grid, track.confidence_prob.size()) ||
         !matches(track.grid, track.voicing_prob.size())) {
         return invalid("pitch track arrays must have grid.n_frames entries");
     }
@@ -77,7 +82,8 @@ Result<void> validate(const PitchTrack& track) {
 }
 
 Result<void> validate(const OnsetList& onsets) {
-    if (onsets.strength.size() != onsets.times.size() || onsets.kind.size() != onsets.times.size()) {
+    if (onsets.strength.size() != onsets.times.size() ||
+        onsets.kind.size() != onsets.times.size()) {
         return invalid("onset list arrays must have equal length");
     }
     if (!std::ranges::all_of(onsets.strength, [](double v) { return v >= 0.0; })) {
@@ -131,7 +137,7 @@ Result<void> validate(const EnvelopeTrack& track) {
         return invalid("envelope matrix must have grid.n_frames rows");
     }
     if (track.log_mag_db.rows > 0 &&
-        track.log_mag_db.cols != static_cast<std::int64_t>(track.freqs.size())) {
+        std::cmp_not_equal(track.log_mag_db.cols, track.freqs.size())) {
         return invalid("envelope matrix columns must equal the number of frequencies");
     }
     return {};
@@ -162,8 +168,8 @@ Result<void> validate(const Note& note) {
     if (auto r = validate(note.grid); !r) {
         return r;
     }
-    if (!matches(note.grid, note.pitch_drift.size()) || !matches(note.grid, note.pitch_mod.size()) ||
-        !matches(note.grid, note.amp.size())) {
+    if (!matches(note.grid, note.pitch_drift.size()) ||
+        !matches(note.grid, note.pitch_mod.size()) || !matches(note.grid, note.amp.size())) {
         return invalid("note curves must have grid.n_frames entries");
     }
     if (!grid_empty_or_equal(note.harmonics.grid, note.grid) ||

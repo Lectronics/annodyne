@@ -43,7 +43,7 @@ inline EditSpec make_spec(const std::string& note_id, EditCategory category,
     spec.category = category;
     spec.param = param;
     spec.op = op;
-    spec.value = std::move(value);
+    spec.value = value;
     return spec;
 }
 
