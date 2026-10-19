@@ -71,9 +71,9 @@ Edge cases: an empty source gives an empty valid track; a source shorter than th
 ```cpp
 struct OnsetParams {
     Seconds hop{0.005};                     // rounded to whole samples; onset times use the actual hop (hop_samples / rate)
-    int n_fft = 2048;                       // at 44.1/48 kHz; scaled with the sample rate to ~43 ms
+    Seconds window{0.043};                  // STFT window; n_fft = the power of two nearest to window * rate (2048 at 44.1/48 kHz)
     int filterbank_bands_per_octave = 24;   // log-spaced triangular filters 27.5 Hz..16 kHz (SuperFlux)
-    double log_lambda = 1.0;                // log(1 + lambda * |X|)
+    double log_lambda = 1000.0;             // log(1 + lambda * |X|) on magnitudes of a [-1, 1] signal: strong compression, so quiet and loud onsets give comparable activation
     int max_filter_bins = 3;                // frequency max filter (vibrato suppression)
     Seconds lag{0.015};                     // difference lag (>= 2 frames)
     Seconds threshold_window{0.5};          // adaptive threshold: local mean + delta * local spread
@@ -81,7 +81,8 @@ struct OnsetParams {
     Seconds min_gap{0.030};
     Cents pitch_change_threshold{80.0};     // f0 step between stable regions counted as an onset
     Seconds pitch_stable{0.040};            // each side of a step must be stable this long
-    Seconds refine_window{0.010};           // energy-slope refinement search before the peak
+    Seconds refine_window{0.025};           // the energy-slope refinement searches +- this around the activation peak (the peak lags the true onset by up to half the STFT window)
+    double min_activation = 0.15;           // absolute floor on the activation (mean positive log-difference per band) so silence and noise ripple cannot trigger
 };
 
 /// Errors: invalid_argument (bad params), out_of_range from the source.
@@ -89,7 +90,7 @@ struct OnsetParams {
 [[nodiscard]] Result<OnsetList> detect_onsets(const AudioSource& src, const OnsetParams& params);          // spectral onsets only
 [[nodiscard]] Result<OnsetList> detect_onsets(const AudioSource& src, const PitchTrack& pitch, const OnsetParams& params);  // plus pitch-change onsets and voicing-based kinds
 ```
-Method (Böck & Widmer 2013, SuperFlux): STFT (hop = `hop`) → log-filterbank magnitude → frequency max filter over `max_filter_bins` → positive lagged difference summed over bands → **level-independent** normalisation (divide by a local floor, so quiet passages are not missed) → adaptive-threshold peak picking with `min_gap` → refinement of each peak to the point of steepest RMS rise within `refine_window` before it (sample-accurate attacks). **Pitch-change onsets**: from the pitch track, a step of ≥ `pitch_change_threshold` between two regions each stable for `pitch_stable` is a legato note change (`OnsetKind::pitch_change`). Strength scale: **both kinds are normalised so 1.0 is the detection threshold** (spectral: ODF / adaptive threshold; pitch change: step_cents / `pitch_change_threshold`), which makes "the stronger is kept" meaningful when a spectral onset lies within `min_gap` of a pitch-change onset (the spectral kind wins ties because it carries the sample-accurate time). `OnsetKind::attack`/`consonant` is decided by the voicing probability of the frame before the onset: < 0.5 (unvoiced) → consonant, else attack; **without a pitch track every spectral onset is `attack`** (no voicing data; `consonant` classification needs the pitch overload). The interaction with the note HMM (which has its own 33-cent bins) is tested end to end: a legato step must give two notes. Phoneme cues (`OnsetKind::phoneme`) are not produced in Phase 3.
+Method (Böck & Widmer 2013, SuperFlux): STFT (hop = `hop`) → log-filterbank magnitude → frequency max filter over `max_filter_bins` → positive lagged difference summed over bands → **level-independent** normalisation (divide by a local floor, so quiet passages are not missed) → adaptive-threshold peak picking with `min_gap` → refinement of each peak to the point of steepest short-window log-energy rise within `refine_window` around it (sample-accurate attacks). The activation is the **mean** (not sum) positive log-difference over the bands, so its scale does not depend on the filterbank size. **Pitch-change onsets**: from the pitch track, a step of ≥ `pitch_change_threshold` between two regions each stable for `pitch_stable` is a legato note change (`OnsetKind::pitch_change`). Strength scale: **both kinds are normalised so 1.0 is the detection threshold** (spectral: ODF / adaptive threshold; pitch change: step_cents / `pitch_change_threshold`), which makes "the stronger is kept" meaningful when a spectral onset lies within `min_gap` of a pitch-change onset (the spectral kind wins ties because it carries the sample-accurate time). `OnsetKind::attack`/`consonant` is decided by the voicing probability of the pitch frame 20 ms AFTER the onset (the sound that follows): < 0.5 (unvoiced, noisy start such as s, t, sh) → consonant, else attack (a silent frame before the onset says nothing about the note); **without a pitch track every spectral onset is `attack`** (no voicing data; `consonant` classification needs the pitch overload). The interaction with the note HMM (which has its own 33-cent bins) is tested end to end: a legato step must give two notes. Phoneme cues (`OnsetKind::phoneme`) are not produced in Phase 3.
 
 Output: `OnsetList` sorted by time, parallel arrays valid per `validate`; `strength` is the normalised ODF value at the peak (≥ 0).
 

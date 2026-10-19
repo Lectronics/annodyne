@@ -106,3 +106,4 @@ anno_cli_exit_test(render_timing_edit_exits_1 1
 anno_add_test(NAME dsp_window_fft_stft_test SOURCES dsp_window_fft_stft_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight_interp_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME pitch_test SOURCES pitch_test.cpp LABELS unit DEPS anno::core_analysis_pitch)
+anno_add_test(NAME onsets_test SOURCES onsets_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_pitch)
