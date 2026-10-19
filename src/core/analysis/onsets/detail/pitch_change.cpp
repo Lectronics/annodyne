@@ -1,4 +1,4 @@
-#include "core/analysis/onsets/pitch_change.h"
+#include "core/analysis/onsets/detail/pitch_change.h"
 
 #include <algorithm>
 #include <cmath>

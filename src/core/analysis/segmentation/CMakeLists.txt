@@ -1,6 +1,6 @@
 anno_add_library(core/analysis/segmentation
     SOURCES
-        note_hmm.cpp
+        detail/note_hmm.cpp
         segmentation.cpp
     PUBLIC_DEPS anno::core_types)
 # Bit-for-bit reproducible results on one build: no fused multiply-add (same rule as core/dsp).

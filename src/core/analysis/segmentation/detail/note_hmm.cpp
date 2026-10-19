@@ -1,4 +1,6 @@
-#include "core/analysis/segmentation/note_hmm.h"
+#include "core/analysis/segmentation/detail/note_hmm.h"
+
+#include "core/types/index.h"
 
 #include <algorithm>
 #include <cassert>
@@ -23,10 +25,6 @@ constexpr int k_near_reach =
 constexpr int k_near_bins = 2 * k_near_reach + 1;
 constexpr double k_new_near_share = 0.8;
 constexpr double k_new_far_share = 0.2;
-
-std::size_t idx(int i) {
-    return static_cast<std::size_t>(i);
-}
 
 double neg_log(double p) {
     return -std::log(std::max(p, 1e-300));

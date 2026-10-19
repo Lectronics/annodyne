@@ -29,6 +29,7 @@ Result<std::string> run_analyse(const AnalyseArgs& args) {
         std::ofstream out{*args.json, std::ios::binary};
         out << analysis_to_json(**analysis, {.include_pitch_track = args.pitch_track_in_json,
                                              .source_duration_s = duration});
+        out.close();
         if (!out) {
             return fail(ErrorCode::io_error, "cannot write " + args.json->string());
         }

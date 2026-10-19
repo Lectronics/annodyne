@@ -10,6 +10,7 @@ namespace anno {
 namespace {
 
 constexpr Cents k_not_yet_perceived{0.0};
+constexpr double k_min_source_rate_hz = 4000.0;  // K-weighting design limit (core/dsp/k_weight.h)
 
 /// Adds the stage name to an error.
 Unexpected stage_error(const char* stage, const Error& e) {
@@ -61,6 +62,10 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     if (params.algorithm != Algorithm::melodic) {
         return fail(ErrorCode::not_implemented,
                     "analyse: only the melodic algorithm exists so far");
+    }
+    if (src.sample_rate().value() < k_min_source_rate_hz) {
+        return fail(ErrorCode::invalid_argument,
+                    "analyse: the source sample rate must be at least 4 kHz");
     }
     auto mono = read_mono(src);
     if (!mono) {

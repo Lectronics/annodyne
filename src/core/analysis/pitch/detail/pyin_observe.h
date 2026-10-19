@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/types/index.h"
 #include "core/types/units.h"
 
 #include <cstddef>
@@ -9,11 +10,6 @@
 // Internal to core/analysis/pitch. Design: docs/design/phase3-pitch-onsets.md.
 
 namespace anno {
-
-/// Index of a non-negative int (vectors indexed by lag, bin or frame).
-constexpr std::size_t idx(int i) {
-    return static_cast<std::size_t>(i);
-}
 
 /// One f0 hypothesis in a frame.
 struct Candidate {

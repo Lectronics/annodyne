@@ -182,3 +182,21 @@ TEST_CASE("other_algorithms_and_bad_parameters_are_errors", "[analyse]") {
     CHECK(bad.error().code == ErrorCode::invalid_argument);
     CHECK(bad.error().message.find("pitch") != std::string::npos);  // names the stage
 }
+
+TEST_CASE("low_sample_rates_and_tiny_sources", "[analyse]") {
+    for (const double rate : {8000.0, 16000.0}) {
+        std::vector<double> starts;
+        const auto x = melody({note(262.0, 0.5, 0.4), note(330.0, 0.5, 0.4)}, rate, starts);
+        const auto result = analyse(source_of(x, rate), AnalyseParams{}).value();
+        require_complete(*result);
+        CHECK(result->notes.size() == 2);
+    }
+    const auto tiny =
+        analyse(source_of(make_sine(220.0, 0.02, 44100.0), 44100.0), AnalyseParams{}).value();
+    CHECK(validate(*tiny).has_value());
+    CHECK(tiny->notes.empty());
+    // below 4 kHz: refused, naming the limit
+    const auto too_low = analyse(source_of(make_sine(100.0, 0.5, 3000.0), 3000.0), AnalyseParams{});
+    REQUIRE_FALSE(too_low.has_value());
+    CHECK(too_low.error().code == ErrorCode::invalid_argument);
+}

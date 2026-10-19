@@ -61,7 +61,7 @@ void run(const Biquad& q, std::vector<double>& x) {
 }  // namespace
 
 std::vector<float> k_weight(std::span<const float> mono, Hz sample_rate) {
-    assert(std::isfinite(sample_rate.value()) && sample_rate.value() > 0.0);
+    assert(std::isfinite(sample_rate.value()) && sample_rate.value() >= 4000.0);
     std::vector<double> x(mono.begin(), mono.end());
     run(shelf(sample_rate.value()), x);
     run(high_pass(sample_rate.value()), x);

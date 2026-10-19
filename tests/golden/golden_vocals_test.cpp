@@ -6,6 +6,7 @@
 #include "core/analysis/orchestrator/analyse.h"
 #include "core/io/wav.h"
 #include "support/analysis_metrics.h"
+#include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,11 +21,6 @@ using namespace anno::test;
 namespace fs = std::filesystem;
 
 namespace {
-
-constexpr double k_onset_window_s = 0.020;
-constexpr double k_min_onset_f = 0.9;
-constexpr double k_note_pitch_tolerance_cents =
-    50.0;  // the hand-checked lists are good to +-0.5 semitone
 
 struct Recording {
     fs::path wav;
@@ -93,18 +89,19 @@ TEST_CASE("every_golden_recording_matches_its_hand_checked_notes_and_pitch_spots
         for (const Note& n : (*analysis)->notes) {
             estimated_starts.push_back(sec(n.source_start));
         }
-        const auto onset = score_onsets(estimated_starts, reference_starts, k_onset_window_s);
+        const auto onset =
+            score_onsets(estimated_starts, reference_starts, tolerance::k_onset_golden.value());
         INFO("onset F " << onset.f_measure() << " precision " << onset.precision() << " recall "
                         << onset.recall());
-        CHECK(onset.f_measure() >= k_min_onset_f);
+        CHECK(onset.f_measure() >= tolerance::k_onset_golden_f_min);
 
         // matched notes: the perceived pitch is within the hand-checked tolerance
         for (const auto& ref : notes) {
             for (const Note& n : (*analysis)->notes) {
                 if (std::abs(sec(n.source_start) - ref["start_s"].get<double>()) <=
-                    k_onset_window_s) {
+                    tolerance::k_onset_golden.value()) {
                     CHECK(std::abs(n.perceived_pitch.value() - ref["midi"].get<double>() * 100.0) <=
-                          k_note_pitch_tolerance_cents);
+                          tolerance::k_golden_note_pitch.value());
                 }
             }
         }
@@ -119,8 +116,9 @@ TEST_CASE("every_golden_recording_matches_its_hand_checked_notes_and_pitch_spots
             INFO("spot at " << t << " s, midi " << spot["midi"].get<double>());
             REQUIRE_FALSE(std::isnan(est));
             const double error = est - spot["midi"].get<double>() * 100.0;
-            CHECK(std::abs(error) <= 50.0);
-            CHECK(std::abs(std::abs(error) - 1200.0) > 50.0);  // never an octave off
+            CHECK(std::abs(error) <= tolerance::k_golden_note_pitch.value());
+            CHECK(std::abs(std::abs(error) - 1200.0) >
+                  tolerance::k_golden_note_pitch.value());  // never an octave off
         }
     }
 }

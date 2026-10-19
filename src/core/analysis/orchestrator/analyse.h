@@ -41,7 +41,8 @@ struct AnalyseParams {
 /// Every per-note stage is guaranteed to succeed for a span segment_notes returned (at least 10
 /// pitch frames, voiced); if one fails anyway the whole analysis fails with the note id in the
 /// message (a bug, never silently dropped). Errors: not_implemented (algorithm other than melodic),
-/// invalid_argument (bad params), or any stage's error (the message names the stage). The source is
+/// invalid_argument (bad params, or a source rate below 4 kHz: the loudness K-weighting needs it
+/// and pitch needs twice max_f0), or any stage's error (the message names the stage). The source is
 /// never modified. The same source and params give a bit-identical result on the same build. Pure;
 /// thread-safe; not real-time safe. A cancel token (spec §4 EngineContext) is not needed yet and
 /// arrives with the Phase 9 scheduler.

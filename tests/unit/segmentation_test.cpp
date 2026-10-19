@@ -1,4 +1,5 @@
 #include "core/analysis/onsets/onsets.h"
+#include "core/analysis/perceived_pitch/perceived_pitch.h"
 #include "core/analysis/pitch/pitch_estimator.h"
 #include "core/analysis/segmentation/segmentation.h"
 #include "support/synth_melody.h"
@@ -6,8 +7,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <random>
 
 using namespace anno;
 using namespace anno::test;
@@ -201,5 +204,43 @@ TEST_CASE("estimated_pitch_and_onsets_segment_a_sung_melody", "[segmentation]") 
         CHECK(std::abs(sec(notes[i].source_start) - starts[i]) <= 0.02);
         CHECK(std::abs(notes[i].rough_pitch.value() -
                        to_cents(Hz{notes_hz[i].first}, Hz{440.0}).value()) <= 10.0);
+    }
+}
+
+TEST_CASE("every_segmented_note_can_be_described_on_messy_tracks", "[segmentation]") {
+    // Random voicing patches, jittery and jumping f0, random onsets: whatever segment_notes
+    // returns, the description stages must accept (the orchestrator aborts the whole analysis on
+    // one failure).
+    for (int seed = 0; seed < 150; ++seed) {
+        INFO("seed " << seed);
+        std::mt19937_64 rng{static_cast<std::uint64_t>(seed)};
+        std::uniform_real_distribution<double> unit{0.0, 1.0};
+        PitchTrack track = make_track({}, 4.0);
+        bool voiced = false;
+        double midi = 60.0;
+        for (std::size_t i = 0; i < track.f0.size(); ++i) {
+            if (unit(rng) < 0.03) {
+                voiced = !voiced;
+            }
+            if (unit(rng) < 0.02) {
+                midi = 50.0 + 20.0 * unit(rng);
+            }
+            track.voicing_prob[i] = voiced ? 0.9 : 0.1;
+            track.confidence_prob[i] = 0.9;
+            track.f0[i] = (voiced && unit(rng) > 0.1)
+                              ? Cents{midi * 100.0 + 40.0 * (unit(rng) - 0.5)}
+                              : Cents{std::nan("")};
+        }
+        std::vector<double> onset_times;
+        onset_times.reserve(8);
+        for (int k = 0; k < 8; ++k) {
+            onset_times.push_back(4.0 * unit(rng));
+        }
+        std::ranges::sort(onset_times);
+        const auto spans = segment_notes(track, make_onsets(onset_times), SegmentParams{}).value();
+        for (const NoteSpan& span : spans) {
+            REQUIRE(note_grid(span, track.grid).n_frames >= 10);
+            REQUIRE(decompose_pitch_curve(span, track, {}, {}).has_value());
+        }
     }
 }

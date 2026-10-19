@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/analysis/segmentation/segmentation.h"
 #include "core/types/note.h"
+#include "core/types/note_span.h"
 #include "core/types/result.h"
 #include "core/types/tracks.h"
 #include "core/types/units.h"

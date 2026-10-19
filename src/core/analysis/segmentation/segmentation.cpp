@@ -1,6 +1,6 @@
 #include "core/analysis/segmentation/segmentation.h"
 
-#include "core/analysis/segmentation/note_hmm.h"
+#include "core/analysis/segmentation/detail/note_hmm.h"
 
 #include <algorithm>
 #include <cmath>
@@ -8,13 +8,13 @@
 #include <numeric>
 #include <optional>
 #include <set>
+#include <utility>
 
 namespace anno {
 
 namespace {
 
 constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
-constexpr double k_voiced_edge = 0.5;  // voicing_prob counted as voiced
 constexpr double k_smooth_reach_cents =
     120.0;                                // frames this close to the centre frame are averaged
 constexpr double k_onset_zone_s = 0.030;  // an onset this close to a note's start snaps the start
@@ -43,10 +43,6 @@ Result<void> validate_params(const SegmentParams& p) {
     return {};
 }
 
-bool voiced(const PitchTrack& pitch, std::size_t i) {
-    return !std::isnan(pitch.f0[i].value()) && pitch.voicing_prob[i] >= k_voiced_edge;
-}
-
 /// Moving mean of f0 over the window, using only the voiced frames within `k_smooth_reach_cents` of
 /// the frame's own value: a vibrato is averaged, a note change is not blurred.
 std::vector<double> smooth_f0(const PitchTrack& pitch, Seconds window) {
@@ -55,14 +51,15 @@ std::vector<double> smooth_f0(const PitchTrack& pitch, Seconds window) {
         std::max(1L, std::lround(window.value() / pitch.grid.hop.value() / 2.0)));
     std::vector<double> out(n, k_nan);
     for (std::size_t t = 0; t < n; ++t) {
-        if (!voiced(pitch, t)) {
+        if (!is_voiced(pitch, t)) {
             continue;
         }
         const double own = pitch.f0[t].value();
         double sum = 0.0;
         int count = 0;
         for (std::size_t k = t > half ? t - half : 0; k < std::min(n, t + half + 1); ++k) {
-            if (voiced(pitch, k) && std::abs(pitch.f0[k].value() - own) <= k_smooth_reach_cents) {
+            if (is_voiced(pitch, k) &&
+                std::abs(pitch.f0[k].value() - own) <= k_smooth_reach_cents) {
                 sum += pitch.f0[k].value();
                 ++count;
             }
@@ -200,7 +197,7 @@ std::vector<Draft> make_drafts(const PitchTrack& pitch, const std::vector<double
         std::optional<std::size_t> last;
         std::vector<double> values;
         for (std::size_t t = run.first; t <= run.last; ++t) {
-            if (voiced(pitch, t)) {
+            if (is_voiced(pitch, t)) {
                 first = first ? *first : t;
                 last = t;
                 values.push_back(smoothed[t]);
@@ -247,7 +244,7 @@ Statistics note_statistics(const PitchTrack& pitch, const std::vector<double>& s
     int voiced_frames = 0;
     for (std::size_t t = d.frames.first; t <= d.frames.last; ++t) {
         voicing_sum += pitch.voicing_prob[t];
-        if (!voiced(pitch, t)) {
+        if (!is_voiced(pitch, t)) {
             continue;
         }
         ++voiced_frames;
@@ -282,23 +279,57 @@ std::pair<double, double> attack_and_release(const PitchTrack& pitch,
     return {attack_end, std::clamp(time_of(pitch.grid, *out) + hop, attack_end, d.end_s)};
 }
 
-}  // namespace
-
-FrameGrid note_grid(const NoteSpan& span, const FrameGrid& pitch_grid) {
-    constexpr double k_eps = 1e-9;
-    const double hop = pitch_grid.hop.value();
-    const double start = (span.source_start - pitch_grid.start).value() / hop;
-    const double end = (span.source_end - pitch_grid.start).value() / hop;
-    const auto first =
-        std::max<std::int64_t>(0, static_cast<std::int64_t>(std::ceil(start - k_eps)));
-    const auto stop = std::min<std::int64_t>(pitch_grid.n_frames,
-                                             static_cast<std::int64_t>(std::ceil(end - k_eps)));
-    return FrameGrid{
-        .hop = pitch_grid.hop,
-        .start = frame_time(pitch_grid,
-                            std::min(first, std::max<std::int64_t>(0, pitch_grid.n_frames - 1))),
-        .n_frames = std::max<std::int64_t>(0, stop - first)};
+/// The HMM input of a track: the smoothed f0, the voicing, the per-frame new-note probability and
+/// the pitch bins covering the voiced range; empty if no frame is voiced.
+std::optional<NoteHmmInput> build_hmm_input(const PitchTrack& pitch, const OnsetList& onsets,
+                                            const std::vector<double>& smoothed,
+                                            const SegmentParams& params) {
+    std::vector<double> voiced_cents;
+    for (std::size_t t = 0; t < pitch.f0.size(); ++t) {
+        if (is_voiced(pitch, t)) {
+            voiced_cents.push_back(pitch.f0[t].value());
+        }
+    }
+    if (voiced_cents.empty()) {
+        return std::nullopt;
+    }
+    const auto [lo_it, hi_it] = std::ranges::minmax_element(voiced_cents);
+    const double margin = 2.0 * params.note_bin_cents;
+    NoteHmmInput input;
+    input.smoothed_cents = smoothed;
+    input.voicing_prob = pitch.voicing_prob;
+    input.new_note_prob =
+        new_note_probability(pitch, onsets, params.new_note_prob, params.onset_new_note_prob);
+    input.min_cents = *lo_it - margin;
+    input.bin_cents = params.note_bin_cents;
+    input.bin_count =
+        static_cast<int>(std::ceil((*hi_it - *lo_it + 2.0 * margin) / params.note_bin_cents)) + 1;
+    return input;
 }
+
+/// Drops notes that the later stages could not describe: fewer than `min_frames` pitch frames
+/// inside [start, end) after the times were snapped and clamped, or fewer than 3 voiced ones.
+void drop_unusable(std::vector<Draft>& drafts, const PitchTrack& pitch, std::size_t min_frames) {
+    constexpr std::int64_t k_min_voiced = 3;
+    std::erase_if(drafts, [&](const Draft& d) {
+        NoteSpan probe;
+        probe.source_start = SourceTime{} + Seconds{d.start_s};
+        probe.source_end = SourceTime{} + Seconds{d.end_s};
+        const FrameGrid grid = note_grid(probe, pitch.grid);
+        if (std::cmp_less(grid.n_frames, min_frames)) {
+            return true;
+        }
+        const auto first = static_cast<std::size_t>(
+            std::llround((grid.start - pitch.grid.start).value() / pitch.grid.hop.value()));
+        std::int64_t voiced = 0;
+        for (std::int64_t i = 0; i < grid.n_frames; ++i) {
+            voiced += is_voiced(pitch, first + static_cast<std::size_t>(i)) ? 1 : 0;
+        }
+        return voiced < k_min_voiced;
+    });
+}
+
+}  // namespace
 
 Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const OnsetList& onsets,
                                             const SegmentParams& params) {
@@ -316,32 +347,14 @@ Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const Onset
     std::vector<NoteSpan> notes;
     const std::size_t n = pitch.f0.size();
     const double hop = pitch.grid.hop.value();
-    std::vector<double> voiced_cents;
-    for (std::size_t t = 0; t < n; ++t) {
-        if (voiced(pitch, t)) {
-            voiced_cents.push_back(pitch.f0[t].value());
-        }
-    }
-    if (voiced_cents.empty()) {
-        return notes;
-    }
-
-    // 1. HMM over vibrato-smoothed f0.
     const std::vector<double> smoothed = smooth_f0(pitch, params.vibrato_smooth);
-    const auto [lo_it, hi_it] = std::ranges::minmax_element(voiced_cents);
-    const double margin = 2.0 * params.note_bin_cents;
-    NoteHmmInput input;
-    input.smoothed_cents = smoothed;
-    input.voicing_prob = pitch.voicing_prob;
-    input.new_note_prob =
-        new_note_probability(pitch, onsets, params.new_note_prob, params.onset_new_note_prob);
-    input.min_cents = *lo_it - margin;
-    input.bin_cents = params.note_bin_cents;
-    input.bin_count =
-        static_cast<int>(std::ceil((*hi_it - *lo_it + 2.0 * margin) / params.note_bin_cents)) + 1;
-    std::vector<NoteRun> runs = decode_note_runs(input, params);
+    const std::optional<NoteHmmInput> input = build_hmm_input(pitch, onsets, smoothed, params);
+    if (!input) {
+        return notes;  // nothing voiced
+    }
 
-    // 2. Short runs are absorbed or dropped.
+    // 1. HMM over vibrato-smoothed f0; 2. short runs are absorbed or dropped.
+    std::vector<NoteRun> runs = decode_note_runs(*input, params);
     const auto min_frames = static_cast<std::size_t>(
         std::max<long>(k_min_frames, std::lround(params.min_note.value() / hop)));
     absorb_short_runs(runs, min_frames);
@@ -349,6 +362,7 @@ Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const Onset
     // 3. Voiced extents, snapped times, then the description of every note.
     std::vector<Draft> drafts = make_drafts(pitch, smoothed, runs);
     place_times(drafts, onsets, params.preroll_max.value(), time_of(pitch.grid, n - 1));
+    drop_unusable(drafts, pitch, min_frames);
     std::set<std::string> used;
     for (const Draft& d : drafts) {
         const auto [attack_end, release_start] = attack_and_release(pitch, smoothed, d, params);

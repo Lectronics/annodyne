@@ -1,6 +1,7 @@
 #include "core/analysis/onsets/onsets.h"
 #include "core/analysis/pitch/pitch_estimator.h"
 #include "support/synth_signals.h"
+#include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -55,7 +56,8 @@ TEST_CASE("tone_bursts_are_found_within_5_ms", "[onsets]") {
     const auto onsets = detect_onsets(source_of(x), OnsetParams{}).value();
     REQUIRE(onsets.times.size() == starts.size());
     for (std::size_t i = 0; i < starts.size(); ++i) {
-        CHECK(std::abs(seconds_of(onsets.times[i]) - starts[i]) <= 0.005);
+        CHECK(std::abs(seconds_of(onsets.times[i]) - starts[i]) <=
+              tolerance::k_onset_synthetic.value());
         CHECK(onsets.strength[i] >= 1.0);
         CHECK(onsets.kind[i] == OnsetKind::attack);
     }
@@ -68,8 +70,8 @@ TEST_CASE("a_quiet_burst_40_db_below_a_loud_one_is_still_found", "[onsets]") {
     add_burst(x, tone(330.0, 0.15, 0.005), 1.0);
     const auto onsets = detect_onsets(source_of(x), OnsetParams{}).value();
     REQUIRE(onsets.times.size() == 2);
-    CHECK(std::abs(seconds_of(onsets.times[0]) - 0.3) <= 0.005);
-    CHECK(std::abs(seconds_of(onsets.times[1]) - 1.0) <= 0.005);
+    CHECK(std::abs(seconds_of(onsets.times[0]) - 0.3) <= tolerance::k_onset_synthetic.value());
+    CHECK(std::abs(seconds_of(onsets.times[1]) - 1.0) <= tolerance::k_onset_synthetic.value());
 }
 
 TEST_CASE("silence_and_tiny_inputs_have_no_onsets", "[onsets]") {

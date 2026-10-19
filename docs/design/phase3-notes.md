@@ -3,7 +3,7 @@
 - **Phase:** 3
 - **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §3 (`Note`), §4.2 (`segment_notes`, `perceived_pitch`, `decompose_pitch_curve`, `measure_loudness`); implementation guide B3, B4, B13; ROADMAP Phase 3
-- **Folders / CMake targets:** `src/core/analysis/segmentation`, `perceived_pitch`, `loudness` (layer 1; link `core/types`, `core/dsp`)
+- **Folders / CMake targets:** `src/core/analysis/segmentation`, `perceived_pitch`, `loudness` (layer 1; link `core/types`, and `core/dsp` for loudness). `NoteSpan` and `note_grid` live in `core/types/note_span.h` (plain data, shared by all three), so `loudness` and `perceived_pitch` do not depend on `segmentation`. Internal headers are in each target's `detail/` folder. `is_voiced` / `k_voiced_probability` (0.5) are defined once next to `PitchTrack`.
 - **Depends on:** `phase3-dsp.md`, `phase3-pitch-onsets.md`
 
 ## Purpose
@@ -18,7 +18,7 @@ The spec's `segment_notes` returns `Note`s "with pitch curve filled", but `Note`
 struct NoteSpan {
     NoteId id;
     SourceTime source_start, attack_end, release_start, source_end;   // start <= attack_end <= release_start <= end
-    Cents rough_pitch;               // the HMM's note pitch (a bin centre); refined by perceived_pitch
+    Cents rough_pitch;               // median smoothed f0 over the note's stable part; refined by perceived_pitch
     SeparationIn separation_in = SeparationIn::hard;
     double confidence_prob = 1.0;    // 0..1
 };
@@ -35,7 +35,7 @@ struct SegmentParams {
     double pitch_sigma_cents = 45.0;      // observation spread around a bin
     double stay_stable = 0.995;           // transition probabilities (see method)
     double stable_to_silence = 0.005;
-    double onset_boost = 25.0;            // multiplier on attack transitions near an onset (±30 ms)
+    double onset_new_note_prob = 0.98;    // P(new note) at the frames of an onset (±10 ms); new_note_prob is the base
     Seconds preroll_max{0.120};           // how far before the voiced region a consonant onset may pull the start
     Cents stable_band{40.0};              // attack/release: within this of the note pitch counts as stable
     Seconds stable_min{0.030};
@@ -56,7 +56,7 @@ struct SegmentParams {
 /// Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const OnsetList& onsets, const SegmentParams& params);
 ```
-Method (Mauch & Dixon 2014 note HMM, with onset fusion): the f0 curve is smoothed in cents over `vibrato_smooth` (a moving mean over the voiced frames of the window that lie within 120 cents of the frame's own value, so a vibrato is averaged but a note change is not blurred) so vibrato does not flip the pitch bin. States: for each pitch bin an **attack** and a **stable** state, plus one **silence** state. Observation: Gaussian of the smoothed f0 around the bin centre (`pitch_sigma_cents`) times the voicing probability (silence emits `1 - voicing`). Transitions: attack→stable, stable→stable (`stay_stable`), stable→attack of a neighbouring or equal bin (a new note, including the same pitch repeated), stable→silence, silence→attack. Attack transitions are multiplied by `onset_boost` within ±30 ms of an onset from `OnsetList`, so a repeated same-pitch note needs an onset to split (the most common failure, a named test) and a vibrato cannot split a note without one. Viterbi → runs of attack+stable states of one bin = notes; notes shorter than `min_note` are dropped or merged into the neighbour with the nearest pitch.
+Method (Mauch & Dixon 2014 note HMM, with onset fusion): the f0 curve is smoothed in cents over `vibrato_smooth` (a moving mean over the voiced frames of the window that lie within 120 cents of the frame's own value, so a vibrato is averaged but a note change is not blurred) so vibrato does not flip the pitch bin. States: for each pitch bin an **attack** and a **stable** state, plus one **silence** state. Observation: Gaussian of the smoothed f0 around the bin centre (`pitch_sigma_cents`) times the voicing probability (silence emits `1 - voicing`). Transitions: attack→stable, stable→stable (`stay_stable`), stable→attack of a neighbouring or equal bin (a new note, including the same pitch repeated), stable→silence, silence→attack. At the frames within ±10 ms of an onset from `OnsetList` the new-note probability is `onset_new_note_prob` (0.98) and staying drops to its floor, so a repeated same-pitch note needs an onset to split (the most common failure, a named test) and a vibrato cannot split a note without one. Viterbi → runs of attack+stable states of one bin = notes; runs shorter than `min_note` are absorbed into the following adjacent run or dropped (see Implementation notes); after time snapping, notes with fewer than 10 grid frames or fewer than 3 voiced frames are dropped, so every returned note can be described.
 Times: `source_start` = the earlier of the HMM start and a consonant/attack onset within `preroll_max` before it (the consonant belongs to the note); `source_end` = last voiced frame + one hop (or the next note's start when abutting). `attack_end` = first time the f0 stays within `stable_band` of the note pitch for `stable_min` (never before the voiced start), `release_start` = the symmetric last stable time; the four times satisfy start ≤ attack_end ≤ release_start ≤ end (clamped).
 
 ## 2. Pitch curve description
@@ -162,7 +162,7 @@ None.
 - One `segment_notes` (HMM, boundaries, times) rather than three: the boundary refinement uses the same smoothed curve and posterior as the HMM — keep-together rule 1.
 
 ## Dependencies
-`core/types`, `core/dsp` (`interp_curve`, `k_weight`, `RealFft`). No external libraries.
+`core/types`; `core/dsp` for loudness (`MonoAudio`). No external libraries. (`decompose_pitch_curve` has its own gap fill; `interp_curve` has no production caller yet and is kept for Phase 4.)
 
 ## Tests
 - Segmentation (synthetic melodies from `tests/support/synth_signals.h`): onset ±20 ms, offset ±30 ms, pitch ±10 cents; **repeated same-pitch notes** with a short dip → N notes; one long vibrato note (±60 cents) → one note; legato A4→B4 → two notes with `soft` separation; glide handled as one transition (policy recorded); silence gaps; notes shorter than `min_note` dropped; consonant preroll pulled into the start and clamped to the previous note's end; ends clamped to the file; empty and all-unvoiced tracks give no notes; output sorted, non-overlapping, times ordered; a 60-100 ms note decomposes and gets a perceived pitch (trim fraction); `note_grid` frame count equals the frames in [start, end).
@@ -175,7 +175,7 @@ None.
 2. Glides (portamento): treated as one transition inside the next note, not a separate note; confirmed or changed when you review the plots.
 
 ## Review log
-*(structure-reviewer findings go here)*
+Round 1 (design): CHANGES REQUIRED (7 blocking: ADR for the signature changes, half-built `Note`, short-note trims, note grid, shared weights, gate coverage, `segment_notes` inputs); round 2: APPROVED WITH FIXES (shared `TrimParams`, loudness wording, clamps, orchestrator order). All fixed before coding; ADR-0010 added. Implementation review: APPROVED WITH FIXES, fixed: short-note guarantee enforced (`drop_unusable`) and property-tested on 150 random tracks, `NoteSpan` moved to `core/types`, `is_voiced` defined once, internal headers moved to `detail/`, tolerances moved to `tests/tolerances.h`, `k_weight`/`analyse` rate limit (4 kHz) documented and tested, long functions split, `-ffp-contract=off` on `core/types`.
 
 ## Implementation notes
 - `SegmentParams::onset_boost` was replaced by `onset_new_note_prob` (0.98): an onset is modelled as strong evidence, so at the frames within +-10 ms of an onset the new-note probability is 0.98 and the stay probability drops to its floor. A multiplier on a 1e-3 prior could not split a repeated same-pitch note (the HMM has no emission difference between "same note" and "new note of the same pitch"); the likelihood-ratio view needs ~1e4.

@@ -72,6 +72,23 @@ inline constexpr Ratio k_hz_conversion_rel{1e-12};
 /// dB <-> linear gain: pow/log10 with < 1 ulp error each.
 inline constexpr Ratio k_gain_conversion_rel{1e-12};
 
+// ---- Analysis accuracy (ROADMAP Phase 3 gate) --------------------------------------------------
+
+/// Stationary synthetic tones: every voiced frame within this of the true f0 (ROADMAP: +-3 cents).
+inline constexpr Cents k_pitch_stationary{3.0};
+/// Moving synthetic pitch (vibrato, glides, noisy harmonics): the "10-cent" accuracy tolerance.
+inline constexpr Cents k_pitch_dynamic{10.0};
+/// Minimum share of voiced frames within k_pitch_dynamic (ROADMAP: 10-cent RPA >= 95 %).
+inline constexpr double k_rpa_min = 0.95;
+/// Synthetic onset times (bursts with abrupt starts): within +-5 ms of the truth.
+inline constexpr Seconds k_onset_synthetic{0.005};
+/// Golden recordings: onset F-measure window (ROADMAP: +-20 ms) and minimum F.
+inline constexpr Seconds k_onset_golden{0.020};
+inline constexpr double k_onset_golden_f_min = 0.9;
+/// Golden note lists are hand-checked to +-0.5 semitone, so matched notes must agree within 50
+/// cents, and a pitch spot must be within 50 cents (never an octave off).
+inline constexpr Cents k_golden_note_pitch{50.0};
+
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 
 /// STFT -> ISTFT reconstruction: float spectrogram storage (~6e-8 relative) accumulated over a few

@@ -1,4 +1,4 @@
-#include "core/analysis/onsets/superflux.h"
+#include "core/analysis/onsets/detail/superflux.h"
 
 #include "core/dsp/stft.h"
 

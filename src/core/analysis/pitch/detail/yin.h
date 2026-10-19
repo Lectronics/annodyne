@@ -11,6 +11,12 @@
 
 namespace anno {
 
+/// The two curves of one frame, each max_lag + 1 long (index = lag).
+struct YinCurves {
+    std::vector<double> cmnd;  // cumulative-mean-normalised difference d'(tau) (d'(0) = 1)
+    std::vector<double> nccf;  // normalised cross-correlation 2 c(tau) / (e(0) + e(tau)) in [-1, 1]
+};
+
 /// Per-frame YIN analyser for a fixed window and maximum lag. The difference function is computed
 /// with FFT autocorrelation. Thread-safe (const), not real-time safe.
 class YinFrame {
@@ -24,13 +30,12 @@ public:
     [[nodiscard]] int segment_length() const noexcept { return window_ + max_lag_; }
 
     /// `segment` has segment_length() samples; the window is its first `window` samples and lag tau
-    /// compares it with the samples tau later. Fills (each resized to max_lag + 1, index = lag):
+    /// compares it with the samples tau later. Returns:
     ///  cmnd[tau]: cumulative-mean-normalised difference d'(tau) (d'(0) = 1); ~0 at a period of a
     ///             periodic signal, ~1 for noise; 1 for a silent segment;
     ///  nccf[tau]: normalised cross-correlation 2 c(tau) / (e(0) + e(tau)) in [-1, 1], 1 at a
     ///  period.
-    void analyse(std::span<const double> segment, std::vector<double>& cmnd,
-                 std::vector<double>& nccf) const;
+    [[nodiscard]] YinCurves analyse(std::span<const double> segment) const;
 
 private:
     YinFrame(int window, int max_lag, RealFft fft) noexcept;

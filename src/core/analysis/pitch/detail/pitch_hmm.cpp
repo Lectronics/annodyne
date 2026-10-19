@@ -1,4 +1,4 @@
-#include "core/analysis/pitch/pitch_hmm.h"
+#include "core/analysis/pitch/detail/pitch_hmm.h"
 
 #include <algorithm>
 #include <cassert>

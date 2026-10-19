@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/analysis/pitch/pyin_observe.h"
+#include "core/analysis/pitch/detail/pyin_observe.h"
 
 #include <vector>
 

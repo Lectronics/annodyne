@@ -1,4 +1,4 @@
-#include "core/analysis/onsets/peak_picking.h"
+#include "core/analysis/onsets/detail/peak_picking.h"
 
 #include <algorithm>
 #include <cmath>

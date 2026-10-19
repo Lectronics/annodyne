@@ -1,4 +1,4 @@
-#include "core/analysis/pitch/yin.h"
+#include "core/analysis/pitch/detail/yin.h"
 
 #include <algorithm>
 #include <cassert>
@@ -35,14 +35,14 @@ Result<YinFrame> YinFrame::create(int window, int max_lag) {
     return YinFrame{window, max_lag, *fft};
 }
 
-void YinFrame::analyse(std::span<const double> segment, std::vector<double>& cmnd,
-                       std::vector<double>& nccf) const {
+YinCurves YinFrame::analyse(std::span<const double> segment) const {
     assert(static_cast<int>(segment.size()) == segment_length());
     const auto n = fft_.size();
     const auto w = static_cast<std::size_t>(window_);
     const auto lags = static_cast<std::size_t>(max_lag_) + 1;
-    cmnd.assign(lags, 1.0);
-    nccf.assign(lags, 0.0);
+    YinCurves out{.cmnd = std::vector<double>(lags, 1.0), .nccf = std::vector<double>(lags, 0.0)};
+    std::vector<double>& cmnd = out.cmnd;
+    std::vector<double>& nccf = out.nccf;
 
     // c(tau) = sum_{j < w} x[j] x[j + tau] via FFT: IFFT(conj(A) B) with A = x[0, w), B = x[0, L).
     std::vector<double> a(n, 0.0);
@@ -67,7 +67,7 @@ void YinFrame::analyse(std::span<const double> segment, std::vector<double>& cmn
     }
     const double e0 = prefix[w];
     if (e0 < k_silence_energy) {
-        return;  // silent: d' stays 1, nccf 0
+        return out;  // silent: d' stays 1, nccf 0
     }
     double running = 0.0;
     for (std::size_t tau = 1; tau < lags; ++tau) {
@@ -81,6 +81,7 @@ void YinFrame::analyse(std::span<const double> segment, std::vector<double>& cmn
     }
     cmnd[0] = 1.0;
     nccf[0] = 1.0;
+    return out;
 }
 
 }  // namespace anno

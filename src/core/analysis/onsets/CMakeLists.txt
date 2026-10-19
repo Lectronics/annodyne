@@ -1,9 +1,9 @@
 anno_add_library(core/analysis/onsets
     SOURCES
         onsets.cpp
-        peak_picking.cpp
-        pitch_change.cpp
-        superflux.cpp
+        detail/peak_picking.cpp
+        detail/pitch_change.cpp
+        detail/superflux.cpp
     PUBLIC_DEPS anno::core_types
     PRIVATE_DEPS anno::core_dsp)
 # Bit-for-bit reproducible results on one build: no fused multiply-add (same rule as core/dsp).

@@ -2,6 +2,7 @@
 #include "core/analysis/pitch/pyin.h"
 #include "support/analysis_metrics.h"
 #include "support/synth_signals.h"
+#include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -63,10 +64,10 @@ TEST_CASE("stationary_tones_are_within_3_cents", "[pitch]") {
             const auto t = estimate(x, rate);
             const auto truth = truth_for([f](double) { return f; }, t.f0.size());
             const auto [a, b] = inner(t, 0.06);
-            const auto s = score_pitch(t, truth, 3.0, a, b);
+            const auto s = score_pitch(t, truth, tolerance::k_pitch_stationary.value(), a, b);
             CHECK(static_cast<std::size_t>(s.voiced_reference) == b - a);
             CHECK(s.correct == s.voiced_reference);  // every voiced frame within 3 cents
-            CHECK(max_abs_error_cents(t, truth, a, b) <= 3.0);
+            CHECK(max_abs_error_cents(t, truth, a, b) <= tolerance::k_pitch_stationary.value());
         }
     }
 }
@@ -77,7 +78,7 @@ TEST_CASE("pure_sine_tones_are_tracked", "[pitch]") {
         const auto t = estimate(x, 44100.0);
         const auto truth = truth_for([f](double) { return f; }, t.f0.size());
         const auto [a, b] = inner(t, 0.06);
-        CHECK(max_abs_error_cents(t, truth, a, b) <= 3.0);
+        CHECK(max_abs_error_cents(t, truth, a, b) <= tolerance::k_pitch_stationary.value());
     }
 }
 
@@ -98,8 +99,8 @@ TEST_CASE("vibrato_and_glides_reach_10_cent_accuracy", "[pitch]") {
                 const auto t = estimate(x, rate, channels);
                 const auto truth = truth_for(f0, t.f0.size());
                 const auto [a, b] = inner(t, 0.06);
-                const auto s = score_pitch(t, truth, 10.0, a, b);
-                CHECK(s.rpa() >= 0.95);
+                const auto s = score_pitch(t, truth, tolerance::k_pitch_dynamic.value(), a, b);
+                CHECK(s.rpa() >= tolerance::k_rpa_min);
                 CHECK(s.octave_errors == 0);
             }
         }
@@ -112,8 +113,8 @@ TEST_CASE("a_harmonic_tone_in_noise_is_tracked", "[pitch]") {
     const auto t = estimate(x, 44100.0);
     const auto truth = truth_for([](double) { return 150.0; }, t.f0.size());
     const auto [a, b] = inner(t, 0.06);
-    const auto s = score_pitch(t, truth, 10.0, a, b);
-    CHECK(s.rpa() >= 0.95);
+    const auto s = score_pitch(t, truth, tolerance::k_pitch_dynamic.value(), a, b);
+    CHECK(s.rpa() >= tolerance::k_rpa_min);
     CHECK(s.octave_errors == 0);
 }
 
@@ -125,9 +126,9 @@ TEST_CASE("a_weak_fundamental_is_not_an_octave_error", "[pitch]") {
     const auto t = estimate(x, 44100.0);
     const auto truth = truth_for([](double) { return 200.0; }, t.f0.size());
     const auto [a, b] = inner(t, 0.06);
-    const auto s = score_pitch(t, truth, 10.0, a, b);
+    const auto s = score_pitch(t, truth, tolerance::k_pitch_dynamic.value(), a, b);
     CHECK(s.octave_errors == 0);
-    CHECK(s.rpa() >= 0.95);
+    CHECK(s.rpa() >= tolerance::k_rpa_min);
     // the octave is available as an alternative
     int with_octave = 0;
     for (std::size_t i = a; i < b; ++i) {

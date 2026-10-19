@@ -23,7 +23,7 @@ struct AnalyseParams {
     LoudnessParams loudness;
 };
 
-/// Runs, in order: read_mono + k_weight (once), detect_pitch, detect_onsets (with the pitch track),
+/// Runs, in order: read_mono + k_weight (once), the pYIN estimator (`PYinEstimator{params.pyin}`, not the `detect_pitch` convenience), detect_onsets (with the pitch track),
 /// segment_notes, then per NoteSpan: note_grid, measure_loudness, decompose_pitch_curve, then
 /// builds the Note with centre, drift, mod, amp and loudness filled and perceived_pitch set to the rough
 /// pitch, calls perceived_pitch on that Note and stores its result, and only then is the Note final
@@ -39,7 +39,7 @@ struct AnalyseParams {
 /// vocal is seconds; added with the background scheduler in Phase 9.
 [[nodiscard]] Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src, const AnalyseParams& params);
 ```
-`detect_pitch` and `detect_onsets` take the `AudioSource` and read their own mono mix; only the orchestrator's loudness path shares one `read_mono` result. The repeated read costs time only and is accepted; `MonoAudio` overloads are a later optimisation.
+The pitch estimator and `detect_onsets` take the `AudioSource` and read their own mono mix; only the orchestrator's loudness path shares one `read_mono` result. The repeated read costs time only and is accepted; `MonoAudio` overloads are a later optimisation.
 
 Determinism: the same source and params give a bit-identical result on the same build (no randomness, `-ffp-contract=off`); tested by hashing the result.
 

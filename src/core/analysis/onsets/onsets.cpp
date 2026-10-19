@@ -1,8 +1,8 @@
 #include "core/analysis/onsets/onsets.h"
 
-#include "core/analysis/onsets/peak_picking.h"
-#include "core/analysis/onsets/pitch_change.h"
-#include "core/analysis/onsets/superflux.h"
+#include "core/analysis/onsets/detail/peak_picking.h"
+#include "core/analysis/onsets/detail/pitch_change.h"
+#include "core/analysis/onsets/detail/superflux.h"
 #include "core/dsp/mono.h"
 
 #include <algorithm>
@@ -20,7 +20,6 @@ constexpr double k_falling_db =
     3.0;  // louder before than after by this much: an offset, not an onset
 constexpr double k_energy_window_s = 0.002;  // short-window energy for the refinement
 constexpr double k_voicing_probe_s = 0.020;
-constexpr double k_voiced_edge = 0.5;
 
 struct RawOnset {
     SourceTime time;
@@ -170,14 +169,18 @@ OnsetList to_list(const std::vector<RawOnset>& onsets) {
     return list;
 }
 
-}  // namespace
-
-Result<OnsetList> detect_onsets(const AudioSource& src, const OnsetParams& params) {
+Result<std::vector<RawOnset>> read_and_detect(const AudioSource& src, const OnsetParams& params) {
     auto mono = read_mono(src);
     if (!mono) {
         return Unexpected{mono.error()};
     }
-    auto onsets = spectral_onsets(*mono, params);
+    return spectral_onsets(*mono, params);
+}
+
+}  // namespace
+
+Result<OnsetList> detect_onsets(const AudioSource& src, const OnsetParams& params) {
+    auto onsets = read_and_detect(src, params);
     if (!onsets) {
         return Unexpected{onsets.error()};
     }
@@ -190,11 +193,7 @@ Result<OnsetList> detect_onsets(const AudioSource& src, const PitchTrack& pitch,
         return fail(ErrorCode::invalid_argument,
                     "onsets: invalid pitch track: " + r.error().message);
     }
-    auto mono = read_mono(src);
-    if (!mono) {
-        return Unexpected{mono.error()};
-    }
-    auto onsets = spectral_onsets(*mono, params);
+    auto onsets = read_and_detect(src, params);
     if (!onsets) {
         return Unexpected{onsets.error()};
     }
@@ -213,7 +212,7 @@ Result<OnsetList> detect_onsets(const AudioSource& src, const PitchTrack& pitch,
         for (RawOnset& o : merged) {
             if (o.spectral) {
                 const bool unvoiced =
-                    voicing_at(pitch, o.time + Seconds{k_voicing_probe_s}) < k_voiced_edge;
+                    voicing_at(pitch, o.time + Seconds{k_voicing_probe_s}) < k_voiced_probability;
                 o.kind = unvoiced ? OnsetKind::consonant : OnsetKind::attack;
             }
         }

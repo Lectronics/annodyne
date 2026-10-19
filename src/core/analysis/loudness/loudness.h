@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/analysis/segmentation/segmentation.h"
 #include "core/dsp/mono.h"
 #include "core/types/frame_grid.h"
+#include "core/types/note_span.h"
 #include "core/types/result.h"
 #include "core/types/units.h"
 

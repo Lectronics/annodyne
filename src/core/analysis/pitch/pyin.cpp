@@ -1,8 +1,8 @@
 #include "core/analysis/pitch/pyin.h"
 
-#include "core/analysis/pitch/pitch_hmm.h"
-#include "core/analysis/pitch/pyin_observe.h"
-#include "core/analysis/pitch/yin.h"
+#include "core/analysis/pitch/detail/pitch_hmm.h"
+#include "core/analysis/pitch/detail/pyin_observe.h"
+#include "core/analysis/pitch/detail/yin.h"
 #include "core/dsp/mono.h"
 #include "core/dsp/resample.h"
 
@@ -16,7 +16,6 @@ namespace {
 
 constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
 constexpr double k_alternate_exclusion_cents = 75.0;
-constexpr double k_voiced_edge = 0.5;  // voicing_prob boundary between voiced and unvoiced frames
 constexpr double k_a4_hz = 440.0;
 
 Result<void> validate_params(const PitchParams& p, const PYinParams& y, Hz source_rate) {
@@ -78,8 +77,6 @@ Result<std::vector<FrameObservation>> observe_frames(const AnalysisSignal& sig,
     }
     std::vector<FrameObservation> obs(static_cast<std::size_t>(frames));
     std::vector<double> segment(idx(yin->segment_length()));
-    std::vector<double> cmnd;
-    std::vector<double> nccf;
     const auto n_x = static_cast<std::int64_t>(sig.x.size());
     for (std::int64_t i = 0; i < frames; ++i) {
         const double time_samples = static_cast<double>(i) * params.hop.value() * sig.rate;
@@ -89,8 +86,8 @@ Result<std::vector<FrameObservation>> observe_frames(const AnalysisSignal& sig,
             const std::int64_t at = start + k;
             segment[idx(k)] = (at >= 0 && at < n_x) ? sig.x[static_cast<std::size_t>(at)] : 0.0;
         }
-        yin->analyse(segment, cmnd, nccf);
-        obs[static_cast<std::size_t>(i)] = observe(cmnd, nccf, setup);
+        const YinCurves curves = yin->analyse(segment);
+        obs[static_cast<std::size_t>(i)] = observe(curves.cmnd, curves.nccf, setup);
     }
     return obs;
 }
@@ -174,6 +171,46 @@ void compensate_lag_centre(std::vector<double>& cents, const std::vector<double>
     }
 }
 
+/// Fills f0, voicing, confidence and the alternates of `track` from the decoded paths. The YIN
+/// lag-centre correction is applied to the voiced runs of the best path.
+void fill_track(PitchTrack& track, const std::vector<FrameObservation>& obs,
+                const std::vector<std::vector<int>>& paths, const Bins& bins, double rate,
+                const PitchParams& params) {
+    const std::size_t n = obs.size();
+    std::vector<double> cents(n, k_nan);
+    std::vector<double> lag_s(n, 0.0);
+    track.confidence_prob.assign(n, 0.0);
+    track.voicing_prob.assign(n, 0.0);
+    for (std::size_t t = 0; t < n; ++t) {
+        const double voiced_mass = 1.0 - obs[t].unvoiced;
+        if (paths[0][t] >= 0) {
+            const Pick p = pick(obs[t], bins, paths[0][t], rate);
+            cents[t] = p.cents;
+            lag_s[t] = p.lag / rate;
+            track.confidence_prob[t] = p.mass;
+            track.voicing_prob[t] =
+                std::clamp(std::max(k_voiced_probability, voiced_mass), 0.0, 1.0);
+        } else {
+            track.confidence_prob[t] = std::clamp(obs[t].unvoiced, 0.0, 1.0);
+            track.voicing_prob[t] =
+                std::clamp(std::min(k_voiced_probability - 1e-9, voiced_mass), 0.0, 1.0);
+        }
+    }
+    compensate_lag_centre(cents, lag_s, params.hop.value());
+    track.f0.resize(n);
+    std::ranges::transform(cents, track.f0.begin(), [](double c) { return Cents{c}; });
+    for (int a = 0; a < params.n_alternates; ++a) {
+        auto& alt = track.alternates[idx(a)];
+        alt.assign(n, Cents{k_nan});
+        for (std::size_t t = 0; t < n; ++t) {
+            const int bin = paths[idx(a) + 1][t];
+            if (bin >= 0) {
+                alt[t] = Cents{pick(obs[t], bins, bin, rate).cents};
+            }
+        }
+    }
+}
+
 }  // namespace
 
 Result<PitchTrack> PYinEstimator::estimate(const AudioSource& src,
@@ -218,38 +255,7 @@ Result<PitchTrack> PYinEstimator::estimate(const AudioSource& src,
                        bins.count);
     const auto paths = decode_paths(*obs, bins, costs, params_.bin_cents, params.n_alternates);
 
-    const auto n = static_cast<std::size_t>(frames);
-    std::vector<double> cents(n, k_nan);
-    std::vector<double> lag_s(n, 0.0);
-    track.confidence_prob.assign(n, 0.0);
-    track.voicing_prob.assign(n, 0.0);
-    for (std::size_t t = 0; t < n; ++t) {
-        const double voiced_mass = 1.0 - (*obs)[t].unvoiced;
-        if (paths[0][t] >= 0) {
-            const Pick p = pick((*obs)[t], bins, paths[0][t], sig->rate);
-            cents[t] = p.cents;
-            lag_s[t] = p.lag / sig->rate;
-            track.confidence_prob[t] = p.mass;
-            track.voicing_prob[t] = std::clamp(std::max(k_voiced_edge, voiced_mass), 0.0, 1.0);
-        } else {
-            track.confidence_prob[t] = std::clamp((*obs)[t].unvoiced, 0.0, 1.0);
-            track.voicing_prob[t] =
-                std::clamp(std::min(k_voiced_edge - 1e-9, voiced_mass), 0.0, 1.0);
-        }
-    }
-    compensate_lag_centre(cents, lag_s, params.hop.value());
-    track.f0.resize(n);
-    std::ranges::transform(cents, track.f0.begin(), [](double c) { return Cents{c}; });
-    for (int a = 0; a < params.n_alternates; ++a) {
-        auto& alt = track.alternates[idx(a)];
-        alt.assign(n, Cents{k_nan});
-        for (std::size_t t = 0; t < n; ++t) {
-            const int bin = paths[idx(a) + 1][t];
-            if (bin >= 0) {
-                alt[t] = Cents{pick((*obs)[t], bins, bin, sig->rate).cents};
-            }
-        }
-    }
+    fill_track(track, *obs, paths, bins, sig->rate, params);
     return track;
 }
 
