@@ -1,0 +1,66 @@
+---
+# clang-tidy for Melo (coding-standards §1). Every disabled check has a reason.
+Checks: >
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-uppercase-literal-suffix,
+  -readability-math-missing-parentheses,
+  -readability-redundant-member-init,
+  -cppcoreguidelines-pro-type-vararg,
+  -bugprone-unchecked-optional-access,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -performance-enum-size,
+  -readability-trailing-comma
+# Reasons:
+#   easily-swappable-parameters: strong unit types already prevent the dangerous swaps.
+#   magic-numbers (both): DSP and file-format code is full of documented constants; the standard
+#     ("magic numbers become named constants with a source") is enforced in review instead.
+#   pro-bounds-pointer-arithmetic / constant-array-index: byte-level WAV parsing and inner loops.
+#   use-trailing-return-type, identifier-length, uppercase-literal-suffix, math-missing-parentheses,
+#     redundant-member-init: style preferences we do not follow.
+#   pro-type-vararg: std::fprintf to stderr in the CLI and contract handler (no iostreams there).
+#   unchecked-optional-access: false positives through Result's checked accessors.
+#   avoid-unchecked-container-access: indexing spans in sample loops is the norm; bounds come from
+#     the loop and are covered by ASan in every Debug test run.
+#   enum-size: enum storage size is irrelevant for these closed option sets.
+#   trailing-comma: formatting preference, owned by clang-format.
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(src|tests)/.*'
+FormatStyle: file
+CheckOptions:
+  - { key: readability-identifier-naming.NamespaceCase,            value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,                value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,               value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase,                 value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantCase,         value: lower_case }
+  - { key: readability-identifier-naming.TypeAliasCase,            value: CamelCase }
+  - { key: readability-identifier-naming.TypeAliasIgnoredRegexp,   value: '^(rep|tag|axis|value_type)$' }
+  - { key: readability-identifier-naming.TemplateParameterCase,    value: CamelCase }
+  - { key: readability-identifier-naming.ConceptCase,              value: lower_case }
+  - { key: readability-identifier-naming.FunctionCase,             value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,             value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,            value: lower_case }
+  - { key: readability-identifier-naming.PublicMemberCase,         value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberCase,        value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,      value: _ }
+  - { key: readability-identifier-naming.ConstexprVariableCase,    value: lower_case }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix,  value: k_ }
+  - { key: readability-identifier-naming.GlobalConstantCase,       value: lower_case }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,     value: k_ }
+  - { key: readability-identifier-naming.MacroDefinitionCase,      value: UPPER_CASE }
+  # The only macros are the contract checks (coding-standards §1).
+  - { key: cppcoreguidelines-macro-usage.AllowedRegexp,            value: '^MELO_' }
+  # AudioSource is deliberately copy-only so a moved-from object stays valid (design note §6).
+  - { key: cppcoreguidelines-special-member-functions.AllowMissingMoveFunctions, value: true }
+  - { key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor, value: true }
+...

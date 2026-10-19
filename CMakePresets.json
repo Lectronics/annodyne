@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug-asan",
+      "displayName": "Debug + ASan/UBSan",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MELO_SANITIZER": "address_undefined"
+      }
+    },
+    {
+      "name": "debug-tsan",
+      "displayName": "Debug + TSan",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MELO_SANITIZER": "thread"
+      },
+      "condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MELO_SANITIZER": "none"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug-asan", "configurePreset": "debug-asan" },
+    { "name": "debug-tsan", "configurePreset": "debug-tsan" },
+    { "name": "release", "configurePreset": "release" }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 300 },
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1:detect_stack_use_after_return=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        "TSAN_OPTIONS": "halt_on_error=1"
+      }
+    },
+    { "name": "debug-asan", "configurePreset": "debug-asan", "inherits": "test-base" },
+    { "name": "debug-tsan", "configurePreset": "debug-tsan", "inherits": "test-base" },
+    { "name": "release", "configurePreset": "release", "inherits": "test-base" }
+  ]
+}

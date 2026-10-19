@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }} / debug-asan + release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Use clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+          # Sanitizer runtimes in clang 18 fail with the runner kernel's high mmap entropy.
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure debug-asan
+        run: cmake --preset debug-asan
+      - name: Build debug-asan
+        run: cmake --build --preset debug-asan
+      - name: Test debug-asan
+        run: ctest --preset debug-asan -j 4
+
+      - name: Configure release
+        run: cmake --preset release
+      - name: Build release
+        run: cmake --build --preset release
+      - name: Test release
+        run: ctest --preset release -j 4
+
+  tsan:
+    name: ${{ matrix.os }} / debug-tsan
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Use clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+          sudo sysctl vm.mmap_rnd_bits=28
+      - run: cmake --preset debug-tsan
+      - run: cmake --build --preset debug-tsan
+      - run: ctest --preset debug-tsan -j 4
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format (pinned to the version used locally)
+        run: pipx install clang-format==23.1.3
+      - name: Check formatting
+        run: |
+          git ls-files -- 'src/*.h' 'src/*.cpp' 'tests/*.h' 'tests/*.cpp' \
+            | grep -v '^tests/contract/include_rules/' \
+            | xargs clang-format --dry-run -Werror
+
+  tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Install clang-tidy (pinned to the version used locally)
+        run: pipx install clang-tidy==23.1.3
+      - name: Configure (compile_commands.json)
+        run: CC=clang CXX=clang++ cmake --preset release
+      - name: Run clang-tidy
+        run: |
+          git ls-files -- 'src/*.cpp' 'tests/unit/*.cpp' 'tests/contract/*.cpp' \
+            | xargs -P 4 -n 1 clang-tidy -p build/release --quiet

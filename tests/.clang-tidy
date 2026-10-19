@@ -1,0 +1,8 @@
+---
+# Tests inherit the project config, minus checks that fire on Catch2's macro expansions.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-do-while,
+  -readability-function-cognitive-complexity,
+  -bugprone-chained-comparison
+...

@@ -1,0 +1,14 @@
+{
+  "folders": {
+    "core/types": {"target": "melo_core_types", "layer": 0},
+    "core/io": {"target": "melo_core_io", "layer": 0},
+    "core/edits": {"target": "melo_core_edits", "layer": 2},
+    "core/render": {"target": "melo_core_render", "layer": 4},
+    "tools/pitch": {"target": "melo_tools_pitch", "layer": 5},
+    "project": {"target": "melo_project", "layer": 6}
+  },
+  "layer5_allowed_folders": ["core/types", "core/edits", "core/tuning"],
+  "analysis_exception_folders": ["features/dna", "features/sound_editor"],
+  "io_folder": "core/io",
+  "io_min_layer": 6
+}
