@@ -36,6 +36,8 @@ public:
     /// recording) and slices the result itself, so an engine needs no sub-range consistency. The
     /// edit is applied as if the note extended over the whole range. The result's range equals
     /// `out_range` to the sample, with the source's channel count and sample rate.
+    /// `time_map` is the track's map (ADR-0008); `out_range` is on its output axis. Over a slope-1
+    /// part of the map an engine must give the samples read_through_map gives (the "original").
     /// Errors: not_implemented if the engine cannot realise `eff` or `time_map`; invalid_argument
     /// for a bad range; out_of_range from the source.
     /// Const and thread-safe; not real-time safe (allocates).

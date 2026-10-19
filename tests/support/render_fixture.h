@@ -19,7 +19,7 @@ struct Fixture {
     std::shared_ptr<const EditList> edits;
 
     [[nodiscard]] RenderInputs inputs() const {
-        return {.source = source, .analysis = analysis, .edits = edits};
+        return {.source = source, .analysis = analysis, .edits = edits, .time_map = nullptr};
     }
     [[nodiscard]] Fixture with_edits(EditList list) const {
         return {.source = source,

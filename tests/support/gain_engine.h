@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/synthesis/engine/source_through_map.h"
 #include "core/synthesis/engine/synthesis_engine.h"
 
 #include <cmath>
@@ -18,13 +19,13 @@ public:
     [[nodiscard]] Result<OutputAudio> render_note(const AudioSource& src, const Note& note,
                                                   const EffectiveNote& eff, const TimeMap& time_map,
                                                   OutputRange out_range) const override {
-        if (!time_map.is_identity() || !only_gain_edited(eff, note)) {
+        if (!only_gain_edited(eff, note)) {
             return fail(ErrorCode::not_implemented, "GainTestEngine realises gain edits only");
         }
         const Hz rate = src.sample_rate();
         const Samples first = to_sample_index(out_range.start(), rate, Rounding::nearest);
         const Samples last = to_sample_index(out_range.end(), rate, Rounding::nearest);
-        auto audio = src.read(first, last - first);
+        auto audio = read_through_map(src, time_map, first, last - first);
         if (!audio) {
             return Unexpected{audio.error()};
         }

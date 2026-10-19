@@ -16,7 +16,6 @@ std::shared_ptr<const RenderResult> result_of(double seconds) {
     AudioBuffer audio = make_signal(1, seconds, 1000.0);  // 1 kHz: seconds * 4000 bytes
     return std::make_shared<const RenderResult>(
         RenderResult{.buffer = OutputAudio{.audio = std::move(audio), .start = OutputTime{}},
-                     .source_range = SourceRange::from_start(SourceTime{}, Seconds{seconds}),
                      .cache_id = "x",
                      .notes_rendered = {NoteId{"n"}},
                      .passthrough = false});

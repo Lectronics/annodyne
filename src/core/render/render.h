@@ -22,6 +22,10 @@ struct RenderInputs {
     AudioSource source;
     std::shared_ptr<const AnalysisResult> analysis;  // must not be null
     std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
+    /// Optional (ADR-0008). If set it is the track's TimeMap, authoritative over any timing edits in
+    /// `edits`; its source_length must match the recording (half a sample). If null the map is built
+    /// from the edits and must be the identity (stretching is Phase 6).
+    std::shared_ptr<const TimeMap> time_map;
 };
 
 struct RenderParams {
@@ -43,10 +47,14 @@ struct RenderParams {
 /// Errors: invalid_argument (null analysis or edits, source/analysis id mismatch, invalid
 /// analysis, crossfade_length outside [0, k_max_crossfade], region end before start, notes on
 /// another track than the edits); out_of_range (region outside the recording);
-/// not_implemented (the edits contain timing changes, so the TimeMap is not the identity:
-/// stretching is Phase 6; or the engine cannot realise an edit); internal (an engine returned the
-/// wrong range, channel count or sample rate).
-/// Time axes: `region` is output time; with an identity TimeMap it equals source time.
+/// invalid_argument also for a supplied TimeMap whose source_length does not match the recording or
+/// a note whose start or end maps into a cut; not_implemented (no map was supplied and the edits
+/// contain timing changes, so the TimeMap is not the identity: stretching is Phase 6; a warp in the
+/// region has slope != 1 or a fractional-sample shift; or the engine cannot realise an edit);
+/// internal (an engine returned the wrong range, channel count or sample rate).
+/// Time axes: `region` is output time, within [0, output_length of the map]; with an identity TimeMap
+/// it equals source time. Cuts have no output and inserts are digital silence; every other sample
+/// outside blend zones is the source sample the map names, bit for bit.
 /// Thread-safe for distinct inputs (a shared cache is internally locked); not real-time safe.
 [[nodiscard]] Result<std::shared_ptr<const RenderResult>>
 render_region(const RenderInputs& inputs, OutputRange region, const SynthesisEngine& engine,

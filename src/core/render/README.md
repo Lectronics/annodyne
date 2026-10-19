@@ -16,8 +16,11 @@ Method (design note `docs/design/phase2-render-skeleton.md`):
   LRU of finished results.
 
 References: architecture spec §4.6, §5.5, §5.6; ADR-0002, ADR-0006.
-Known limitations: timing edits return `not_implemented` (Phase 6; the key must then include the
-TimeMap anchors); the cache locks and allocates, so it is not real-time safe (Phase 9); notes are
+Time (ADR-0008): `render_region` walks TimeMap spans (`RenderInputs::time_map`, or built from the
+edits): slope-1 warps copy shifted source samples, inserts are digital silence, cuts have no output.
+The cache key includes the whole map.
+Known limitations: a warp with slope != 1 or a fractional-sample shift returns `not_implemented`
+(stretching is Phase 6; layout solving, Phase 5); timing edits without a supplied map likewise; the cache locks and allocates, so it is not real-time safe (Phase 9); notes are
 monophonic (Phase 11); the crossfade default `equal_power` overshoots by up to +3 dB for correlated
 signals (listening decision at Phase 4); `-ffp-contract=off` makes results reproducible per build,
 not across platforms.

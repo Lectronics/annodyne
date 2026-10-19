@@ -5,6 +5,7 @@
 #include "core/types/analysis_result.h"
 #include "core/types/effective_note.h"
 #include "core/types/note.h"
+#include "core/types/time_map.h"
 
 #include <cstdint>
 #include <span>
@@ -32,6 +33,7 @@ struct RenderKeyInputs {
     double sample_rate_hz = 0.0;
     std::span<const EditedNote> edited;
     std::span<const Ramp> ramps;
+    const TimeMap* time_map = nullptr;  // never null; the whole map is part of the key (ADR-0008)
 };
 
 /// 128-bit content fingerprint of every field of a Note (two independent 64-bit FNV-style streams).
@@ -43,8 +45,8 @@ struct RenderKeyInputs {
 /// unambiguous. Everything except the note fingerprints compares exactly. Includes the ramps
 /// that meet the region (so a neighbour outside the region that changes a ramp length changes the
 /// key) and, for every edited note whose zone meets the region, its snapped span, its EffectiveNote
-/// and its fingerprint.
-/// Phase 6: when timing edits become renderable the key must also include time_map.anchors().
+/// and its fingerprint, and the whole TimeMap (its lengths, and every span unless it is the
+/// identity), so no span a zone reads can be missed.
 /// Pure; thread-safe; not real-time safe.
 [[nodiscard]] std::string make_render_key(const RenderKeyInputs& in);
 

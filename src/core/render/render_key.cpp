@@ -104,6 +104,23 @@ void put(Writer& w, const TimePair& p) {
     put(w, p.output);
 }
 
+void put(Writer& w, const TimeMap& map) {
+    w.boolean(map.is_identity());
+    put(w, map.source_length());
+    put(w, map.output_length());
+    if (map.is_identity()) {
+        return;
+    }
+    w.u64(map.spans().size());
+    for (const TimeSpan& s : map.spans()) {
+        w.u64(static_cast<std::uint64_t>(s.kind));
+        put(w, s.source_start);
+        put(w, s.source_end);
+        put(w, s.output_start);
+        put(w, s.output_end);
+    }
+}
+
 void put(Writer& w, const EffectiveNote& e) {
     w.text(e.note_id.value);
     put(w, e.center);
@@ -182,6 +199,7 @@ std::string make_render_key(const RenderKeyInputs& in) {
     w.i64(in.region_begin);
     w.i64(in.region_end);
     w.f64(in.sample_rate_hz);
+    put(w, *in.time_map);
 
     const auto name_of = [&](int index) {
         return index == k_pristine ? std::string{}

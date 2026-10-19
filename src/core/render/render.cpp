@@ -4,6 +4,7 @@
 #include "core/edits/effective_state.h"
 #include "core/render/blend_plan.h"
 #include "core/render/render_key.h"
+#include "core/synthesis/engine/source_through_map.h"
 #include "core/timemap/build_time_map.h"
 
 #include <algorithm>
@@ -17,7 +18,7 @@ namespace {
 
 /// Everything planned before any audio is read.
 struct Plan {
-    std::int64_t frame_count = 0;  // recording length, samples
+    std::int64_t frame_count = 0;  // output length of the map, samples
     Hz sample_rate;
     std::int64_t region_begin = 0;
     std::int64_t region_end = 0;
@@ -34,7 +35,7 @@ struct Zone {
     bool identical = false;            // equal to the source over the zone, bit for bit
 };
 
-std::int64_t index_of(SourceTime t, Hz rate) {
+std::int64_t index_of(OutputTime t, Hz rate) {
     return to_sample_index(t, rate, Rounding::nearest).value();
 }
 
@@ -54,10 +55,27 @@ Result<void> validate_inputs(const RenderInputs& in, const RenderParams& params)
         return fail(ErrorCode::invalid_argument,
                     "render_region: invalid analysis: " + r.error().message);
     }
+    if (in.time_map != nullptr) {
+        const double duration =
+            to_seconds(in.source.frame_count(), in.source.sample_rate()).value();
+        if (std::abs(in.time_map->source_length().value() - duration) *
+                in.source.sample_rate().value() >
+            0.5) {
+            return fail(ErrorCode::invalid_argument,
+                        "render_region: the TimeMap's source length does not match the recording");
+        }
+    }
     return {};
 }
 
-Result<TimeMapBuild> identity_time_map(const RenderInputs& in) {
+/// The track's map: the supplied one, else built from the edits (which must leave it the identity).
+Result<std::shared_ptr<const TimeMap>> resolve_time_map(const RenderInputs& in) {
+    if (in.time_map != nullptr) {
+        return in.time_map;
+    }
+    if (in.source.frame_count().value() == 0) {
+        return std::make_shared<const TimeMap>(TimeMap::identity(Seconds{0.0}));
+    }
     const SourceTime end =
         to_time_point<SourceAxis>(in.source.frame_count(), in.source.sample_rate());
     auto built = build_time_map(in.analysis->notes, *in.edits, TimeMapParams{.source_end = end});
@@ -68,24 +86,25 @@ Result<TimeMapBuild> identity_time_map(const RenderInputs& in) {
         return fail(ErrorCode::not_implemented,
                     "render_region: timing edits change the TimeMap; stretching is Phase 6");
     }
-    return built;
+    return std::make_shared<const TimeMap>(std::move(built->map));
 }
 
 Result<std::pair<std::int64_t, std::int64_t>> snap_region(const RenderInputs& in,
-                                                          OutputRange region) {
+                                                          const TimeMap& map, OutputRange region) {
     const Hz rate = in.source.sample_rate();
     const std::int64_t begin = to_sample_index(region.start(), rate, Rounding::nearest).value();
     const std::int64_t end = to_sample_index(region.end(), rate, Rounding::nearest).value();
-    if (begin < 0 || end > in.source.frame_count().value()) {
-        return fail(ErrorCode::out_of_range, "render_region: region lies outside the recording");
+    if (begin < 0 || end > to_samples(map.output_length(), rate, Rounding::nearest).value()) {
+        return fail(ErrorCode::out_of_range, "render_region: region lies outside the output");
     }
     return std::pair{begin, std::max(begin, end)};
 }
 
-Plan make_plan(const RenderInputs& in, const RenderParams& params,
-               std::pair<std::int64_t, std::int64_t> region) {
+Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderParams& params,
+                       std::pair<std::int64_t, std::int64_t> region) {
     Plan plan;
-    plan.frame_count = in.source.frame_count().value();
+    plan.frame_count =
+        to_samples(map.output_length(), in.source.sample_rate(), Rounding::nearest).value();
     plan.sample_rate = in.source.sample_rate();
     plan.region_begin = region.first;
     plan.region_end = region.second;
@@ -98,10 +117,16 @@ Plan make_plan(const RenderInputs& in, const RenderParams& params,
         if (!eff.is_edited) {
             continue;
         }
+        const auto out_start = map.to_output(note.source_start);
+        const auto out_end = map.to_output_end(note.source_end);
+        if (!out_start || !out_end) {
+            return fail(ErrorCode::invalid_argument,
+                        "render_region: note '" + note.id.value + "' starts or ends inside a cut");
+        }
         const std::int64_t begin = std::clamp<std::int64_t>(
-            index_of(note.source_start, plan.sample_rate), 0, plan.frame_count);
+            index_of(*out_start, plan.sample_rate), 0, plan.frame_count);
         const std::int64_t end = std::clamp<std::int64_t>(
-            index_of(note.source_end, plan.sample_rate), begin, plan.frame_count);
+            index_of(*out_end, plan.sample_rate), begin, plan.frame_count);
         plan.edited.push_back(
             {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }
@@ -138,8 +163,8 @@ bool same_samples(const AudioBuffer& a, const AudioBuffer& b) {
     return true;
 }
 
-Result<Zone> render_zone(const RenderInputs& in, const SynthesisEngine& engine, const Plan& plan,
-                         const EditedNote& e) {
+Result<Zone> render_zone(const RenderInputs& in, const TimeMap& map, const SynthesisEngine& engine,
+                         const Plan& plan, const EditedNote& e) {
     Zone zone{.begin = zone_begin(plan, e),
               .end = zone_end(plan, e),
               .audio = std::nullopt,
@@ -148,7 +173,7 @@ Result<Zone> render_zone(const RenderInputs& in, const SynthesisEngine& engine, 
     const OutputRange range =
         OutputRange::from_start(to_time_point<OutputAxis>(Samples{zone.begin}, rate),
                                 to_seconds(Samples{zone.end - zone.begin}, rate));
-    auto rendered = engine.render_note(in.source, *e.note, e.eff, TimeMap::identity(), range);
+    auto rendered = engine.render_note(in.source, *e.note, e.eff, map, range);
     if (!rendered) {
         return Unexpected{rendered.error()};
     }
@@ -161,7 +186,8 @@ Result<Zone> render_zone(const RenderInputs& in, const SynthesisEngine& engine, 
         return fail(ErrorCode::internal, "engine '" + std::string{engine.name()} +
                                              "' returned audio that does not match the zone");
     }
-    auto pristine = in.source.read(Samples{zone.begin}, Samples{zone.end - zone.begin});
+    auto pristine =
+        read_through_map(in.source, map, Samples{zone.begin}, Samples{zone.end - zone.begin});
     if (!pristine) {
         return Unexpected{pristine.error()};
     }
@@ -253,19 +279,23 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     if (auto r = validate_inputs(inputs, params); !r) {
         return Unexpected{r.error()};
     }
-    auto snapped = snap_region(inputs, region);
+    auto resolved = resolve_time_map(inputs);
+    if (!resolved) {
+        return Unexpected{resolved.error()};
+    }
+    const TimeMap& map = **resolved;
+    auto snapped = snap_region(inputs, map, region);
     if (!snapped) {
         return Unexpected{snapped.error()};
     }
     if (region.end() < region.start()) {  // unreachable through OutputRange; kept for safety
         return fail(ErrorCode::invalid_argument, "render_region: region ends before it starts");
     }
-    if (inputs.source.frame_count().value() > 0) {
-        if (auto r = identity_time_map(inputs); !r) {
-            return Unexpected{r.error()};
-        }
+    auto planned = make_plan(inputs, map, params, *snapped);
+    if (!planned) {
+        return Unexpected{planned.error()};
     }
-    const Plan plan = make_plan(inputs, params, *snapped);
+    const Plan& plan = *planned;
     const SourceId source_id = inputs.source.id();
     const std::string key = make_render_key({.source_id = &source_id,
                                              .analysis_version = inputs.analysis->version,
@@ -276,7 +306,8 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
                                              .region_end = plan.region_end,
                                              .sample_rate_hz = plan.sample_rate.value(),
                                              .edited = plan.edited,
-                                             .ramps = plan.ramps});
+                                             .ramps = plan.ramps,
+                                             .time_map = &map});
     if (params.cache != nullptr) {
         if (auto hit = params.cache->get(key)) {
             return hit;
@@ -285,7 +316,7 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
 
     const Hz rate = plan.sample_rate;
     const Samples count{plan.region_end - plan.region_begin};
-    auto pristine = inputs.source.read(Samples{plan.region_begin}, count);
+    auto pristine = read_through_map(inputs.source, map, Samples{plan.region_begin}, count);
     if (!pristine) {
         return Unexpected{pristine.error()};
     }
@@ -297,7 +328,7 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
         if (!zone_meets_region(plan, plan.edited[i])) {
             continue;
         }
-        auto zone = render_zone(inputs, engine, plan, plan.edited[i]);
+        auto zone = render_zone(inputs, map, engine, plan, plan.edited[i]);
         if (!zone) {
             return Unexpected{zone.error()};
         }
@@ -313,8 +344,6 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     std::shared_ptr<const RenderResult> shared = std::make_shared<const RenderResult>(RenderResult{
         .buffer = OutputAudio{.audio = std::move(out),
                               .start = to_time_point<OutputAxis>(Samples{plan.region_begin}, rate)},
-        .source_range = SourceRange::from_start(
-            to_time_point<SourceAxis>(Samples{plan.region_begin}, rate), to_seconds(count, rate)),
         .cache_id = short_id(key),
         .notes_rendered = std::move(rendered),
         .passthrough = passthrough});
