@@ -26,7 +26,7 @@ Goal: a codebase a new developer (or a fresh Claude session) can understand one 
 | Namespaces | `melo::<module>` | `melo::analysis::pitch` |
 | Files | `snake_case.h/.cpp`, named after the main type or function | `pitch_track.h` |
 
-**Units go in the type or the name, always.** Prefer strong types from `core/types/units.h`: `SourceTime`, `OutputTime`, `Seconds`, `Samples`, `Cents`, `Decibels`, `Hz`. Where a raw number is unavoidable (inside a kernel), suffix the name: `_s`, `_samples`, `_cents`, `_db`, `_lu`, `_hz`, `_ratio`. A function that takes or returns time must say which axis.
+**Units go in the type or the name, always.** Prefer strong types from `core/types/units.h`: `SourceTime`, `OutputTime`, `Seconds`, `Samples`, `Cents`, `Decibels`, `Hz`, `Ratio`, `LinearGain`, `LoudnessUnits`, and `TimeRange<Axis>` (`SourceRange`, `OutputRange`) from `core/types/time_range.h` (ADR-0003). Where a raw number is unavoidable (inside a kernel), suffix the name: `_s`, `_samples`, `_cents`, `_db`, `_lu`, `_hz`, `_ratio`, `_prob` (0..1 probability), `_rad` (phase). A function that takes or returns time must say which axis.
 
 ## 3. Types and ownership
 

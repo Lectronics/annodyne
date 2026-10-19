@@ -56,6 +56,7 @@ class AudioBuffer:
     data: float32[channels, samples]
     sample_rate: int
     start_time: float       # in source time or output time; the owner says which
+                            # → superseded by ADR-0002: no start_time; use PositionedAudio<Axis>
 
 # ---- Frame-based tracks (all on a shared analysis grid) ----
 class FrameGrid:
@@ -204,6 +205,7 @@ class SynthesisEngine(Protocol):
                     time_map: TimeMap,
                     out_range: tuple[float, float]   # output time
                     ) -> AudioBuffer: ...       # the note's edited audio, in output time
+                                                # → ADR-0002: returns OutputAudio
 ```
 
 | Engine folder | Used for | Method |
@@ -226,7 +228,7 @@ class SynthesisEngine(Protocol):
 ```python
 class RenderResult:
     buffer: AudioBuffer         # output time
-    out_range: tuple[float, float]
+    out_range: tuple[float, float]      # → ADR-0002: dropped; derived from buffer (OutputAudio)
     source_range: tuple[float, float]   # what part of the original was read
     cache_key: str
     notes_rendered: list[str]   # which notes were actually re-synthesised
@@ -422,6 +424,7 @@ melo/
 ├── core/
 │   ├── types/                 # AudioSource, Note, tracks, AnalysisResult, Edit, EffectiveNote
 │   ├── dsp/                   # stft/istft, windows, filters, resampling, crossfades, k-weighting
+│   ├── io/                    # WAV read/write; linkable only by project/host/ui/cli + tests (ADR-0001)
 │   ├── analysis/
 │   │   ├── pitch/             # detect_pitch: pYIN, neural estimators, Viterbi smoothing, refinement
 │   │   ├── onsets/            # detect_onsets: SuperFlux, ComplexFlux, CNN
@@ -484,10 +487,11 @@ melo/
 │   ├── plugin/                # VST3 / AU / AAX wrappers (e.g. via JUCE)
 │   └── standalone/            # stand-alone app shell, audio I/O
 ├── ui/                        # note editor, blobs, inspectors, grids, tool palette
-└── tests/
+└── tests/                     # folders = CTest labels (ADR-0004)
+    ├── unit/                  # per-function tests
+    ├── contract/              # core-contract invariants, layer-rule fixtures
+    ├── audio/                 # objective audio checks: null, undo-null, untouched, round-trips
     ├── golden/                # reference audio + expected analysis (pitch, notes)
-    ├── null/                  # no-edit renders must equal input
-    ├── roundtrip/             # edit → render → re-analyse gives the requested values
     └── torture/               # vibrato, sibilants, ±12 st, chords, reverb
 ```
 

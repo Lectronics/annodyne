@@ -57,7 +57,7 @@ These presets and the CLI are created in Phase 0. If a command fails because som
 ## Layout (summary — full version in the architecture spec)
 
 ```
-src/core/{types,dsp,analysis,tuning,edits,timemap,synthesis,render,models}
+src/core/{types,dsp,io,analysis,tuning,edits,timemap,synthesis,render,models}
 src/tools/  src/macros/  src/features/  src/project/
 src/host/{ara,plugin,standalone}  src/ui/  src/cli/
 tests/{unit,contract,audio,golden,torture}   audition/   docs/

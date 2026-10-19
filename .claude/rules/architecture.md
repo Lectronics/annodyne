@@ -22,9 +22,12 @@ Each folder under `src/` is its own CMake library target. A target may only link
 | 4 | `core/render` | layers 0–3 |
 | 5 | `tools/*`, `macros/*`, `features/*` | `core/types`, `core/edits`, `core/tuning`, read-only analysis results. **Not** `dsp`, `synthesis`, `render`. |
 | 6 | `project` | layers 0–5 |
-| 7 | `host/*`, `ui`, `cli` | everything |
+| 7 | `host/*`, `ui`, `cli/*` | everything |
+| 0 + restricted | `core/io` (WAV file I/O, ADR-0001) | itself links only `core/types`. **May only be linked by layers 6–7 and tests.** |
 
 `features/dna` and `features/sound_editor` may call analysis functions (layer 1) to request re-analysis, but still never synthesise audio themselves.
+
+These rules are enforced at configure time by `cmake/MeloLayers.cmake` (`MELO LAYER VIOLATION: R<n>`) and at include level by `scripts/check_includes.py`; see `docs/design/phase0-foundations.md` §2.
 
 ## What goes where
 
