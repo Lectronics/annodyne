@@ -22,7 +22,7 @@ struct InfoReport {
 };
 
 /// Reads the WAV at `path` and summarises it. Errors: those of io::read_wav.
-/// Not real-time safe.
+/// Thread-safe; not real-time safe (file I/O).
 [[nodiscard]] Result<InfoReport> make_info_report(const std::filesystem::path& path);
 
 /// Human-readable multi-line text for a report, ending in a newline.

@@ -2,7 +2,7 @@
 
 This is the plan Claude Code follows to build the editor. It is ordered so that **structure is settled and checked before code depends on it**, and so that **something audible exists early** and gets listened to at every stage.
 
-**Current phase:** Phase 1 *(update this line when a phase closes)*
+**Current phase:** Phase 3 *(update this line when a phase closes)*
 
 ---
 
@@ -75,6 +75,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `SynthesisEngine` interface; a `PassthroughEngine` that returns the source segment.
 - `render_region`, `RenderResult`, `RenderCache` (keyed by source, analysis version, relevant edits, engine settings).
 - Crossfade utilities (equal-power, linear, log) in `core/dsp`.
+- *(Addendum, ADR-0008)* The pipeline handles `warp`, `cut` and `insert` spans: slope-1 warps copy shifted source samples, `insert` spans render digital silence, `cut` spans render nothing. `TimeMap` is the span model; `SegmentId` and the generalised `EditTarget` exist; the new edit categories exist as enum values only. A warp with slope ≠ 1 is still `not_implemented` (Phase 6).
 - `anno-cli render <source> --edits edits.json --out out.wav` and `anno-cli audition` (writes the package layout from `AUDIO_VERIFICATION.md` §3).
 - Objective check framework in `tests/audio/`: null test, untouched-region test, click detector, sanity, determinism.
 
@@ -124,6 +125,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - TimeMap-driven rendering: note-aware stretching with consonant/attack protection; `synthesis/transient` for attacks.
 - `tools/time` (moves, lengths, handles), `tools/attack_speed`, `tools/note_separation`.
 - `macros/quantize_time` (grid), with perceptual onsets.
+- *(ADR-0008)* Segment timeline (`analysis/gaps`): noise floor, gap detection and classification, `SegmentTimeline` in `AnalysisResult`. Gap layout (`solve_layout`, `plan_gap_layout`, `build_time_map` on spans; shift first, stretch only when a gap is exhausted). `gap` and `layout` edits, `tools/gap`, `macros/strip_silence`, `render_gap`. Breath detection (`analysis/breaths`). Note stretching (`docs/design/note-stretching.md`).
 
 **Verify:** timing round-trip, length check, click detector, no flams in overlap tests. Audition `phase5-timing`.
 
@@ -135,6 +137,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 - `tools/pitch` (transitions), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
 - `macros/correct_pitch`, `macros/leveling`.
+- *(ADR-0008)* Breath chain (`core/dsp/dynamics`: `Compressor`, `Limiter`, `HighPass`; `render_breath_event`), the `breath`, `breath_chain` and `breath_assignment` edits and the breath macros (`features/breaths`: `BreathLevel`, `MuteSmallBreaths`, `RemoveBreaths`).
 - `core/tuning`: chromatic and scale grids, `target_pitch`.
 
 **Verify:** modulation/drift scaling, formant round-trip, level round-trip, noise gain applies only to noise frames. Audition `phase6-expression` covering every tool.
@@ -177,6 +180,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ## Phase 10 — Note editor UI
 
 - Blobs, pitch curves, grids, tool palette, inspectors, undo UI, playback cursor. The UI only reads analysis/effective state and sends gestures to tools.
+- *(ADR-0008)* Breath Lane UI (`ui/breath_lane`), and the playhead and gap display treating `insert` spans as generated audio.
 
 **Verify:** UI never blocks the audio thread; every gesture results in the same edits as the equivalent CLI scenario (so UI bugs can be reproduced headless).
 

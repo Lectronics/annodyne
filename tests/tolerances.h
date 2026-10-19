@@ -40,11 +40,28 @@ inline constexpr int k_nan_inf_samples{0};
 /// Sanity: DC offset below -60 dBFS.
 inline constexpr Decibels k_dc_offset_max_dbfs{-60.0};
 
+// ---- Click detector (initial values, pending human review; AUDIO_VERIFICATION §1 names the method
+// but gives no number). Calibrated by two permanent tests: a 10 ms crossfade is clean and a hard
+// splice is detected (tests/audio/click_calibration). Never loosen to make a render pass.
+
+/// A sample is a click candidate if its first difference exceeds this multiple of the RMS of the
+/// first difference in the surrounding window. A 440 Hz sine peaks at ~1.4x its own RMS.
+inline constexpr double k_click_ratio = 6.0;
+/// Window (samples, each side) for the local RMS of the first difference.
+inline constexpr int k_click_window = 128;
+/// Absolute floor on the first difference (linear full scale) so digital silence cannot trigger.
+inline constexpr double k_click_floor = 1e-3;
+
 // ---- Engineering ----------------------------------------------------------------------------
 
 /// TimeMap inverse: M^-1(M(s)) == s within 1e-9 s (ROADMAP Phase 1). Double has ~16 significant
 /// digits, so a few operations on hour-long positions (~4e3 s) stay far below this.
 inline constexpr Seconds k_timemap_roundtrip{1e-9};
+/// Order-independence of summed `add` edits (up to ~30 values of magnitude <= 300): double
+/// rounding error is ~1e-13; 1e-9 leaves room and is still far below anything audible.
+inline constexpr double k_fold_commute_abs = 1e-9;
+/// Order-independence of multiplied `scale` edits (factors in 0.25..4, up to ~30): relative.
+inline constexpr double k_fold_commute_rel = 1e-9;
 /// Cents <-> Hz conversions: one exp2/log2 plus a multiply on values up to ~1.5e4 cents; double
 /// error is ~1e-12 cents. Absolute, because relative error is meaningless near 0 cents.
 inline constexpr Cents k_cents_conversion_abs{1e-9};

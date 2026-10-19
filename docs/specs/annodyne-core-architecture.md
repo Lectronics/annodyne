@@ -37,9 +37,13 @@ They are linked by a **TimeMap**, a monotonic piecewise-linear function `τ = M(
 - The local slope `dM/ds` is the **stretch ratio** at that point (2.0 = twice as long).
 - The renderer works backwards: for each output block it asks `s = M⁻¹(τ)` to know which part of the source to read.
 
+> **ADR-0008 (proposed):** the TimeMap is an ordered list of **spans** tiling `[0, source_length)`, each `warp` (source played back, linearly time-scaled; slope 1 = untouched), `cut` (source removed, only inside gaps) or `insert` (output with no source: room tone or silence, only inside gaps). So `M` is not always invertible: `to_output(s)` returns `optional<OutputTime>` (empty inside a cut) and `to_source(τ)` returns `variant<SourceTime, GeneratedTime>` (generated inside an insert). Code must handle both cases. Where this differs from the text above, the ADR wins. Details: `docs/design/silence-and-gaps.md` §1.
+
 ---
 
 ## 3. Core data types
+
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
 
 These live in `core/types/`. Every analysis function returns one of these; every tool and macro reads them.
 
@@ -114,6 +118,18 @@ class Note:
     confidence: float
     is_active: bool         # False = "ghost" candidate (DNA) the user can switch on
 
+# ADR-0008 (Phase 5): the segment timeline partitions source time into note and gap segments.
+class Segment:              # kind: "note" | "gap"; id: SegmentId; start, end (source time)
+    ...
+class Gap:                  # a Segment plus regions (tail | silence | breath | noise), floor level, before/after note
+    ...
+class SegmentTimeline:      # contiguous, ordered, covers the source exactly, no zero-length gaps
+    ...
+class TimeSpan:             # kind: "warp" | "cut" | "insert"; source range (not insert), output range (not cut)
+    ...
+class BreathEvent:          # id: BreathId; gap: SegmentId; start, end; kind; loudness; confidence
+    ...
+
 class AnalysisResult:
     version: int            # increments on every re-analysis
     source_id: str
@@ -128,6 +144,9 @@ class AnalysisResult:
     key: KeyEstimate | None
     chords: ChordTrack | None
     tuning_ref_hz: float              # detected reference, e.g. 441.3
+    timeline: SegmentTimeline | None  # ADR-0008, Phase 5
+    noise_floor: NoiseFloor | None    # ADR-0008, Phase 5
+    breaths: list[BreathEvent]        # ADR-0008, Phase 5
 ```
 
 ---
@@ -182,17 +201,21 @@ Notation: `→` shows the return type. Parameters list the main controls only; e
 
 ### 4.4 Edits — `core/edits/`
 
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
+
 | Function | Returns | Notes |
 |---|---|---|
 | `EditList.add(edit)` | new `EditList` version | Append-only; returns the new head |
 | `EditList.undo()` / `redo()` | new `EditList` version | Moves a cursor; nothing deleted |
 | `EditList.reset(note_ids, categories)` | new `EditList` version | Adds "reset" edits (keeps history) |
 | `effective_state(note, edits)` | `EffectiveNote` | **Folds** every edit for this note onto its analysed values (section 5.3) |
-| `build_time_map(notes, edits)` | `TimeMap` | Section 5.4 |
+| `build_time_map(notes, edits)` | `TimeMap` | Section 5.4. ADR-0008: from Phase 5 it takes the `SegmentTimeline` and a solved `Layout` (see `docs/design/silence-and-gaps.md` §3.4) |
 | `dirty_regions(old_edits, new_edits)` | `list[(s_start, s_end)]` | Which source ranges need re-rendering |
 | `remap_after_reanalysis(edits, old_analysis, new_analysis)` | `EditList` | Re-attaches edits to new note IDs after Note Assignment changes |
 
 ### 4.5 Synthesis engines — `core/synthesis/<engine>/`
+
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
 
 All engines implement one interface, so the renderer can choose per note:
 
@@ -218,9 +241,11 @@ class SynthesisEngine(Protocol):
 
 ### 4.6 Render — `core/render/`
 
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
+
 | Function | Key parameters | Returns |
 |---|---|---|
-| `render_region(project, track_id, out_start, out_end, quality)` | `"preview" \| "final"` | `RenderResult` |
+| `render_region(project, track_id, out_start, out_end, quality)` | `"preview" \| "final"` | `RenderResult` (ADR-0008: no `source_range`; inputs carry an optional TimeMap) |
 | `render_block(project, track_id, block_index)` | — | `AudioBuffer` (real-time path, reads cache) |
 | `RenderCache.get(key)` / `put(key, buf)` | key = hash(source_id, analysis.version, relevant edits, engine settings) | `AudioBuffer \| None` |
 | `schedule_background_render(regions, priority)` | priority near playhead | — |
@@ -229,7 +254,7 @@ class SynthesisEngine(Protocol):
 class RenderResult:
     buffer: AudioBuffer         # output time
     out_range: tuple[float, float]      # → ADR-0002: dropped; derived from buffer (OutputAudio)
-    source_range: tuple[float, float]   # what part of the original was read
+    source_range: tuple[float, float]   # (removed by ADR-0008: cuts and inserts have no single source range)
     cache_key: str
     notes_rendered: list[str]   # which notes were actually re-synthesised
     passthrough: bool           # True if nothing edited here (original audio copied)
@@ -241,6 +266,8 @@ class RenderResult:
 
 ### 5.1 The edit record
 
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
+
 ```python
 class Edit:
     id: str
@@ -251,13 +278,14 @@ class Edit:
     target: EditTarget
     category: Literal["pitch", "pitch_mod", "pitch_drift", "transition", "formant",
                       "amplitude", "fade", "sibilant", "time", "attack",
-                      "separation", "assignment", "sound"]
+                      "separation", "assignment", "sound",
+                      "gap", "layout", "breath", "breath_chain", "breath_assignment"]  # last five: ADR-0008
     param: str                  # e.g. "center_offset_cents", "mod_scale"
     op: Literal["set", "add", "scale"]
     value: float | Curve        # a number, or a curve over the note (e.g. a fade)
 
 class EditTarget:
-    note_ids: list[str]         # usually the target
+    note_ids: list[str]         # usually the target. ADR-0008: segment_ids (notes and gaps) generalise this; breath edits target a BreathId
     source_range: tuple[float, float] | None   # for range edits (e.g. a time handle)
     track_id: str
 ```
@@ -281,6 +309,11 @@ Why `op` matters: `"add"` and `"scale"` edits **compose** (two +20-cent drags gi
 | `separation` | add/remove/move boundary, `type` | Note Separation Tool |
 | `assignment` | octave move, activate/deactivate, merge/split | Note Assignment Mode (triggers re-analysis) |
 | `sound` | `harmonic_gains[k]`, envelope morph | Sound Editor |
+| `gap` *(ADR-0008)* | `gain_db`, `mute`, `noise_gain_db`, `fade_out_of_note_s`, `fade_into_note_s`, `target_duration_s`, `fill` | Gap Tool, Strip Silence |
+| `layout` *(ADR-0008)* | `anchor_add`, `anchor_remove` | Gap Tool, Strip Silence |
+| `breath` *(ADR-0008)* | `clip_gain_db`, `mute`, `fade_in_s`, `fade_out_s`, `trim_start_s`, `trim_end_s` | Breath Lane clips, breath macros |
+| `breath_chain` *(ADR-0008)* | HPF, compressor, limiter, lane gain, lane mute | Breath Lane header |
+| `breath_assignment` *(ADR-0008)* | mark, unmark, split, merge | Breath Lane corrections |
 
 ### 5.3 Folding edits into an effective note
 
@@ -343,18 +376,22 @@ harmonic_amp'(t, k) += harmonic_gains_db[k]                      # Sound Editor
 
 ### 5.4 The TimeMap
 
+> **ADR-0005 (accepted):** the typed form of this section (`EditSpec`/`Edit`, closed `EditParam` enum, renamed fields, linear undo, Flex-style time handles) is in `docs/decisions/0005-edit-model.md`; where they differ the ADR wins.
+
 `build_time_map(notes, edits)` turns timing edits into anchor points `(s_i, τ_i)`:
 
 1. Start from the identity map with anchors at every note's `source_start`, `attack_end`, `release_start` and `source_end`.
 2. Apply `onset_shift_s` and `length_scale` per note, moving its anchors in output time.
 3. Insert user **time handles** as extra anchors.
 4. Protect consonants and attacks: the segment `[source_start, attack_end]` keeps slope 1 (scaled only by `attack_time_scale`); vowels absorb the change.
-5. Resolve gaps and overlaps between neighbours by stretching the neighbour's boundary region (never leave silence or double audio).
+5. Resolve gaps and overlaps between neighbours (ADR-0008, owner decision, **target behaviour from Phase 5; until then Flex per ADR-0005 §16**; **replaces** "stretch the neighbour's boundary region"): shift first, stretch only when needed. A moved note shifts into the gap before it (the gap is cut) and the gap after it grows (an `insert` span); neither neighbour changes. Only when a moving note would hit the next note is a second handle added automatically at the next transient and the audio between the two handles stretched. Never leave a hole or double audio.
 6. Enforce monotonic order (`τ` always increasing) and return the piecewise-linear map plus its inverse.
 
 The map is per track. Tempo edits and Quantize Time are simply many anchor moves written as `time` edits.
 
 ### 5.5 The render pipeline (what happens when the user drags a note)
+
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
 
 ```
 User drags note N up 2 semitones
@@ -424,6 +461,7 @@ anno/
 ├── core/
 │   ├── types/                 # AudioSource, Note, tracks, AnalysisResult, Edit, EffectiveNote
 │   ├── dsp/                   # stft/istft, windows, filters, resampling, crossfades, k-weighting
+│   │   └── dynamics/          # Compressor, Limiter, HighPass (ADR-0008, Phase 6)
 │   ├── io/                    # WAV read/write; linkable only by project/host/ui/cli + tests (ADR-0001)
 │   ├── analysis/
 │   │   ├── pitch/             # detect_pitch: pYIN, neural estimators, Viterbi smoothing, refinement
@@ -432,6 +470,8 @@ anno/
 │   │   ├── perceived_pitch/   # perceived_pitch, decompose_pitch_curve
 │   │   ├── partials/          # analyse_partials: QIFFT, reassignment, harmonic sieve tracking
 │   │   ├── harmonic_noise/    # split_harmonic_noise, frame classifier (voiced/sibilant/breath)
+│   │   ├── gaps/              # noise floor, gap detection and classification, segment timeline (ADR-0008)
+│   │   ├── breaths/           # detect_breaths (ADR-0008)
 │   │   ├── envelope/          # estimate_envelope: True Envelope, TE-LPC, CheapTrick
 │   │   ├── loudness/          # measure_loudness (per note, BS.1770-based)
 │   │   ├── polyphonic/        # transcribe_polyphonic: neural transcriber + DSP refinement
@@ -441,13 +481,15 @@ anno/
 │   │   └── orchestrator/      # analyse(): picks the chain per algorithm, caching, progress
 │   ├── tuning/                # scales, temperaments, target_pitch, scale degrees, adaptive JI solver
 │   ├── edits/                 # Edit, EditList (undo/redo/reset), effective_state, remapping
-│   ├── timemap/               # TimeMap build, inverse, anchors, consonant protection
+│   ├── timemap/               # build_time_map, solve_layout, plan_gap_layout (the TimeMap type itself is in types/, ADR-0005 §11)
 │   ├── synthesis/
 │   │   ├── interface/         # SynthesisEngine protocol, engine selection rules
 │   │   ├── harmonic_noise/    # additive + filtered-noise resynthesis
 │   │   ├── psola/
 │   │   ├── phase_vocoder/     # phase-locked + PGHI
 │   │   ├── transient/         # transient-preserving / HPSS stretch
+│   │   ├── gap/               # render_gap: gate, cut, room-tone insert (ADR-0008)
+│   │   ├── breath/            # render_breath_event with the breath chain (ADR-0008)
 │   │   └── neural_vocoder/    # optional, behind a feature flag
 │   ├── render/                # render_region, render_block, RenderCache, background scheduler
 │   └── models/                # ML model loading, ONNX/CoreML runtimes, weight registry
@@ -461,6 +503,7 @@ anno/
 │   ├── amplitude/
 │   ├── fade/
 │   ├── sibilant/
+│   ├── gap/                   # gap gain, mute, target duration, anchors (ADR-0008)
 │   ├── time/                  # time + time handles
 │   ├── attack_speed/
 │   ├── note_separation/
@@ -469,12 +512,14 @@ anno/
 ├── macros/                    # batch operations; each returns a group of Edits
 │   ├── correct_pitch/
 │   ├── quantize_time/         # incl. quantize to reference track (DTW alignment)
+│   ├── strip_silence/         # gate / tighten / remove gaps (ADR-0008)
 │   └── leveling/
 │
 ├── features/                  # larger functions that combine analysis, tuning and edits
 │   ├── scales/                # scale library, custom scales, scale detection, transformations
 │   ├── chords/                # chord track, chord grid, snapping to chord tones
 │   ├── tempo/                 # tempo detection UI model, keep/flatten tempo
+│   ├── breaths/               # breath lane model, breath macros (ADR-0008)
 │   ├── dna/                   # polyphonic editing workflows built on analysis/polyphonic + separation
 │   ├── sound_editor/          # harmonic gains, spectral macros, timbre transfer
 │   ├── midi_export/           # Audio-to-MIDI (notes, pitch bend, velocity)
@@ -486,7 +531,7 @@ anno/
 │   ├── ara/                   # ARA 2 document controller, playback renderer, audio access
 │   ├── plugin/                # VST3 / AU / AAX wrappers (e.g. via JUCE)
 │   └── standalone/            # stand-alone app shell, audio I/O
-├── ui/                        # note editor, blobs, inspectors, grids, tool palette
+├── ui/                        # note editor, blobs, inspectors, grids, tool palette; breath_lane/ (ADR-0008)
 └── tests/                     # folders = CTest labels (ADR-0004)
     ├── unit/                  # per-function tests
     ├── contract/              # core-contract invariants, layer-rule fixtures

@@ -58,6 +58,14 @@ function(anno_external_allowed folder dep out_var)
     if(folder MATCHES "^(host/[a-z0-9_]+|ui)$" AND dep MATCHES "^(juce_|juce::|ARA)")
         set(allowed TRUE)
     endif()
+    # core/render guards its cache with a std::mutex (ADR-0006).
+    if(folder STREQUAL "core/render" AND dep STREQUAL "Threads::Threads")
+        set(allowed TRUE)
+    endif()
+    # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).
+    if(folder MATCHES "^cli(/[a-z0-9_]+)?$" AND dep MATCHES "^nlohmann_json(::nlohmann_json)?$")
+        set(allowed TRUE)
+    endif()
     set(${out_var} ${allowed} PARENT_SCOPE)
 endfunction()
 

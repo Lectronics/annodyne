@@ -25,7 +25,7 @@ strong types in `core/types/units.h` cannot check.
 | `istft(...) -> AudioBuffer` | stays `AudioBuffer`; frames are relative, position belongs to the caller |
 | `crossfade(a, b, shape, length) -> AudioBuffer` | operates on `AudioBuffer`s the caller has aligned |
 | `RenderResult.buffer: AudioBuffer`, `out_range` | `buffer: OutputAudio`; `out_range` is **dropped**, derived by `output_range(const OutputAudio&)` |
-| `RenderResult.source_range` | `SourceRange` (`TimeRange<SourceAxis>`) |
+| `RenderResult.source_range` | `SourceRange` (`TimeRange<SourceAxis>`) *(removed by ADR-0008: with cuts and inserts there is no single source range)* |
 | `AudioSource.read(start, count) -> AudioBuffer` | unchanged; the position is the request (a source-axis sample index) |
 
 ## Alternatives considered

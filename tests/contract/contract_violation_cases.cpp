@@ -2,6 +2,7 @@
 // anno::detail::contract_violation (prints "contract violation", then aborts). Driven by
 // expect_contract_violation.cmake, because a SIGABRT would fail a normal CTest test.
 
+#include "core/edits/effective_state.h"
 #include "core/types/audio_buffer.h"
 #include "core/types/result.h"
 #include "core/types/units.h"
@@ -55,6 +56,12 @@ int run(std::string_view name) {
     if (name == "audio_buffer_bad_channel") {
         const auto buf = AudioBuffer::create(1, Samples{1}, Hz{48000.0}).value();
         return static_cast<int>(buf.channel(1).size());
+    }
+    if (name == "effective_state_track_mismatch") {
+        Note note;
+        note.id = NoteId{"a"};
+        note.track_id = TrackId{"t1"};
+        return static_cast<int>(effective_state(note, EditList{TrackId{"other"}}).is_edited);
     }
     std::fprintf(stderr, "unknown case '%.*s'\n", static_cast<int>(name.size()), name.data());
     return 2;

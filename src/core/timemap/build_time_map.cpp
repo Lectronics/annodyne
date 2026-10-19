@@ -1,0 +1,217 @@
+#include "core/timemap/build_time_map.h"
+
+#include "core/edits/effective_state.h"
+
+#include <algorithm>
+#include <cmath>
+
+// Raw seconds are allowed here (ADR-0003): the builder works in plain doubles and converts at the
+// edges.
+
+namespace anno {
+
+namespace {
+
+/// Floating-point dust below which two durations count as equal.
+constexpr double k_same_length_s = 1e-12;
+
+struct Anchor {
+    double s;  // source seconds
+    double t;  // output seconds
+    int note;  // index into the note span; k_no_note for the origin and end anchors
+};
+
+constexpr int k_no_note = -1;
+
+double raw(SourceTime t) {
+    return t.unchecked_since_origin().value();
+}
+double raw(OutputTime t) {
+    return t.unchecked_since_origin().value();
+}
+
+/// True if any timing edit survives in the note's effective state. Only such notes pin anchors:
+/// every other note is stretched along with the gaps (Flex-style, ADR-0005 §11).
+bool has_timing_edit(const EffectiveNote& eff) {
+    return eff.onset_shift != Seconds{} || eff.length_scale != Ratio{1.0} ||
+           eff.attack_time_scale != Ratio{1.0} || !eff.handles.empty();
+}
+
+/// The anchors a note asks for, before any repair: start, attack end, handles in the body, end.
+/// Unedited terms are added as exact zeros so an untouched note maps s -> s bit-exactly.
+std::vector<Anchor> desired_anchors(int index, const Note& note, const EffectiveNote& eff) {
+    const double start = raw(note.source_start);
+    const double attack_end = raw(note.attack_end);
+    const double end = raw(note.source_end);
+    const double shift = eff.onset_shift.value();
+    const double attack_extra = (attack_end - start) * (eff.attack_time_scale.value() - 1.0);
+    const double body_extra = (end - attack_end) * (eff.length_scale.value() - 1.0);
+
+    std::vector<Anchor> anchors{
+        {.s = start, .t = start + shift, .note = index},
+        {.s = attack_end, .t = attack_end + shift + attack_extra, .note = index}};
+    for (const TimePair& h : eff.handles) {
+        if (raw(h.source) > attack_end && raw(h.source) < end) {
+            anchors.push_back({.s = raw(h.source), .t = raw(h.output), .note = index});
+        }
+    }
+    anchors.push_back({.s = end, .t = end + shift + attack_extra + body_extra, .note = index});
+
+    // Coincident source points (zero-length attack or body) keep the later output.
+    std::vector<Anchor> merged;
+    for (const Anchor& a : anchors) {
+        if (!merged.empty() && merged.back().s == a.s) {
+            merged.back().t = std::max(merged.back().t, a.t);
+        } else {
+            merged.push_back(a);
+        }
+    }
+    return merged;
+}
+
+/// Appends `note` anchors after `done`. A coincident source point keeps the later output; an
+/// output that differs from the earlier request marks the later note as repaired.
+void append(std::vector<Anchor>& done, const std::vector<Anchor>& anchors,
+            std::vector<bool>& repaired) {
+    for (const Anchor& a : anchors) {
+        if (!done.empty() && done.back().s == a.s) {
+            if (done.back().note != k_no_note && done.back().t != a.t) {
+                repaired[static_cast<std::size_t>(a.note)] = true;
+            }
+            done.back().t = std::max(done.back().t, a.t);
+            done.back().note = a.note;
+        } else {
+            done.push_back(a);
+        }
+    }
+}
+
+/// Smallest output length a segment may have: the builder's minimum, or its source length if
+/// that is shorter.
+double needed_length(const Anchor& a, const Anchor& b, double min_segment_s) {
+    return std::min(min_segment_s, b.s - a.s);
+}
+
+/// Pushes outputs later so every segment keeps its needed length; the last anchor is the fixed
+/// end when `fixed_end`. Then pulls earlier anchors back from the fixed end. Returns false if the
+/// two passes cannot both be satisfied (the anchors are then left unspecified).
+bool enforce_min_segments(std::vector<Anchor>& done, bool fixed_end, double min_segment_s) {
+    const std::size_t last = done.size() - (fixed_end ? 2 : 1);
+    for (std::size_t k = 1; k <= last; ++k) {
+        done[k].t =
+            std::max(done[k].t, done[k - 1].t + needed_length(done[k - 1], done[k], min_segment_s));
+    }
+    if (!fixed_end) {
+        return true;
+    }
+    for (std::size_t k = done.size() - 1; k-- > 0;) {
+        done[k].t =
+            std::min(done[k].t, done[k + 1].t - needed_length(done[k], done[k + 1], min_segment_s));
+    }
+    for (std::size_t k = 1; k < done.size(); ++k) {
+        if (done[k].t <
+            done[k - 1].t + needed_length(done[k - 1], done[k], min_segment_s) - k_same_length_s) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Result<void> check_notes(std::span<const Note> notes, const EditList& edits,
+                         SourceTime source_end) {
+    const Note* previous = nullptr;
+    for (const Note& n : notes) {
+        if (!n.is_active) {
+            continue;
+        }
+        if (auto r = validate(n); !r) {
+            return fail(ErrorCode::invalid_argument,
+                        "build_time_map: invalid note: " + r.error().message);
+        }
+        if (!(n.track_id == edits.track_id())) {
+            return fail(ErrorCode::invalid_argument, "build_time_map: note is on another track");
+        }
+        if (previous != nullptr && n.source_start < previous->source_end) {
+            return fail(
+                ErrorCode::invalid_argument,
+                "build_time_map: active notes overlap or are unsorted (polyphony is Phase 11)");
+        }
+        if (source_end != SourceTime{} && n.source_end > source_end) {
+            return fail(ErrorCode::invalid_argument,
+                        "build_time_map: a note ends after params.source_end");
+        }
+        previous = &n;
+    }
+    return {};
+}
+
+bool is_identity(const std::vector<Anchor>& anchors) {
+    return std::ranges::all_of(anchors, [](const Anchor& a) { return a.s == a.t; });
+}
+
+}  // namespace
+
+Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList& edits,
+                                    const TimeMapParams& params) {
+    if (auto r = check_notes(notes, edits, params.source_end); !r) {
+        return Unexpected{r.error()};
+    }
+    const double min_segment_s = params.min_segment.value();
+    std::vector<bool> repaired(notes.size(), false);
+    std::vector<Anchor> done{{.s = 0.0, .t = 0.0, .note = k_no_note}};
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        if (!notes[i].is_active) {
+            continue;
+        }
+        const EffectiveNote eff = effective_state(notes[i], edits);
+        if (has_timing_edit(eff)) {
+            append(done, desired_anchors(static_cast<int>(i), notes[i], eff), repaired);
+        }
+    }
+    const bool fixed_end = raw(params.source_end) > done.back().s;
+    if (fixed_end) {
+        done.push_back(
+            {.s = raw(params.source_end), .t = raw(params.source_end), .note = k_no_note});
+    }
+    const std::vector<Anchor> requested = done;
+    if (!enforce_min_segments(done, fixed_end, min_segment_s)) {
+        // Not enough room between the fixed ends: fall back to the unedited timeline.
+        done = requested;
+        for (Anchor& a : done) {
+            a.t = a.s;
+        }
+        repaired.assign(repaired.size(), true);
+    }
+    for (std::size_t k = 0; k < done.size(); ++k) {
+        if (done[k].note != k_no_note && std::abs(done[k].t - requested[k].t) > k_same_length_s) {
+            repaired[static_cast<std::size_t>(done[k].note)] = true;
+        }
+    }
+    const int repaired_notes = static_cast<int>(std::ranges::count(repaired, true));
+    // The domain ends at the recording's end; when that is unknown (map-only use) at the last note
+    // or anchor, whichever is later.
+    double length = std::max(raw(params.source_end), done.back().s);
+    for (const Note& n : notes) {
+        if (n.is_active) {
+            length = std::max(length, raw(n.source_end));
+        }
+    }
+    if (is_identity(done)) {
+        return TimeMapBuild{.map = TimeMap::identity(Seconds{length}),
+                            .repaired_notes = repaired_notes};
+    }
+    std::vector<TimePair> pairs;
+    pairs.reserve(done.size());
+    for (const Anchor& a : done) {
+        pairs.push_back({.source = SourceTime::unchecked_from_origin(Seconds{a.s}),
+                         .output = OutputTime::unchecked_from_origin(Seconds{a.t})});
+    }
+    auto map = TimeMap::from_anchors(std::move(pairs), Seconds{length});
+    if (!map) {
+        return fail(ErrorCode::internal,
+                    "build_time_map produced non-monotone anchors: " + map.error().message);
+    }
+    return TimeMapBuild{.map = std::move(*map), .repaired_notes = repaired_notes};
+}
+
+}  // namespace anno

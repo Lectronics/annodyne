@@ -1,0 +1,44 @@
+#pragma once
+
+#include "core/types/analysis_result.h"
+#include "core/types/audio_source.h"
+#include "core/types/edit.h"
+#include "core/types/result.h"
+
+#include <filesystem>
+#include <string>
+#include <vector>
+
+// Scenario data (docs/AUDIO_VERIFICATION.md §2). JSON-free: the parser is cli/scenario_json.
+// Design: docs/design/phase2-render-skeleton.md.
+
+namespace anno::cli {
+
+/// A note given by hand until Phase 3 analyses real audio.
+struct ScenarioNote {
+    std::string id;
+    double start_s = 0.0;  // source time
+    double end_s = 0.0;
+};
+
+struct Scenario {
+    std::string name;
+    std::filesystem::path source;  // WAV file, already resolved to a usable path
+    std::string algorithm;         // echoed in reports; "melodic" if absent
+    std::vector<ScenarioNote> notes;
+    std::vector<EditSpec> edits;  // each one is its own EditList::add group, in order
+    std::string edits_json;       // the "edits" array as written, for the audition package
+    std::string expect_json;      // the "expect" object as written ("" if absent)
+};
+
+/// The track all scenarios use.
+[[nodiscard]] TrackId scenario_track();
+
+/// Flat synthetic analysis for `scenario.notes`: valid notes with no frame data, attack ending 10%
+/// and release starting 90% into each note, pitch A4, version 1, `source`'s id.
+/// Errors: invalid_argument if a note has an empty or duplicate id, end < start, or lies outside
+/// the recording, or the notes overlap. Pure; thread-safe; not real-time safe.
+[[nodiscard]] Result<AnalysisResult> make_scenario_analysis(const Scenario& scenario,
+                                                            const AudioSource& source);
+
+}  // namespace anno::cli
