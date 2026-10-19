@@ -6,9 +6,109 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <set>
+#include <utility>
 
 namespace anno {
+
+namespace {
+
+template <class E, std::size_t N>
+constexpr std::string_view name_of(const std::array<std::pair<E, std::string_view>, N>& table,
+                                   E value) noexcept {
+    for (const auto& [e, name] : table) {
+        if (e == value) {
+            return name;
+        }
+    }
+    return "unknown";
+}
+
+template <class E, std::size_t N>
+constexpr std::optional<E> parse_name(const std::array<std::pair<E, std::string_view>, N>& table,
+                                      std::string_view name) noexcept {
+    for (const auto& [e, n] : table) {
+        if (n == name) {
+            return e;
+        }
+    }
+    return std::nullopt;
+}
+
+using enum EditCategory;
+constexpr std::array<std::pair<EditCategory, std::string_view>, 13> k_category_names{
+    {{pitch, "pitch"},
+     {pitch_mod, "pitch_mod"},
+     {pitch_drift, "pitch_drift"},
+     {transition, "transition"},
+     {formant, "formant"},
+     {amplitude, "amplitude"},
+     {fade, "fade"},
+     {sibilant, "sibilant"},
+     {time, "time"},
+     {attack, "attack"},
+     {separation, "separation"},
+     {assignment, "assignment"},
+     {sound, "sound"}}};
+
+constexpr std::array<std::pair<EditOp, std::string_view>, 4> k_op_names{{{EditOp::set, "set"},
+                                                                         {EditOp::add, "add"},
+                                                                         {EditOp::scale, "scale"},
+                                                                         {EditOp::reset, "reset"}}};
+
+constexpr std::array<std::pair<FadeShape, std::string_view>, 3> k_shape_names{
+    {{FadeShape::equal_power, "equal_power"},
+     {FadeShape::linear, "linear"},
+     {FadeShape::log, "log"}}};
+
+constexpr std::array<std::pair<EditParam, std::string_view>, k_edit_param_count> k_param_names{
+    {{EditParam::center_offset, "center_offset"},
+     {EditParam::mod_scale, "mod_scale"},
+     {EditParam::drift_scale, "drift_scale"},
+     {EditParam::transition_in_scale, "transition_in_scale"},
+     {EditParam::transition_out_scale, "transition_out_scale"},
+     {EditParam::formant_offset, "formant_offset"},
+     {EditParam::gain, "gain"},
+     {EditParam::within_note_flatten, "within_note_flatten"},
+     {EditParam::fade_in, "fade_in"},
+     {EditParam::fade_out, "fade_out"},
+     {EditParam::fade_shape, "fade_shape"},
+     {EditParam::noise_gain_voiced, "noise_gain_voiced"},
+     {EditParam::noise_gain_sibilant, "noise_gain_sibilant"},
+     {EditParam::noise_gain_breath, "noise_gain_breath"},
+     {EditParam::noise_gain_plosive, "noise_gain_plosive"},
+     {EditParam::onset_shift, "onset_shift"},
+     {EditParam::length_scale, "length_scale"},
+     {EditParam::time_handle, "time_handle"},
+     {EditParam::attack_time_scale, "attack_time_scale"}}};
+
+}  // namespace
+
+std::string_view to_string(EditCategory c) noexcept {
+    return name_of(k_category_names, c);
+}
+std::string_view to_string(EditOp op) noexcept {
+    return name_of(k_op_names, op);
+}
+std::string_view to_string(EditParam p) noexcept {
+    return name_of(k_param_names, p);
+}
+std::string_view to_string(FadeShape s) noexcept {
+    return name_of(k_shape_names, s);
+}
+std::optional<EditCategory> parse_edit_category(std::string_view n) noexcept {
+    return parse_name(k_category_names, n);
+}
+std::optional<EditOp> parse_edit_op(std::string_view n) noexcept {
+    return parse_name(k_op_names, n);
+}
+std::optional<EditParam> parse_edit_param(std::string_view n) noexcept {
+    return parse_name(k_param_names, n);
+}
+std::optional<FadeShape> parse_fade_shape(std::string_view n) noexcept {
+    return parse_name(k_shape_names, n);
+}
 
 namespace {
 

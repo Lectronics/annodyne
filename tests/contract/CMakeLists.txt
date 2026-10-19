@@ -4,6 +4,8 @@ anno_add_test(NAME result_contract_test SOURCES result_contract_test.cpp LABELS 
 anno_add_test(NAME edit_model_contract_test SOURCES edit_model_contract_test.cpp LABELS contract DEPS anno::core_edits)
 anno_add_test(NAME time_map_contract_test SOURCES time_map_contract_test.cpp LABELS contract DEPS anno::core_timemap)
 anno_add_test(NAME dirty_regions_contract_test SOURCES dirty_regions_contract_test.cpp LABELS contract DEPS anno::core_timemap)
+anno_add_test(NAME blend_plan_contract_test SOURCES blend_plan_contract_test.cpp LABELS contract DEPS anno::core_render)
+anno_add_test(NAME render_contract_test SOURCES render_contract_test.cpp LABELS contract DEPS anno::core_render anno::core_synthesis_passthrough)
 anno_add_test(NAME remap_contract_test SOURCES remap_contract_test.cpp LABELS contract DEPS anno::core_edits)
 
 # ---- Precondition aborts (ANNO_EXPECTS) -------------------------------------------------------

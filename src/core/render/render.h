@@ -1,0 +1,55 @@
+#pragma once
+
+#include "core/edits/dirty_regions.h"
+#include "core/edits/edit_list.h"
+#include "core/render/render_cache.h"
+#include "core/render/render_result.h"
+#include "core/synthesis/engine/synthesis_engine.h"
+#include "core/types/analysis_result.h"
+#include "core/types/audio_source.h"
+#include "core/types/result.h"
+#include "core/types/time_range.h"
+#include "core/types/units.h"
+
+#include <memory>
+
+// render_region: edits -> audio (architecture spec §4.6, §5.5, §5.6; ADR-0006).
+// Design: docs/design/phase2-render-skeleton.md.
+
+namespace anno {
+
+struct RenderInputs {
+    AudioSource source;
+    std::shared_ptr<const AnalysisResult> analysis;  // must not be null
+    std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
+};
+
+struct RenderParams {
+    /// Crossfade on each side of an edited note: 0 <= length <= k_max_crossfade. 0 is a hard splice
+    /// (used by tests; the click detector flags it).
+    Seconds crossfade_length{0.010};
+    FadeShape crossfade_shape = FadeShape::equal_power;
+    RenderCache* cache = nullptr;  // optional, not owned
+};
+
+/// Renders [region) of the track's output. The result's buffer is the request snapped to whole
+/// samples (Rounding::nearest at both ends); samples outside every edited note's blend zone are
+/// the source samples, bit for bit, and an empty edit list gives the source exactly (CLAUDE.md
+/// rule 5). Edited notes (EffectiveNote::is_edited) are rendered by `engine` over their whole blend
+/// zone (the note widened by the crossfade length) and faded into the original; neighbours whose
+/// zones meet are faded into each other (see blend_plan.h). A zone the engine returns identical to
+/// the source is left untouched.
+/// A cache hit returns before any engine call.
+/// Errors: invalid_argument (null analysis or edits, source/analysis id mismatch, invalid
+/// analysis, crossfade_length outside [0, k_max_crossfade], region end before start, notes on
+/// another track than the edits); out_of_range (region outside the recording);
+/// not_implemented (the edits contain timing changes, so the TimeMap is not the identity:
+/// stretching is Phase 6; or the engine cannot realise an edit); internal (an engine returned the
+/// wrong range, channel count or sample rate).
+/// Time axes: `region` is output time; with an identity TimeMap it equals source time.
+/// Thread-safe for distinct inputs (a shared cache is internally locked); not real-time safe.
+[[nodiscard]] Result<std::shared_ptr<const RenderResult>>
+render_region(const RenderInputs& inputs, OutputRange region, const SynthesisEngine& engine,
+              const RenderParams& params);
+
+}  // namespace anno

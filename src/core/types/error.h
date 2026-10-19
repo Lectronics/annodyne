@@ -14,6 +14,8 @@ enum class ErrorCode {
     corrupt_data,        // input that claims a format but breaks it (truncated, inconsistent)
     not_found,           // a named file or object does not exist
     cancelled,           // the operation was cancelled through its cancel token
+    not_implemented,     // valid request this build or engine cannot do yet (ADR-0006); not a file
+                         // format
     internal,            // a bug in Annodyne; always worth a report
 };
 

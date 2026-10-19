@@ -10,6 +10,12 @@ anno_add_test(NAME effective_state_test SOURCES effective_state_test.cpp LABELS 
 anno_add_test(NAME dirty_regions_test SOURCES dirty_regions_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME remap_test SOURCES remap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME build_time_map_test SOURCES build_time_map_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME crossfade_test SOURCES crossfade_test.cpp LABELS unit DEPS anno::core_dsp)
+anno_add_test(NAME blend_plan_test SOURCES blend_plan_test.cpp LABELS unit DEPS anno::core_render)
+anno_add_test(NAME render_cache_test SOURCES render_cache_test.cpp LABELS unit DEPS anno::core_render)
+anno_add_test(NAME render_test SOURCES render_test.cpp LABELS unit DEPS anno::core_render anno::core_synthesis_passthrough)
+anno_add_test(NAME passthrough_engine_test SOURCES passthrough_engine_test.cpp LABELS unit DEPS anno::core_synthesis_passthrough)
+anno_add_test(NAME audio_checks_test SOURCES audio_checks_test.cpp LABELS unit DEPS anno::core_types)
 anno_add_test(NAME wav_test SOURCES wav_test.cpp LABELS unit DEPS anno::core_io)
 anno_add_test(NAME cli_info_test SOURCES cli_info_test.cpp LABELS unit DEPS anno::cli_commands)
 

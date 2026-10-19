@@ -13,10 +13,20 @@
 
 namespace anno {
 
+/// Longest crossfade the renderer accepts (architecture spec §5.5: 5-20 ms). Callers of
+/// dirty_regions must use crossfade_margin >= k_max_crossfade + 1 sample, so the blend zone of an
+/// edited note lies inside its dirty range (ADR-0006).
+inline constexpr Seconds k_max_crossfade{0.020};
+
 struct DirtyParams {
-    Seconds crossfade_margin{0.050};  // added on both sides of a changed note
-    SourceTime source_end;            // end of the recording (a timing change dirties up to here)
+    /// Guard band added on both sides of a changed note. The same concept as the renderer's
+    /// crossfade length at a different layer: this must be >= k_max_crossfade + 1 sample.
+    Seconds crossfade_margin{0.050};
+    SourceTime source_end;  // end of the recording (a timing change dirties up to here)
 };
+
+static_assert(k_max_crossfade.value() + 0.001 <= DirtyParams{}.crossfade_margin.value(),
+              "the default dirty margin must contain the longest crossfade plus a sample at 1 kHz");
 
 /// Source ranges whose rendered content may differ between two edit lists of the same track: a
 /// safe over-approximation, never smaller than the set of changed notes.

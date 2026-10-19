@@ -127,6 +127,7 @@ TEST_CASE("error_codes_have_stable_names", "[result]") {
     CHECK(to_string(ErrorCode::invalid_argument) == "invalid_argument");
     CHECK(to_string(ErrorCode::out_of_range) == "out_of_range");
     CHECK(to_string(ErrorCode::io_error) == "io_error");
+    CHECK(to_string(ErrorCode::not_implemented) == "not_implemented");
     CHECK(to_string(ErrorCode::unsupported_format) == "unsupported_format");
     CHECK(to_string(ErrorCode::corrupt_data) == "corrupt_data");
     CHECK(to_string(ErrorCode::not_found) == "not_found");

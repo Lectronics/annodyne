@@ -1,7 +1,7 @@
 # ADR-0007: nlohmann/json for scenarios and the CLI
 
 - **Date:** 2026-10-19
-- **Status:** proposed (needs the owner to accept it before Phase 2 code depends on it)
+- **Status:** accepted 2026-10-19 (owner)
 - **Phase:** 2
 
 ## Context

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -84,6 +85,17 @@ struct ParamInfo {
     double set_max;
     double scale_min;  // legal lower bound (exclusive) of a `scale` value
 };
+
+/// Stable lower-case names (the enumerator spelling), used by scenario files and reports. Each
+/// parse_* returns nullopt for an unknown name. Pure; thread-safe; real-time safe.
+[[nodiscard]] std::string_view to_string(EditCategory category) noexcept;
+[[nodiscard]] std::string_view to_string(EditOp op) noexcept;
+[[nodiscard]] std::string_view to_string(EditParam param) noexcept;
+[[nodiscard]] std::string_view to_string(FadeShape shape) noexcept;
+[[nodiscard]] std::optional<EditCategory> parse_edit_category(std::string_view name) noexcept;
+[[nodiscard]] std::optional<EditOp> parse_edit_op(std::string_view name) noexcept;
+[[nodiscard]] std::optional<EditParam> parse_edit_param(std::string_view name) noexcept;
+[[nodiscard]] std::optional<FadeShape> parse_fade_shape(std::string_view name) noexcept;
 
 /// Table lookup. Pure; real-time safe.
 [[nodiscard]] const ParamInfo& param_info(EditParam param) noexcept;

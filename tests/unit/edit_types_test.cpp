@@ -152,3 +152,24 @@ TEST_CASE("noise_gain_for_silence_is_zero_db", "[edit_types]") {
     CHECK(noise_gain(gains, FrameClass::plosive) == Decibels{4});
     CHECK(noise_gain(gains, FrameClass::silence) == Decibels{0});
 }
+
+TEST_CASE("edit_names_round_trip_for_every_enumerator", "[edit_types]") {
+    for (int i = 0; i < k_edit_param_count; ++i) {
+        const auto param = static_cast<EditParam>(i);
+        CHECK(parse_edit_param(to_string(param)) == param);
+        CHECK(to_string(param) != "unknown");
+    }
+    for (int i = 0; i <= static_cast<int>(EditCategory::sound); ++i) {
+        const auto category = static_cast<EditCategory>(i);
+        CHECK(parse_edit_category(to_string(category)) == category);
+    }
+    for (const EditOp op : {EditOp::set, EditOp::add, EditOp::scale, EditOp::reset}) {
+        CHECK(parse_edit_op(to_string(op)) == op);
+    }
+    for (const FadeShape shape : {FadeShape::equal_power, FadeShape::linear, FadeShape::log}) {
+        CHECK(parse_fade_shape(to_string(shape)) == shape);
+    }
+    CHECK_FALSE(parse_edit_param("pitch").has_value());
+    CHECK_FALSE(parse_edit_category("").has_value());
+    CHECK_FALSE(parse_edit_op("Set").has_value());
+}

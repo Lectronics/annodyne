@@ -13,6 +13,7 @@ std::string_view to_string(ErrorCode code) noexcept {
     case ErrorCode::corrupt_data: return "corrupt_data";
     case ErrorCode::not_found: return "not_found";
     case ErrorCode::cancelled: return "cancelled";
+    case ErrorCode::not_implemented: return "not_implemented";
     case ErrorCode::internal: return "internal";
     }
     return "unknown";
