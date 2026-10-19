@@ -1,5 +1,6 @@
 #include "core/dsp/k_weight.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <numbers>
@@ -65,7 +66,9 @@ std::vector<float> k_weight(std::span<const float> mono, Hz sample_rate) {
     std::vector<double> x(mono.begin(), mono.end());
     run(shelf(sample_rate.value()), x);
     run(high_pass(sample_rate.value()), x);
-    return {x.begin(), x.end()};
+    std::vector<float> out(x.size());
+    std::ranges::transform(x, out.begin(), [](double v) { return static_cast<float>(v); });
+    return out;
 }
 
 }  // namespace anno

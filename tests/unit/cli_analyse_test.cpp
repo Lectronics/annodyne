@@ -9,6 +9,7 @@
 #include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <random>
 #include <sstream>
 
 using namespace anno;
@@ -22,9 +23,10 @@ struct Fixture {
     fs::path dir;
     fs::path wav;
     Fixture() {
+        // unique per process and per fixture: ctest runs the test cases as parallel processes
+        std::random_device entropy;
         dir = fs::temp_directory_path() /
-              ("anno_cli_analyse_" + std::to_string(std::hash<std::string>{}(__FILE__)) + "_" +
-               std::to_string(counter()++));
+              ("anno_cli_analyse_" + std::to_string(entropy()) + "_" + std::to_string(counter()++));
         fs::remove_all(dir);
         fs::create_directories(dir);
         wav = dir / "melody.wav";
