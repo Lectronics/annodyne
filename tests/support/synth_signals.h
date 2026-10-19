@@ -64,3 +64,72 @@ inline double zero_crossing_hz(const std::vector<float>& x, double rate_hz) {
 }
 
 }  // namespace anno::test
+
+namespace anno::test {
+
+/// A pitched signal: a sum of harmonics of an instantaneous fundamental. `f0_hz` gives the
+/// fundamental (Hz) at time t seconds; `partial_amps[k]` is the amplitude of partial k + 1
+/// (linear). The phase is integrated per sample, so glides and vibrato are exact.
+template <class F0Hz>
+std::vector<float> make_harmonic(const F0Hz& f0_hz, double seconds, double rate_hz,
+                                 const std::vector<double>& partial_amps) {
+    const auto n = static_cast<std::size_t>(std::llround(seconds * rate_hz));
+    std::vector<float> x(n, 0.0F);
+    double phase = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / rate_hz;
+        double v = 0.0;
+        for (std::size_t k = 0; k < partial_amps.size(); ++k) {
+            v += partial_amps[k] * std::sin(phase * static_cast<double>(k + 1));
+        }
+        x[i] = static_cast<float>(v);
+        phase += 2.0 * std::numbers::pi * f0_hz(t) / rate_hz;
+    }
+    return x;
+}
+
+/// Amplitudes 1/k for k = 1..n (a sawtooth-like spectrum) scaled so the peak stays below `peak`.
+inline std::vector<double> harmonic_amps(int n, double peak = 0.5) {
+    std::vector<double> a(static_cast<std::size_t>(n));
+    double sum = 0.0;
+    for (int k = 1; k <= n; ++k) {
+        a[static_cast<std::size_t>(k - 1)] = 1.0 / k;
+        sum += 1.0 / k;
+    }
+    for (double& v : a) {
+        v *= peak / sum;
+    }
+    return a;
+}
+
+/// Adds seeded white noise so that the signal-to-noise ratio (RMS) is `snr_db`.
+inline void add_white_noise(std::vector<float>& x, double snr_db, std::uint64_t seed) {
+    const double sigma = rms(x) * std::pow(10.0, -snr_db / 20.0);
+    std::uint64_t state = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+    for (float& v : x) {
+        double sum = 0.0;  // sum of 12 uniforms - 6: approximately N(0, 1)
+        for (int k = 0; k < 12; ++k) {
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            sum += static_cast<double>(state >> 40U) / 16777216.0;
+        }
+        v += static_cast<float>(sigma * (sum - 6.0));
+    }
+}
+
+/// Seeded white noise of RMS about `level` (linear).
+inline std::vector<float> make_noise(double seconds, double rate_hz, double level,
+                                     std::uint64_t seed) {
+    std::vector<float> x(static_cast<std::size_t>(std::llround(seconds * rate_hz)), 0.0F);
+    std::uint64_t state = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+    for (float& v : x) {
+        double sum = 0.0;
+        for (int k = 0; k < 12; ++k) {
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            sum += static_cast<double>(state >> 40U) / 16777216.0;
+        }
+        v = static_cast<float>(level * (sum - 6.0));
+    }
+    return x;
+}
+
+}  // namespace anno::test
