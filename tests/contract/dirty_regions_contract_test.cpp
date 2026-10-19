@@ -125,7 +125,9 @@ TEST_CASE("every_source_instant_whose_output_position_changes_is_dirty", "[dirty
         const auto regions = dirty_regions(notes, old_list, new_list, params).value();
         const auto old_map = build_time_map(notes, old_list, TimeMapParams{}).value().map;
         const auto new_map = build_time_map(notes, new_list, TimeMapParams{}).value().map;
-        for (int i = 0; i <= 2000; ++i) {
+        // Instants strictly before `end`: the range is half-open, and `end * 2000 / 2000.0` can
+        // land one ulp past `end` depending on the (library-dependent) random notes.
+        for (int i = 0; i < 2000; ++i) {
             const double s = end * i / 2000.0;
             const double moved =
                 std::abs(old_map.to_output(src(s)).unchecked_since_origin().value() -
