@@ -1,0 +1,10 @@
+# Build output
+build/
+
+# Audition packages are generated; only INDEX templates are tracked when added
+audition/*/
+
+# Local artefacts
+.DS_Store
+melo-claude-kit.zip
+.cache/
