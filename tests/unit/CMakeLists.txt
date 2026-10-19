@@ -125,3 +125,4 @@ anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit D
 anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS unit DEPS anno::core_analysis_perceived_pitch anno::core_analysis_segmentation)
 anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)
 anno_add_test(NAME analyse_test SOURCES analyse_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator)
+anno_add_test(NAME analysis_metrics_test SOURCES analysis_metrics_test.cpp LABELS unit DEPS anno::core_types)
