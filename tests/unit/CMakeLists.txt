@@ -21,6 +21,7 @@ anno_add_test(NAME audio_checks_test SOURCES audio_checks_test.cpp LABELS unit D
 anno_add_test(NAME scenario_test SOURCES scenario_test.cpp LABELS unit DEPS anno::cli_scenario_json anno::cli_checks)
 anno_add_test(NAME wav_test SOURCES wav_test.cpp LABELS unit DEPS anno::core_io)
 anno_add_test(NAME cli_info_test SOURCES cli_info_test.cpp LABELS unit DEPS anno::cli_commands)
+anno_add_test(NAME cli_analyse_test SOURCES cli_analyse_test.cpp LABELS unit DEPS anno::cli_commands anno::cli_analysis_json anno::cli_plot anno::core_io nlohmann_json::nlohmann_json)
 
 # anno-cli as a process: exit codes 0 (ok), 1 (error), 2 (usage).
 add_executable(write_test_wav write_test_wav.cpp)
@@ -42,6 +43,19 @@ add_test(NAME anno_cli.no_args_exits_2
     COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DEXPECT=2
             -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
 set_tests_properties(anno_cli.info_missing_file_exits_1 anno_cli.no_args_exits_2 PROPERTIES LABELS unit)
+
+# anno-cli analyse on the fixture WAV, a missing file (1) and a missing argument (2).
+add_test(NAME anno_cli.analyse_ok COMMAND anno_cli analyse "${cli_wav}")
+set_tests_properties(anno_cli.analyse_ok PROPERTIES
+    FIXTURES_REQUIRED cli_wav LABELS unit
+    PASS_REGULAR_EXPRESSION "analysed cli_test.wav: [0-9]+ notes")
+add_test(NAME anno_cli.analyse_missing_file_exits_1
+    COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DARGS=analyse$<SEMICOLON>/no/such/file.wav -DEXPECT=1
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
+add_test(NAME anno_cli.analyse_without_file_exits_2
+    COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DARGS=analyse -DEXPECT=2
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
+set_tests_properties(anno_cli.analyse_missing_file_exits_1 anno_cli.analyse_without_file_exits_2 PROPERTIES LABELS unit)
 
 # anno-cli render / audition on the fixture WAV (0.1 s, 48 kHz stereo). Scenarios are written at
 # configure time so the source path is absolute.

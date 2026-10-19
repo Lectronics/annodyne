@@ -1,6 +1,7 @@
 // anno-cli: command dispatch only. Commands live in cli/commands so they can be tested.
 // Exit codes: 0 success, 1 error (message on stderr), 2 usage.
 
+#include "cli/commands/analyse.h"
 #include "cli/commands/audition.h"
 #include "cli/commands/info.h"
 #include "cli/commands/render.h"
@@ -21,7 +22,10 @@ constexpr int k_exit_usage = 2;
 void print_usage() {
     std::fputs("usage: anno-cli info <file.wav>\n"
                "       anno-cli render <scenario.json> --out <out.wav> [--engine passthrough]\n"
-               "       anno-cli audition <scenario.json> --out <dir> [--engine passthrough]\n",
+               "       anno-cli audition <scenario.json> --out <dir> [--engine passthrough]\n"
+               "       anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] "
+               "[--pitch-track]\n"
+               "                        [--track-id <id>]\n",
                stderr);
 }
 
@@ -55,6 +59,40 @@ bool parse_run_args(std::span<char*> args, RunArgs& parsed, int& exit_code) {
         return true;
     }
     return args.size() == 5;
+}
+
+/// Parses `analyse <wav> [--json f] [--plot-dir d] [--pitch-track] [--track-id id]`; false on a
+/// usage error.
+bool parse_analyse_args(std::span<char*> args, anno::cli::AnalyseArgs& parsed) {
+    if (args.size() < 3) {
+        return false;
+    }
+    parsed.wav = args[2];
+    for (std::size_t i = 3; i < args.size(); ++i) {
+        const std::string_view flag{args[i]};
+        const bool has_value = i + 1 < args.size();
+        if (flag == "--pitch-track") {
+            parsed.pitch_track_in_json = true;
+        } else if (flag == "--json" && has_value) {
+            parsed.json = std::filesystem::path{args[++i]};
+        } else if (flag == "--plot-dir" && has_value) {
+            parsed.plot_dir = std::filesystem::path{args[++i]};
+        } else if (flag == "--track-id" && has_value) {
+            parsed.track = anno::TrackId{args[++i]};
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+int do_analyse(const anno::cli::AnalyseArgs& a) {
+    const auto summary = anno::cli::run_analyse(a);
+    if (!summary) {
+        return report_error(summary.error());
+    }
+    std::fputs(summary->c_str(), stdout);
+    return k_exit_ok;
 }
 
 /// The repository root a scenario's relative "source" may fall back to: the working directory.
@@ -96,6 +134,14 @@ int main(int argc, char** argv) {
         const std::span<char*> args{argv, static_cast<std::size_t>(argc)};
         if (args.size() == 3 && std::string_view{args[1]} == "info") {
             return run_info(args[2]);
+        }
+        if (args.size() >= 2 && std::string_view{args[1]} == "analyse") {
+            anno::cli::AnalyseArgs parsed;
+            if (!parse_analyse_args(args, parsed)) {
+                print_usage();
+                return k_exit_usage;
+            }
+            return do_analyse(parsed);
         }
         if (args.size() >= 2 &&
             (std::string_view{args[1]} == "render" || std::string_view{args[1]} == "audition")) {
