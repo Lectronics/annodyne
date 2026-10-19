@@ -198,6 +198,8 @@ Notation: `→` shows the return type. Parameters list the main controls only; e
 
 ### 4.5 Synthesis engines — `core/synthesis/<engine>/`
 
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
+
 All engines implement one interface, so the renderer can choose per note:
 
 ```python
@@ -221,6 +223,8 @@ class SynthesisEngine(Protocol):
 | `neural_vocoder/` | Optional voice polish | Source-filter neural vocoder conditioned on edited f0 + envelope |
 
 ### 4.6 Render — `core/render/`
+
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
 
 | Function | Key parameters | Returns |
 |---|---|---|
@@ -363,6 +367,8 @@ harmonic_amp'(t, k) += harmonic_gains_db[k]                      # Sound Editor
 The map is per track. Tempo edits and Quantize Time are simply many anchor moves written as `time` edits.
 
 ### 5.5 The render pipeline (what happens when the user drags a note)
+
+> **ADR-0006 (accepted):** the Phase 2 typed form of this section (`render_region(RenderInputs, region, engine, params)`, `RenderResult`, `RenderCache` entries, engine `version()`/`settings_key()`, folder `synthesis/engine/`, edited-run crossfades) is in `docs/decisions/0006-render-api.md`; where they differ the ADR wins.
 
 ```
 User drags note N up 2 semitones

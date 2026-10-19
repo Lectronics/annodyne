@@ -1,7 +1,7 @@
 # Design note: Phase 2 — render pipeline skeleton (passthrough)
 
 - **Phase:** 2
-- **Status:** reviewed (round 1 findings fixed; see Review log)
+- **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §4.5 (engines), §4.6 (render), §5.5 (pipeline), §5.6 (change-only
   rendering); ADR-0002, ADR-0005 §16; ADR-0006 (render API, proposed), ADR-0007 (JSON, proposed);
   AUDIO_VERIFICATION §1-3.
@@ -329,3 +329,29 @@ S2 sliced kernel; S3 `cli/scenario` split; S4 scenario rules; S5 `not_implemente
 S7 whole-zone engine calls; S8 shared_ptr results, `cache_id`, `shared_ptr<const EditList>`; S9
 timing-edit consequences; S10 click threshold pending review; S11 per-build determinism and
 `-ffp-contract=off`.
+
+Round 2 (structure-reviewer): CHANGES REQUIRED, 3 blocking (N1 ramps overlapping for short notes,
+N2 the bit-exact shortcut inside a run, N3 key missing the blend geometry) plus 6 suggestions. Fixed
+in the design note before implementing: one overlap rule (step 4), a plan independent of the
+shortcut (step 6), plan ramps in the key, `notes_rendered` before the shortcut, aligned-region
+definition, snapped spans in the key.
+
+## Implementation notes (deviations and additions found while building)
+- **Shortcut and equal-power:** a ramp is skipped only if *both* its signals equal the original.
+  A ramp between a changed engine zone and an unchanged one still crossfades (the changed side is
+  real). The planned "gain 1.0 next to gain 2.0 gives the same output with or without the skip" test
+  is not true under `equal_power` and was not written; the shortcut is covered by the
+  passthrough-with-edits contract test instead.
+- **Click detector in `audition`** counts only detections with no source detection within 2 frames
+  ("new vs the source"), so a click already in the recording does not fail the render.
+- **Shared checks:** the measurement functions live in `src/cli/checks` (shared by `audition` and the
+  tests); `tests/support/audio_checks.h` re-exports them. `ClickParams` defaults are pinned to
+  `tests/tolerances.h` by a unit test.
+- **Time points in `core/render`:** the cache key writes `(t - SourceTime{}).value()` because
+  `unchecked_since_origin` is reserved for `core/types`/`core/timemap` (ADR-0003).
+- **`ErrorCode::not_implemented`** and the name parsers (`to_string`/`parse_*` for edit enums) are in
+  `core/types`; the spec's `to_string` for `EditParam` did not exist yet.
+- **Layer table:** `anno_external_allowed` gained `core/render -> Threads::Threads` and
+  `cli* -> nlohmann_json`, each with a layer-rule fixture (two positive, one negative).
+- **`render_region` signature:** takes the engine as a reference (the design note had it in
+  `RenderParams`); `RenderParams` keeps the crossfade settings and the optional cache.
