@@ -44,8 +44,8 @@ struct SegmentParams {
 /// Spans sorted by source_start, non-overlapping (monophonic). The id is "n" + start in milliseconds
 /// (6 digits; a collision gets "_1", "_2"). separation_in is soft when the previous note ends within
 /// 20 ms of this note's start, else hard. confidence_prob = mean voiced posterior over the note times
-/// the Viterbi margin (0..1). Time clamps: every time lies in [0, pitch duration] where the duration is
-/// grid.start + n_frames * hop; a preroll never reaches into the previous note (start >= previous end);
+/// the Viterbi margin (0..1). Time clamps: every time lies in [0, last pitch frame time] (grid.start + (n_frames - 1) * hop;
+/// the < 1 hop after the last frame is not analysed); a preroll never reaches into the previous note (start >= previous end);
 /// an end never passes the next start; the four times are made ordered. The only inputs are the pitch
 /// track (f0, voicing, confidence) and the onsets (the energy cue is carried by the onset strengths;
 /// the audio itself is not read, so no source is needed). An empty or all-unvoiced track gives no
@@ -73,11 +73,17 @@ struct StabilityWeightParams {
 
 enum class CyclePolicy { whole_cycles, all_frames };
 
+/// Attack/release trims shared by decompose_pitch_curve and perceived_pitch: per side
+/// min(fixed trim, max_fraction x note length); if the trimmed region has < 3 frames the whole note is used.
+struct TrimParams {
+    Seconds start{0.040};
+    Seconds end{0.060};
+    double max_fraction = 0.25;
+};
+
 struct PitchDecompositionParams {
     Hz drift_cutoff{2.5};          // below: drift, above: modulation (vibrato)
-    double trim_start_fraction = 0.25;   // trims: min(fixed trim, fraction of the note) per side
-    Seconds trim_start{0.040};
-    Seconds trim_end{0.060};
+    TrimParams trim;
     StabilityWeightParams weights;
 };
 
@@ -96,16 +102,14 @@ struct PitchDecomposition {
 /// drift = slow − center. Exact reconstruction: center + drift[i] + mod[i] == filled f0[i] to float
 /// precision. Trims are min(fixed trim, trim fraction × note length) per side; if the trimmed region
 /// has < 3 frames the whole note is used. Errors: invalid_argument (bad params, amp size != frame
-/// count) or fewer than 3 voiced frames in the note (degenerate; `segment_notes` guarantees ≥ 12
-/// frames and voiced notes, so the orchestrator never hits this: a contract test checks it).
+/// count) or fewer than 3 voiced frames in the note (degenerate; `segment_notes` guarantees at least
+/// 10 pitch frames (the longer of min_note and 10 hops) and voiced notes, so the orchestrator never hits this: a contract test checks it).
 /// Pure; thread-safe.
 [[nodiscard]] Result<PitchDecomposition> decompose_pitch_curve(const NoteSpan& span, const PitchTrack& pitch, std::span<const Decibels> amp, const PitchDecompositionParams& params);
 
 struct PerceivedPitchParams {
     StabilityWeightParams weights;       // the same definition as decompose_pitch_curve
-    double trim_fraction = 0.25;         // as above: min(fixed trim, fraction of the note) per side
-    Seconds trim_start{0.040};
-    Seconds trim_end{0.060};
+    TrimParams trim;                     // the same trims as decompose_pitch_curve
     CyclePolicy cycles = CyclePolicy::whole_cycles;
 };
 

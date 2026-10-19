@@ -24,11 +24,13 @@ struct AnalyseParams {
 };
 
 /// Runs, in order: read_mono + k_weight (once), detect_pitch, detect_onsets (with the pitch track),
-/// segment_notes, then per NoteSpan: note_grid, measure_loudness, decompose_pitch_curve,
-/// perceived_pitch, and builds the Note (harmonics, noise and envelope stay empty until Phase 4; a Note
+/// segment_notes, then per NoteSpan: note_grid, measure_loudness, decompose_pitch_curve, then
+/// builds the Note with centre, drift, mod, amp and loudness filled and perceived_pitch set to the rough
+/// pitch, calls perceived_pitch on that Note and stores its result, and only then is the Note final
+/// (it is validated with the whole result; harmonics, noise and envelope stay empty until Phase 4; a Note
 /// with empty nested tracks is valid). `source_id = src.id()`; tuning reference stays 440 Hz
 /// (estimated in Phase 8). Every per-note stage is guaranteed to succeed for a span `segment_notes`
-/// returned (min 12 frames, voiced); if one fails anyway the whole analysis fails with the note id in
+/// returned (at least 10 pitch frames, voiced); if one fails anyway the whole analysis fails with the note id in
 /// the message (a bug, never silently dropped), and a contract test asserts every output note has
 /// grid.n_frames > 0, curves of that length, a finite loudness and a perceived pitch. Returns a shared immutable snapshot that passes validate().
 /// Errors: not_implemented (algorithm other than melodic), invalid_argument (bad params), or any
@@ -37,6 +39,8 @@ struct AnalyseParams {
 /// vocal is seconds; added with the background scheduler in Phase 9.
 [[nodiscard]] Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src, const AnalyseParams& params);
 ```
+`detect_pitch` and `detect_onsets` take the `AudioSource` and read their own mono mix; only the orchestrator's loudness path shares one `read_mono` result. The repeated read costs time only and is accepted; `MonoAudio` overloads are a later optimisation.
+
 Determinism: the same source and params give a bit-identical result on the same build (no randomness, `-ffp-contract=off`); tested by hashing the result.
 
 ## 2. `anno-cli analyse`
