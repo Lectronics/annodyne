@@ -1,7 +1,7 @@
 # ADR-0007: nlohmann/json for scenarios and the CLI
 
 - **Date:** 2026-10-19
-- **Status:** accepted (tech-stack change; flagged for review at the Phase 2 close)
+- **Status:** proposed (tech-stack change; needs the owner to confirm at the Phase 2 close)
 - **Phase:** 2
 
 ## Context

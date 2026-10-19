@@ -3,7 +3,7 @@
 - **Phase:** 2
 - **Status:** reviewed (round 1 findings fixed; see Review log)
 - **Spec sections:** architecture §4.5 (engines), §4.6 (render), §5.5 (pipeline), §5.6 (change-only
-  rendering); ADR-0002, ADR-0005 §16; ADR-0006 (render API, this phase), ADR-0007 (JSON);
+  rendering); ADR-0002, ADR-0005 §16; ADR-0006 (render API, proposed), ADR-0007 (JSON, proposed);
   AUDIO_VERIFICATION §1-3.
 - **Folders / targets:** `src/core/dsp` (layer 0, new), `src/core/synthesis/engine` and
   `src/core/synthesis/passthrough` (layer 2, new), `src/core/render` (layer 4, new),

@@ -1,7 +1,7 @@
 # ADR-0006: Phase 2 render API
 
 - **Date:** 2026-10-19
-- **Status:** accepted (owner approved starting Phase 2; the deviations below are implementation choices
+- **Status:** proposed (written by Claude; needs the owner to confirm at the Phase 2 close)
   the spec does not make, flagged for review at the Phase 2 close)
 - **Phase:** 2
 
