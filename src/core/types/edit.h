@@ -36,12 +36,13 @@ enum class EditCategory {
     separation,  // no parameters yet (Phase 5)
     assignment,  // no parameters yet (Phase 7)
     sound,       // no parameters yet (Phase 12)
-    // ADR-0008: enumerators only; no parameters until their phases, so only a reset can be recorded.
-    gap,                // no parameters yet (Phase 5)
-    layout,             // no parameters yet (Phase 5)
-    breath,             // no parameters yet (Phase 6)
-    breath_chain,       // no parameters yet (Phase 6)
-    breath_assignment   // no parameters yet (Phase 6)
+    // ADR-0008: enumerators only; no parameters until their phases, so only a reset can be
+    // recorded.
+    gap,               // no parameters yet (Phase 5)
+    layout,            // no parameters yet (Phase 5)
+    breath,            // no parameters yet (Phase 6)
+    breath_chain,      // no parameters yet (Phase 6)
+    breath_assignment  // no parameters yet (Phase 6)
 };
 
 enum class EditOp { set, add, scale, reset };

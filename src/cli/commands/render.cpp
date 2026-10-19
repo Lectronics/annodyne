@@ -60,9 +60,11 @@ Result<void> run_render(const std::filesystem::path& scenario_path,
     const SynthesisEngine& chosen = passthrough;
     const OutputRange whole = OutputRange::from_start(
         OutputTime{}, to_seconds(run->source.frame_count(), run->source.sample_rate()));
-    auto rendered = render_region(
-        RenderInputs{.source = run->source, .analysis = run->analysis, .edits = run->edits}, whole,
-        chosen, RenderParams{});
+    auto rendered = render_region(RenderInputs{.source = run->source,
+                                               .analysis = run->analysis,
+                                               .edits = run->edits,
+                                               .time_map = nullptr},
+                                  whole, chosen, RenderParams{});
     if (!rendered) {
         return Unexpected{rendered.error()};
     }

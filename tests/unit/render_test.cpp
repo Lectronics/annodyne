@@ -166,7 +166,8 @@ TEST_CASE("an_empty_region_and_an_empty_source_give_empty_audio", "[render]") {
     analysis->source_id = empty.id();
     const RenderInputs inputs{.source = empty,
                               .analysis = analysis,
-                              .edits = std::make_shared<const EditList>(TrackId{"t1"})};
+                              .edits = std::make_shared<const EditList>(TrackId{"t1"}),
+                              .time_map = nullptr};
     const auto r = render_region(inputs, none, GainTestEngine{}, {});
     REQUIRE(r.has_value());
     CHECK((*r)->passthrough);

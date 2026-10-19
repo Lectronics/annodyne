@@ -178,10 +178,11 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
     const OutputRange whole = OutputRange::from_start(
         OutputTime{}, to_seconds(source.frame_count(), source.sample_rate()));
     const RenderInputs edited_inputs{
-        .source = source, .analysis = run->analysis, .edits = run->edits};
+        .source = source, .analysis = run->analysis, .edits = run->edits, .time_map = nullptr};
     const RenderInputs empty_inputs{.source = source,
                                     .analysis = run->analysis,
-                                    .edits = std::make_shared<const EditList>(scenario_track())};
+                                    .edits = std::make_shared<const EditList>(scenario_track()),
+                                    .time_map = nullptr};
 
     auto edited = render_region(edited_inputs, whole, chosen, RenderParams{});
     if (!edited) {

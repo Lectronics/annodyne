@@ -13,7 +13,8 @@ namespace anno {
 
 /// Output samples [begin, begin + count) of `source` as played through `map` (output axis, at the
 /// source's sample rate):
-///  - a slope-1 warp gives source samples, shifted by a whole number of samples, copied bit for bit;
+///  - a slope-1 warp gives source samples, shifted by a whole number of samples, copied bit for
+///  bit;
 ///  - an insert gives zeros (digital silence);
 ///  - a cut has no output and contributes nothing.
 /// Span boundaries are snapped to samples with Rounding::nearest on the output axis. A warp's shift

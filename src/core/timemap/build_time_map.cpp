@@ -188,8 +188,8 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
         }
     }
     const int repaired_notes = static_cast<int>(std::ranges::count(repaired, true));
-    // The domain ends at the recording's end; when that is unknown (map-only use) at the last note or
-    // anchor, whichever is later.
+    // The domain ends at the recording's end; when that is unknown (map-only use) at the last note
+    // or anchor, whichever is later.
     double length = std::max(raw(params.source_end), done.back().s);
     for (const Note& n : notes) {
         if (n.is_active) {
