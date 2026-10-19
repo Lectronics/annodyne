@@ -20,7 +20,7 @@ with objective checks that "no edit" and "outside the edit" are bit-identical to
 1. **No analysis until Phase 3.** The renderer takes an `AnalysisResult` it is given. Tests and the
    CLI build one from explicit note spans (`make_scenario_analysis`, flat synthetic notes valid per
    `validate`). Phase 3 replaces it.
-2. **Timing edits are not rendered yet.** `render_region` builds the TimeMap (`source_end` = source
+2. **Timing edits are not rendered yet.** *(Amended by `phase2-addendum-timemap-spans.md`: render now walks TimeMap spans; only warps with slope ≠ 1 stay `not_implemented`.)* `render_region` builds the TimeMap (`source_end` = source
    duration) and returns `not_implemented` if it is not the identity. Because of the Flex semantics
    (ADR-0005 §16) *one* timing edit anywhere makes the whole map non-identity, so any region of such
    a project is refused until Phase 6; that is accepted. Edits that `build_time_map` ignores

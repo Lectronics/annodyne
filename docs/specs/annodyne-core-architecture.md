@@ -245,7 +245,7 @@ class SynthesisEngine(Protocol):
 
 | Function | Key parameters | Returns |
 |---|---|---|
-| `render_region(project, track_id, out_start, out_end, quality)` | `"preview" \| "final"` | `RenderResult` |
+| `render_region(project, track_id, out_start, out_end, quality)` | `"preview" \| "final"` | `RenderResult` (ADR-0008: no `source_range`; inputs carry an optional TimeMap) |
 | `render_block(project, track_id, block_index)` | — | `AudioBuffer` (real-time path, reads cache) |
 | `RenderCache.get(key)` / `put(key, buf)` | key = hash(source_id, analysis.version, relevant edits, engine settings) | `AudioBuffer \| None` |
 | `schedule_background_render(regions, priority)` | priority near playhead | — |
@@ -384,7 +384,7 @@ harmonic_amp'(t, k) += harmonic_gains_db[k]                      # Sound Editor
 2. Apply `onset_shift_s` and `length_scale` per note, moving its anchors in output time.
 3. Insert user **time handles** as extra anchors.
 4. Protect consonants and attacks: the segment `[source_start, attack_end]` keeps slope 1 (scaled only by `attack_time_scale`); vowels absorb the change.
-5. Resolve gaps and overlaps between neighbours (ADR-0008, owner decision, **replaces** "stretch the neighbour's boundary region"): shift first, stretch only when needed. A moved note shifts into the gap before it (the gap is cut) and the gap after it grows (an `insert` span); neither neighbour changes. Only when a moving note would hit the next note is a second handle added automatically at the next transient and the audio between the two handles stretched. Never leave a hole or double audio.
+5. Resolve gaps and overlaps between neighbours (ADR-0008, owner decision, **target behaviour from Phase 5; until then Flex per ADR-0005 §16**; **replaces** "stretch the neighbour's boundary region"): shift first, stretch only when needed. A moved note shifts into the gap before it (the gap is cut) and the gap after it grows (an `insert` span); neither neighbour changes. Only when a moving note would hit the next note is a second handle added automatically at the next transient and the audio between the two handles stretched. Never leave a hole or double audio.
 6. Enforce monotonic order (`τ` always increasing) and return the piecewise-linear map plus its inverse.
 
 The map is per track. Tempo edits and Quantize Time are simply many anchor moves written as `time` edits.

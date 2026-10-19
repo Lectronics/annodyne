@@ -248,8 +248,8 @@ struct GapParams {
 /// Compute each segment's output start and duration from the edits.
 /// Order: (1) place notes from time edits and note-stretch allocations;
 /// (2) gaps absorb the difference, shrinking to their minimum (§3.5) or growing;
-/// (3) where a gap cannot absorb, compress/stretch the neighbouring notes via
-///     note-stretching rules; (4) apply gap length edits (tighten/remove) within
+/// (3) where a gap cannot absorb, add a handle at the next transient and
+///     stretch between the two handles via note-stretching rules; (4) apply gap length edits (tighten/remove) within
 ///     ripple scopes and collect removed time before the next anchor.
 /// Returns the layout and a list of warnings (e.g. material pushed past the end).
 /// Pure; thread-safe; not RT-safe.

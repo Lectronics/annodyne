@@ -598,6 +598,7 @@ Answered by a safe default now; a human decides at audit #1. Each is cheap to ch
   validating layer and return `invalid_argument`.
 
 ## Time handles are Flex-style (owner decision, 2026-10-19)
+> Superseded as the target behaviour by ADR-0008 decision 4 (shift first, stretch only when a gap is used up); the code stays Flex until Phase 5. The span-based TimeMap of ADR-0008 replaces the anchor-only type.
 Supersedes the `build_time_map` steps 2-4 and Open question 1 above (rigid push of the later note).
 Authoritative text: ADR-0005 §16 and the doc comment of `build_time_map`. In short: only notes with
 a timing edit pin anchors; the origin and `TimeMapParams::source_end` are fixed anchors; the map is

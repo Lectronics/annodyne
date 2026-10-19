@@ -52,7 +52,7 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
     - `dirty_regions(notes, old, new, DirtyParams)`; it is content-dirty and deliberately coarse for
       timing edits (origin to the end of the source), verified against the TimeMap by a contract
       test.
-16. **Time handles are Flex-style (owner decision, replaces the "push the neighbour" policy).**
+16. **Time handles are Flex-style (owner decision, replaces the "push the neighbour" policy).** *(Amended by ADR-0008: shift first, stretch only when a gap is used up; this item is the code's behaviour until Phase 5.)*
     Moving a time handle (or shifting/scaling a note) stretches the audio on both sides of it, up to
     the next *changed* handle or to the end of the file (and back to the start of the file).
     - Only notes with a timing edit pin anchors; unedited notes between two changed handles are
