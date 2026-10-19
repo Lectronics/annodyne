@@ -1,6 +1,6 @@
 # Design note: Phase 0 foundations
 
-- **Phase:** 0 · **Status:** reviewed — APPROVED WITH FIXES (round 3), fixes applied; plan approved 2026-10-19
+- **Phase:** 0 · **Status:** implemented (phase closed 2026-10-19, see docs/reviews/phase0-review.md)
 - **Spec sections:** architecture §1–3, §6; ROADMAP Phase 0; `.claude/rules/architecture.md`,
   `coding-standards.md`; AUDIO_VERIFICATION §1 (tolerances)
 - **Targets:** `core/types` (layer 0), `core/io` (restricted, ADR-0001), `cli` (layer 7)
