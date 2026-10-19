@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -11,7 +12,8 @@ using namespace anno;
 
 namespace {
 
-constexpr FadeShape k_shapes[] = {FadeShape::equal_power, FadeShape::linear, FadeShape::log};
+constexpr std::array<FadeShape, 3> k_shapes{FadeShape::equal_power, FadeShape::linear,
+                                            FadeShape::log};
 constexpr double k_gain_abs = 1e-6;  // float cast of a double gain
 
 }  // namespace

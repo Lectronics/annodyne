@@ -11,6 +11,7 @@ include(AnnoOptions)
 include(AnnoWarnings)
 include(AnnoSanitizers)
 include(AnnoLayers)
+include(AnnoJson)
 
 add_subdirectory(src)
 

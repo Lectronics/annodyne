@@ -5,7 +5,7 @@ anno_add_test(NAME edit_model_contract_test SOURCES edit_model_contract_test.cpp
 anno_add_test(NAME time_map_contract_test SOURCES time_map_contract_test.cpp LABELS contract DEPS anno::core_timemap)
 anno_add_test(NAME dirty_regions_contract_test SOURCES dirty_regions_contract_test.cpp LABELS contract DEPS anno::core_timemap)
 anno_add_test(NAME blend_plan_contract_test SOURCES blend_plan_contract_test.cpp LABELS contract DEPS anno::core_render)
-anno_add_test(NAME render_contract_test SOURCES render_contract_test.cpp LABELS contract DEPS anno::core_render anno::core_synthesis_passthrough)
+anno_add_test(NAME render_contract_test SOURCES render_contract_test.cpp LABELS contract DEPS anno::cli_checks anno::core_render anno::core_synthesis_passthrough)
 anno_add_test(NAME remap_contract_test SOURCES remap_contract_test.cpp LABELS contract DEPS anno::core_edits)
 
 # ---- Precondition aborts (ANNO_EXPECTS) -------------------------------------------------------
@@ -56,6 +56,9 @@ anno_layer_fixture(deny_types_link R3)
 anno_layer_fixture(deny_tool_to_io R4)
 anno_layer_fixture(deny_cycle R5)
 anno_layer_fixture(deny_external R6)
+anno_layer_fixture(allow_cli_json PASS)
+anno_layer_fixture(allow_render_threads PASS)
+anno_layer_fixture(deny_render_json R6)
 
 # ---- Include-level rules ------------------------------------------------------------------------
 find_package(Python3 REQUIRED COMPONENTS Interpreter)

@@ -101,7 +101,8 @@ Plan make_plan(const RenderInputs& in, const RenderParams& params,
             index_of(note.source_start, plan.sample_rate), 0, plan.frame_count);
         const std::int64_t end = std::clamp<std::int64_t>(
             index_of(note.source_end, plan.sample_rate), begin, plan.frame_count);
-        plan.edited.push_back({.note = &note, .eff = std::move(eff), .span = {begin, end}});
+        plan.edited.push_back(
+            {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }
     std::vector<SampleSpan> spans;
     spans.reserve(plan.edited.size());
@@ -127,7 +128,7 @@ bool same_samples(const AudioBuffer& a, const AudioBuffer& b) {
     for (int c = 0; c < a.channel_count(); ++c) {
         const auto x = a.channel(c);
         const auto y = b.channel(c);
-        if (!std::equal(x.begin(), x.end(), y.begin(), y.end(), [](float p, float q) {
+        if (!std::ranges::equal(x, y, [](float p, float q) {
                 return std::bit_cast<std::uint32_t>(p) == std::bit_cast<std::uint32_t>(q);
             })) {
             return false;
@@ -138,7 +139,10 @@ bool same_samples(const AudioBuffer& a, const AudioBuffer& b) {
 
 Result<Zone> render_zone(const RenderInputs& in, const SynthesisEngine& engine, const Plan& plan,
                          const EditedNote& e) {
-    Zone zone{.begin = zone_begin(plan, e), .end = zone_end(plan, e)};
+    Zone zone{.begin = zone_begin(plan, e),
+              .end = zone_end(plan, e),
+              .audio = std::nullopt,
+              .identical = false};
     const Hz rate = plan.sample_rate;
     const OutputRange range =
         OutputRange::from_start(to_time_point<OutputAxis>(Samples{zone.begin}, rate),
@@ -167,22 +171,22 @@ Result<Zone> render_zone(const RenderInputs& in, const SynthesisEngine& engine, 
 
 /// Samples of one channel over [lo, hi) of one signal: the pristine region or an engine zone.
 struct Signals {
-    const AudioBuffer& pristine;
+    const AudioBuffer* pristine;
     std::int64_t region_begin;
-    const std::vector<Zone>& zones;
+    const std::vector<Zone>* zones;
 
     [[nodiscard]] std::span<const float> get(int signal, int channel, std::int64_t lo,
                                              std::int64_t hi) const {
         if (signal == k_pristine) {
-            return pristine.channel(channel).subspan(static_cast<std::size_t>(lo - region_begin),
-                                                     static_cast<std::size_t>(hi - lo));
+            return pristine->channel(channel).subspan(static_cast<std::size_t>(lo - region_begin),
+                                                      static_cast<std::size_t>(hi - lo));
         }
-        const Zone& z = zones[static_cast<std::size_t>(signal)];
+        const Zone& z = (*zones)[static_cast<std::size_t>(signal)];
         return z.audio->channel(channel).subspan(static_cast<std::size_t>(lo - z.begin),
                                                  static_cast<std::size_t>(hi - lo));
     }
     [[nodiscard]] bool is_original(int signal) const {
-        return signal == k_pristine || zones[static_cast<std::size_t>(signal)].identical;
+        return signal == k_pristine || (*zones)[static_cast<std::size_t>(signal)].identical;
     }
 };
 
@@ -192,8 +196,12 @@ struct Interval {
     [[nodiscard]] bool empty() const { return hi <= lo; }
 };
 
+Interval between(std::int64_t lo, std::int64_t hi) {
+    return Interval{.lo = lo, .hi = hi};
+}
+
 Interval intersect(Interval a, Interval b) {
-    return {std::max(a.lo, b.lo), std::min(a.hi, b.hi)};
+    return between(std::max(a.lo, b.lo), std::min(a.hi, b.hi));
 }
 
 /// Writes one engine's samples where it owns the signal between two ramps.
@@ -222,17 +230,17 @@ void apply_ramp(const Signals& s, AudioBuffer& out, const Ramp& ramp, Interval s
 }
 
 void blend(const Plan& plan, const Signals& s, AudioBuffer& out, FadeShape shape) {
-    const Interval visible{std::max<std::int64_t>(0, plan.region_begin),
-                           std::min(plan.region_end, plan.frame_count)};
+    const Interval visible = between(std::max<std::int64_t>(0, plan.region_begin),
+                                     std::min(plan.region_end, plan.frame_count));
     std::int64_t plateau_begin = visible.lo;
     int state = k_pristine;
     for (const Ramp& ramp : plan.ramps) {
-        apply_plateau(s, out, state, intersect(visible, {plateau_begin, ramp.begin}));
-        apply_ramp(s, out, ramp, intersect(visible, {ramp.begin, ramp.end}), shape);
+        apply_plateau(s, out, state, intersect(visible, between(plateau_begin, ramp.begin)));
+        apply_ramp(s, out, ramp, intersect(visible, between(ramp.begin, ramp.end)), shape);
         plateau_begin = std::max(plateau_begin, ramp.end);
         state = ramp.to;
     }
-    apply_plateau(s, out, state, intersect(visible, {plateau_begin, visible.hi}));
+    apply_plateau(s, out, state, intersect(visible, between(plateau_begin, visible.hi)));
 }
 
 }  // namespace
@@ -297,7 +305,8 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     }
     // Ramps may name a zone that does not meet the region only outside the region, where nothing is
     // written; Signals::get is never asked for it.
-    blend(plan, Signals{*pristine, plan.region_begin, zones}, out, params.crossfade_shape);
+    blend(plan, Signals{.pristine = &*pristine, .region_begin = plan.region_begin, .zones = &zones},
+          out, params.crossfade_shape);
 
     const bool passthrough = rendered.empty();
     std::shared_ptr<const RenderResult> shared = std::make_shared<const RenderResult>(RenderResult{

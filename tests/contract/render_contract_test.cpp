@@ -23,7 +23,7 @@ struct Scenario {
 Scenario random_scenario(Rng& rng) {
     const auto notes = random_notes(rng, uniform_int(rng, 1, 5));
     const double end = notes.back().source_end.unchecked_since_origin().value() + 0.5;
-    return {make_fixture(notes, end, 2, k_rate), notes};
+    return Scenario{.fixture = make_fixture(notes, end, 2, k_rate), .notes = notes};
 }
 
 /// Adds 1..4 random gain groups on random notes; returns every intermediate list (index 0 = empty).

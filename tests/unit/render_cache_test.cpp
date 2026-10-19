@@ -70,6 +70,7 @@ TEST_CASE("concurrent_use_is_safe", "[render_cache]") {
     RenderCache cache{200'000};
     const auto value = result_of(0.1);
     std::vector<std::thread> threads;
+    threads.reserve(4);
     for (int t = 0; t < 4; ++t) {
         threads.emplace_back([&cache, &value, t] {
             for (int i = 0; i < 200; ++i) {

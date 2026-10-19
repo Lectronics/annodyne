@@ -20,8 +20,8 @@ constexpr std::uint64_t k_prime_b = 0xff51afd7ed558ccdULL;
 class Writer {
 public:
     void u64(std::uint64_t v) {
-        for (int i = 0; i < 8; ++i) {
-            byte(static_cast<unsigned char>((v >> (8 * i)) & 0xFFU));
+        for (unsigned i = 0; i < 8U; ++i) {
+            byte(static_cast<unsigned char>((v >> (8U * i)) & 0xFFU));
         }
     }
     void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
@@ -66,10 +66,10 @@ void put(Writer& w, Decibels v) {
     w.f64(v.value());
 }
 void put(Writer& w, SourceTime v) {
-    w.f64(v.unchecked_since_origin().value());
+    w.f64((v - SourceTime{}).value());
 }
 void put(Writer& w, OutputTime v) {
-    w.f64(v.unchecked_since_origin().value());
+    w.f64((v - OutputTime{}).value());
 }
 
 template <class T>

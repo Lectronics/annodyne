@@ -63,7 +63,7 @@ function(anno_external_allowed folder dep out_var)
         set(allowed TRUE)
     endif()
     # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).
-    if(folder MATCHES "^cli(/[a-z0-9_]+)?$" AND dep STREQUAL "nlohmann_json::nlohmann_json")
+    if(folder MATCHES "^cli(/[a-z0-9_]+)?$" AND dep MATCHES "^nlohmann_json(::nlohmann_json)?$")
         set(allowed TRUE)
     endif()
     set(${out_var} ${allowed} PARENT_SCOPE)

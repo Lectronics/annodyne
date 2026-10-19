@@ -4,6 +4,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <utility>
+
 using namespace anno;
 using namespace anno::test;
 
@@ -51,8 +53,7 @@ TEST_CASE("untouched_regions_test_note_c_is_unchanged_by_edits_to_a_and_b", "[au
     // Everything after b's end (1.5011 s = sample 72053) plus the 10 ms crossfade is untouched.
     const auto from = static_cast<std::size_t>(72053 + 480 + 1);
     for (int c = 0; c < 2; ++c) {
-        for (std::size_t i = from; i < static_cast<std::size_t>(original.frame_count().value());
-             ++i) {
+        for (std::size_t i = from; std::cmp_less(i, original.frame_count().value()); ++i) {
             REQUIRE(audio_of(r).channel(c)[i] == original.channel(c)[i]);
         }
     }

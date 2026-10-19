@@ -163,7 +163,9 @@ TEST_CASE("an_empty_region_and_an_empty_source_give_empty_audio", "[render]") {
         AudioSource::from_buffer(AudioBuffer::create(1, Samples{0}, Hz{k_rate}).value());
     auto analysis = std::make_shared<AnalysisResult>();
     analysis->source_id = empty.id();
-    const RenderInputs inputs{empty, analysis, std::make_shared<const EditList>(TrackId{"t1"})};
+    const RenderInputs inputs{.source = empty,
+                              .analysis = analysis,
+                              .edits = std::make_shared<const EditList>(TrackId{"t1"})};
     const auto r = render_region(inputs, none, GainTestEngine{}, {});
     REQUIRE(r.has_value());
     CHECK((*r)->passthrough);
@@ -222,11 +224,13 @@ TEST_CASE("timing_edits_on_inactive_notes_are_ignored", "[render]") {
 
 TEST_CASE("an_engine_that_returns_the_wrong_shape_is_an_internal_error", "[render]") {
     struct MonoEngine final : SynthesisEngine {
-        std::string_view name() const noexcept override { return "mono"; }
-        std::uint32_t version() const noexcept override { return 1; }
-        std::string settings_key() const override { return {}; }
-        Result<OutputAudio> render_note(const AudioSource& src, const Note&, const EffectiveNote&,
-                                        const TimeMap&, OutputRange r) const override {
+        [[nodiscard]] std::string_view name() const noexcept override { return "mono"; }
+        [[nodiscard]] std::uint32_t version() const noexcept override { return 1; }
+        [[nodiscard]] std::string settings_key() const override { return {}; }
+        [[nodiscard]] Result<OutputAudio> render_note(const AudioSource& src, const Note& /*note*/,
+                                                      const EffectiveNote& /*eff*/,
+                                                      const TimeMap& /*map*/,
+                                                      OutputRange r) const override {
             const Samples n = to_samples(r.duration(), src.sample_rate(), Rounding::nearest);
             return OutputAudio{.audio = AudioBuffer::create(1, n, src.sample_rate()).value(),
                                .start = r.start()};

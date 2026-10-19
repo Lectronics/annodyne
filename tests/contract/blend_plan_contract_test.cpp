@@ -15,9 +15,15 @@ TEST_CASE("blend_plans_are_ordered_consistent_and_inside_both_zones", "[blend_pl
         std::int64_t cursor = uniform_int(rng, 0, 2000);
         for (int i = uniform_int(rng, 1, 6); i > 0; --i) {
             const std::int64_t length = uniform_int(rng, 0, 3) == 0 ? 0 : uniform_int(rng, 1, 3000);
-            spans.push_back({cursor, cursor + length});
+            spans.push_back({.begin = cursor, .end = cursor + length});
             const int kind = uniform_int(rng, 0, 3);
-            cursor += length + (kind == 0 ? 0 : (kind == 1 ? margin : uniform_int(rng, 0, 4000)));
+            std::int64_t gap = uniform_int(rng, 0, 4000);
+            if (kind == 0) {
+                gap = 0;
+            } else if (kind == 1) {
+                gap = margin;
+            }
+            cursor += length + gap;
         }
         const auto ramps = plan_blend(spans, margin);
         REQUIRE_FALSE(ramps.empty());
@@ -44,6 +50,7 @@ TEST_CASE("blend_plans_are_ordered_consistent_and_inside_both_zones", "[blend_pl
 }
 
 TEST_CASE("plans_are_deterministic", "[blend_plan_contract]") {
-    const std::vector<SampleSpan> spans{{100, 300}, {300, 350}, {500, 900}};
+    const std::vector<SampleSpan> spans{
+        {.begin = 100, .end = 300}, {.begin = 300, .end = 350}, {.begin = 500, .end = 900}};
     CHECK(plan_blend(spans, 120) == plan_blend(spans, 120));
 }
