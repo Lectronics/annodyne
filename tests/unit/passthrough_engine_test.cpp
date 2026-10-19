@@ -75,9 +75,10 @@ TEST_CASE("passthrough_refuses_a_stretch_a_fractional_shift_and_a_range_outside_
         TimeMap::from_anchors({{.source = src(0.5), .output = out(0.6)}}, Seconds{1.0}).value();
     CHECK(engine.render_note(source, note, EffectiveNote{}, stretched, range).error().code ==
           ErrorCode::not_implemented);
-    const auto fractional = TimeMap::make({span(SpanKind::insert, 0.0, 0.0, 0.0, 1.5 / 48000.0),
-                                           span(SpanKind::warp, 0.0, 1.0, 1.5 / 48000.0, 1.0 + 1.5 / 48000.0)})
-                                .value();
+    const auto fractional =
+        TimeMap::make({span(SpanKind::insert, 0.0, 0.0, 0.0, 1.5 / 48000.0),
+                       span(SpanKind::warp, 0.0, 1.0, 1.5 / 48000.0, 1.0 + 1.5 / 48000.0)})
+            .value();
     CHECK(engine.render_note(source, note, EffectiveNote{}, fractional, range).error().code ==
           ErrorCode::not_implemented);
     const OutputRange beyond = OutputRange::from_start(OutputTime{}, Seconds{2.0});

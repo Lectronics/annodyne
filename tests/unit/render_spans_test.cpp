@@ -223,3 +223,29 @@ TEST_CASE("bad_maps_and_notes_are_refused", "[render_spans]") {
               .error()
               .code == ErrorCode::out_of_range);
 }
+
+TEST_CASE("maps_that_differ_in_a_single_span_give_different_cache_keys", "[render_spans]") {
+    const Fixture f = fixture_with_map(notes_a_b());
+    const auto longer_insert =
+        std::make_shared<const TimeMap>(TimeMap::make({span(SpanKind::warp, 0.0, 1.25, 0.0, 1.25),
+                                                       span(SpanKind::cut, 1.25, 1.5, 1.25, 1.25),
+                                                       span(SpanKind::insert, 1.5, 1.5, 1.25, 1.45),
+                                                       span(SpanKind::warp, 1.5, 3.0, 1.45, 2.95)})
+                                            .value());
+    // A region that meets neither the insert nor anything after it: only the map differs.
+    const OutputRange head = OutputRange::from_start(OutputTime{}, Seconds{1.0});
+    const auto a =
+        render_region(inputs_with(f, cut_and_insert_map()), head, PassthroughEngine{}, {}).value();
+    const auto b =
+        render_region(inputs_with(f, longer_insert), head, PassthroughEngine{}, {}).value();
+    CHECK(a->cache_id != b->cache_id);
+    CHECK(bit_identical(audio_of(a), audio_of(b)));  // same samples, different keys
+}
+
+TEST_CASE("an_edited_note_outside_the_recording_is_refused", "[render_spans]") {
+    const Fixture late = make_fixture({make_note("late", 2.5, 3.5)}, 3.0)
+                             .with_edits(edits_of({gain_edit("late", 3.0)}));
+    CHECK(render_region(inputs_with(late, cut_and_insert_map()), all_output(), GainTestEngine{}, {})
+              .error()
+              .code == ErrorCode::invalid_argument);
+}

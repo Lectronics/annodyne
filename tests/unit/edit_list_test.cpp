@@ -165,10 +165,13 @@ TEST_CASE("retargeted_rewrites_ids_and_orphans_the_rest", "[edit_list]") {
     // "c" absent
     const EditList out = list.retargeted(map);
     REQUIRE(out.active().size() == 3);
-    CHECK(out.active()[0].spec.target.segment_ids == segments_of(std::vector<NoteId>{NoteId{"a1"}, NoteId{"a2"}}));
+    CHECK(out.active()[0].spec.target.segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"a1"}, NoteId{"a2"}}));
     CHECK(out.active()[1].spec.target.segment_ids.empty());
-    CHECK(out.active()[1].spec.target.orphaned_segment_ids == segments_of(std::vector<NoteId>{NoteId{"b"}}));
-    CHECK(out.active()[2].spec.target.orphaned_segment_ids == segments_of(std::vector<NoteId>{NoteId{"c"}}));
+    CHECK(out.active()[1].spec.target.orphaned_segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"b"}}));
+    CHECK(out.active()[2].spec.target.orphaned_segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"c"}}));
     CHECK(out.active()[0].seq == list.active()[0].seq);
     CHECK(out.cursor() == list.cursor());
 }
@@ -184,8 +187,10 @@ TEST_CASE("retargeted_removes_duplicates_and_covers_every_partition", "[edit_lis
     map[NoteId{"a"}] = {NoteId{"x"}};
     map[NoteId{"b"}] = {NoteId{"x"}};  // merge: both point at x
     const EditList out = list.retargeted(map);
-    CHECK(out.discarded()[0].spec.target.segment_ids == segments_of(std::vector<NoteId>{NoteId{"x"}}));
-    CHECK(out.redo_tail()[0].spec.target.segment_ids == segments_of(std::vector<NoteId>{NoteId{"x"}}));
+    CHECK(out.discarded()[0].spec.target.segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"x"}}));
+    CHECK(out.redo_tail()[0].spec.target.segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"x"}}));
 }
 
 TEST_CASE("an_edit_targeting_two_notes_that_merge_lists_the_new_id_once", "[edit_list]") {
@@ -251,11 +256,13 @@ TEST_CASE("an_orphaned_id_that_becomes_live_again_leaves_the_orphan_list", "[edi
     NoteIdMap first;
     first[NoteId{"b"}] = {NoteId{"b"}};  // "a" has no continuation
     list = list.retargeted(first);
-    REQUIRE(list.active()[0].spec.target.orphaned_segment_ids == segments_of(std::vector<NoteId>{NoteId{"a"}}));
+    REQUIRE(list.active()[0].spec.target.orphaned_segment_ids ==
+            segments_of(std::vector<NoteId>{NoteId{"a"}}));
     NoteIdMap second;
     second[NoteId{"b"}] = {NoteId{"a"}};  // the new analysis reuses the id "a"
     list = list.retargeted(second);
-    CHECK(list.active()[0].spec.target.segment_ids == segments_of(std::vector<NoteId>{NoteId{"a"}}));
+    CHECK(list.active()[0].spec.target.segment_ids ==
+          segments_of(std::vector<NoteId>{NoteId{"a"}}));
     CHECK(list.active()[0].spec.target.orphaned_segment_ids.empty());
     CHECK(EditList::from_parts(list.to_parts()).has_value());
 }
@@ -266,4 +273,17 @@ TEST_CASE("from_parts_rejects_a_group_with_non_consecutive_seqs", "[edit_list]")
     parts.edits[1].seq = EditSeq{5};
     parts.next_seq = EditSeq{6};
     CHECK_FALSE(EditList::from_parts(parts).has_value());
+}
+
+TEST_CASE("gap_targets_pass_through_retargeting_unchanged", "[edit_list]") {
+    EditSpec spec =
+        make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::add, Cents{1.0});
+    const SegmentId gap{.kind = SegmentKind::gap, .value = "a"};  // same text as the note
+    spec.target.segment_ids.push_back(gap);
+    const EditList list = added(empty_list(), {spec});
+    NoteIdMap map;  // the note "a" has no continuation: orphaned; the gap "a" is untouched
+    map[NoteId{"a"}] = {};
+    const auto out = list.retargeted(map).active()[0].spec.target;
+    CHECK(out.segment_ids == std::vector<SegmentId>{gap});
+    CHECK(out.orphaned_segment_ids == std::vector<SegmentId>{segment_id(NoteId{"a"})});
 }

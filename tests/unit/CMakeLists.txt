@@ -14,6 +14,7 @@ anno_add_test(NAME crossfade_test SOURCES crossfade_test.cpp LABELS unit DEPS an
 anno_add_test(NAME blend_plan_test SOURCES blend_plan_test.cpp LABELS unit DEPS anno::core_render)
 anno_add_test(NAME render_cache_test SOURCES render_cache_test.cpp LABELS unit DEPS anno::cli_checks anno::core_render)
 anno_add_test(NAME render_test SOURCES render_test.cpp LABELS unit DEPS anno::cli_checks anno::core_render anno::core_synthesis_passthrough)
+anno_add_test(NAME source_through_map_test SOURCES source_through_map_test.cpp LABELS unit DEPS anno::cli_checks anno::core_synthesis_engine)
 anno_add_test(NAME render_spans_test SOURCES render_spans_test.cpp LABELS unit DEPS anno::cli_checks anno::core_render anno::core_synthesis_passthrough)
 anno_add_test(NAME passthrough_engine_test SOURCES passthrough_engine_test.cpp LABELS unit DEPS anno::cli_checks anno::core_synthesis_passthrough)
 anno_add_test(NAME audio_checks_test SOURCES audio_checks_test.cpp LABELS unit DEPS anno::cli_checks anno::core_types)

@@ -155,7 +155,7 @@ struct TimeSpan {
     SegmentId segment;                       // which segment produced it
 };
 
-struct GeneratedTime { SegmentId segment; Seconds offset; };   // position inside an insert span
+struct GeneratedTime { std::size_t span; Seconds offset; };   // span: index into TimeMap::spans() of the insert (segment = spans()[span].segment; no allocation in to_source)
 
 using SourceLookup = std::variant<SourceTime, GeneratedTime>;
 

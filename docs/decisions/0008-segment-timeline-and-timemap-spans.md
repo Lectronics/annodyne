@@ -1,7 +1,7 @@
 # ADR-0008: Segment timeline and TimeMap spans
 
 - **Date:** 2026-10-19
-- **Status:** proposed (accepted when the Phase 2 addendum gates pass; see Consequences)
+- **Status:** accepted 2026-10-19 (owner approved the design in the session; the Phase 2 addendum gates passed, see `docs/reviews/phase2-addendum-review.md`)
 - **Phase:** 2 addendum (TimeMap span model, `SegmentId`, render walks spans); 5 (timeline, layout, gaps); 6 (breath chain, dynamics); 10 (Breath Lane UI)
 - **Numbering:** drafted as "ADR-0001"; renumbered because `0001-core-io-target.md` exists.
 
@@ -18,7 +18,7 @@ The layering conflict raised in `docs/design/note-stretching.md` (Open question 
 ## Decision
 
 1. **Segment timeline.** Each track's source time is partitioned into contiguous `note` and `gap` segments (`SegmentTimeline`, stored in `AnalysisResult` from Phase 5). Gaps have sub-regions: `tail`, `silence`, `breath`, `noise`.
-2. **TimeMap spans.** `TimeMap` becomes an ordered list of spans of kind `warp`, `cut` or `insert`, tiling a finite source range `[0, source_length)`. `to_output(SourceTime)` returns `std::optional<OutputTime>` (empty inside a cut); `to_source(OutputTime)` returns `std::variant<SourceTime, GeneratedTime>` (generated inside an insert). Querying outside the domain is a precondition violation (asserted in debug, clamped in release), so the return types stay `optional` / `variant`. `TimeMap::make()` checks tiling and monotonicity; the rule "cut and insert only inside gap segments" cannot be checked without a timeline, so it is checked by `build_time_map` / `solve_layout` (Phase 5).
+2. **TimeMap spans.** `TimeMap` becomes an ordered list of spans of kind `warp`, `cut` or `insert`, tiling a finite source range `[0, source_length)`. `to_output(SourceTime)` returns `std::optional<OutputTime>` (empty inside a cut); `to_source(OutputTime)` returns `std::variant<SourceTime, GeneratedTime>` (generated inside an insert; `GeneratedTime` holds an index into `spans()` rather than a copied `SegmentId`, so the query never allocates). Querying outside the domain is a precondition violation (asserted in debug, clamped in release), so the return types stay `optional` / `variant`. `TimeMap::make()` checks tiling and monotonicity; the rule "cut and insert only inside gap segments" cannot be checked without a timeline, so it is checked by `build_time_map` / `solve_layout` (Phase 5).
 3. **Type location.** The `TimeMap` data type stays in `core/types` (already there). Building it (`solve_layout`, `build_time_map`, `plan_gap_layout`) stays in `core/timemap`.
 4. **Layout rule (owner decision, supersedes spec §5.4 step 5 and refines ADR-0005 §16).** Stretch only when needed; otherwise shift.
    - A note moved into a gap **shifts**: moved earlier, the gap before it is cut and the gap after it is extended; moved later, the gap before it is extended and the gap after it is cut (the extension is room tone or silence). Its audio and its neighbours' audio are untouched samples.
@@ -44,7 +44,7 @@ The layering conflict raised in `docs/design/note-stretching.md` (Open question 
 - The UI playhead, MIDI export and rendering must treat insert spans as generated audio.
 - From Phase 5, `AnalysisResult` gains `timeline`, `noise_floor` and `breaths`. Re-analysis remapping covers gap and breath IDs as well as notes.
 - `structure-reviewer` checks for any remaining code that assumes the inverse map always exists.
-- Phase 1's `TimeMap` contract tests are rewritten for span invariants now. `build_time_map` keeps emitting an all-warp map until Phase 5, when its signature is replaced.
+- Phase 1's `TimeMap` contract tests are rewritten for span invariants now. `build_time_map` keeps its Phase 1 behaviour until Phase 5, when its signature is replaced; its maps are warps plus, when a note at source 0 is pushed later, one leading insert (silence).
 - ADR-0005 §16 is amended: Flex applies to explicit handles and as the gap-exhausted fallback, not to every move. `dirty_regions`' rule that a timing change dirties `[0, last_end]` is revisited in Phase 5 with the layout solver.
 - Spec §4.6 (`RenderResult` loses `source_range`) is updated with the ADR-0006 amendment.
 - ADR-0006 is amended: `RenderInputs` takes an optional `TimeMap`; the cache key includes spans; `RenderResult.source_range` is replaced.

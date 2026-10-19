@@ -117,16 +117,21 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
         if (!eff.is_edited) {
             continue;
         }
+        if (note.source_start < SourceTime{} || note.source_end <= SourceTime{} ||
+            note.source_end > SourceTime{} + map.source_length()) {
+            return fail(ErrorCode::invalid_argument,
+                        "render_region: note '" + note.id.value + "' lies outside the recording");
+        }
         const auto out_start = map.to_output(note.source_start);
         const auto out_end = map.to_output_end(note.source_end);
         if (!out_start || !out_end) {
             return fail(ErrorCode::invalid_argument,
                         "render_region: note '" + note.id.value + "' starts or ends inside a cut");
         }
-        const std::int64_t begin = std::clamp<std::int64_t>(
-            index_of(*out_start, plan.sample_rate), 0, plan.frame_count);
-        const std::int64_t end = std::clamp<std::int64_t>(
-            index_of(*out_end, plan.sample_rate), begin, plan.frame_count);
+        const std::int64_t begin =
+            std::clamp<std::int64_t>(index_of(*out_start, plan.sample_rate), 0, plan.frame_count);
+        const std::int64_t end =
+            std::clamp<std::int64_t>(index_of(*out_end, plan.sample_rate), begin, plan.frame_count);
         plan.edited.push_back(
             {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }

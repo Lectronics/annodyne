@@ -173,3 +173,24 @@ TEST_CASE("edit_names_round_trip_for_every_enumerator", "[edit_types]") {
     CHECK_FALSE(parse_edit_category("").has_value());
     CHECK_FALSE(parse_edit_op("Set").has_value());
 }
+
+TEST_CASE("segment_ids_keep_note_and_gap_apart", "[edit_types]") {
+    const SegmentId note = segment_id(NoteId{"x"});
+    const SegmentId gap{.kind = SegmentKind::gap, .value = "x"};
+    CHECK(note != gap);
+    CHECK(as_note_id(note) == NoteId{"x"});
+    CHECK_FALSE(as_note_id(gap).has_value());
+}
+
+TEST_CASE("the_new_categories_accept_only_a_parameterless_reset", "[edit_types]") {
+    for (const EditCategory category :
+         {EditCategory::gap, EditCategory::layout, EditCategory::breath, EditCategory::breath_chain,
+          EditCategory::breath_assignment}) {
+        EditSpec set = make_spec("a", category, EditParam::center_offset, EditOp::set, Cents{1.0});
+        CHECK_FALSE(validate_for_add(set).has_value());  // no parameter belongs to them yet
+        EditSpec none = make_spec("a", category, std::nullopt, EditOp::set, Cents{1.0});
+        CHECK_FALSE(validate_for_add(none).has_value());
+        EditSpec reset = make_spec("a", category, std::nullopt, EditOp::reset, EditValue{});
+        CHECK(validate_for_add(reset).has_value());
+    }
+}

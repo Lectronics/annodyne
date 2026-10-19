@@ -11,6 +11,9 @@
   - `src/core/timemap` (layer 3): new target `anno::core_timemap`; holds `build_time_map`, the one
     function that reads edits to construct a `TimeMap`.
 
+
+> **Superseded in part by ADR-0008 and `docs/design/phase2-addendum-timemap-spans.md` (2026-10-19):** `TimeMap` is now a finite span model (`identity(length)`, `from_anchors(anchors, length)`, `to_output` -> `optional`, `to_source` -> `variant`, `slope_at`, `spans()`; no `anchors()` or `stretch_ratio`), and `EditTarget` holds `segment_ids` / `orphaned_segment_ids`. `RenderResult` has no `source_range`; the cache key includes the whole TimeMap. Text below describes the Phase 1/2 form.
+
 ## Purpose
 Build the non-destructive model and prove it correct before any audio code depends on it. Phase 1
 adds:

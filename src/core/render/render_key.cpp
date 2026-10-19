@@ -9,7 +9,7 @@ namespace anno {
 
 namespace {
 
-constexpr std::uint32_t k_key_format_version = 1;
+constexpr std::uint32_t k_key_format_version = 2;  // 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;

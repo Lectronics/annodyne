@@ -86,10 +86,12 @@ public:
 - Time axes: `to_output` takes `SourceTime`, `to_source` takes `OutputTime`; lengths are `Seconds`. Raw seconds only inside `core/types` (`unchecked_*`).
 - Ownership: value type, immutable; shared by const reference.
 - Real-time safe: all queries (binary search over spans; no allocation). `make`/`from_anchors` allocate.
+- **Leading insert (accepted until Phase 5).** The Phase 1 builder can push a note at source 0 later (`onset_shift` > 0), so `from_anchors` turns a first anchor `(0, t>0)` into an insert span of `t` seconds (silence before the audio); `t < 0` is `invalid_argument`. This insert is not inside a gap segment; Phase 5's `build_time_map` replaces it with timeline-checked layout, so `build_time_map` no longer always emits all-warp maps until then.
+- **`GeneratedTime`** carries `span`, an index into `spans()` (the segment is `spans()[span].segment`), not a copied `SegmentId`: `to_source` is real-time safe and must not allocate. The index is valid for the map it came from.
 - **Slope 1.** A warp has slope 1 when `output_end - output_start == source_end - source_start` within 1e-9 s (exact for the builder's data); `read_through_map` applies the sample-level test of §3.
 - **Domain.** Finite. Queries outside it are a precondition violation (asserted in debug, clamped in release), not an error value, so the query return types stay `optional` / `variant`.
 - **`stretch_ratio(SourceTime)` and `anchors()` are removed** (callers: tests only). `slope_at` and `spans()` replace them.
-- **Invariants** (contract tests): spans tile both axes exactly; both axes monotonic; `to_output` empty exactly inside cuts; `to_source` generated exactly inside inserts; `to_source(*to_output(s)) == s` within 1e-9 s for non-cut `s`; `identity(L)` is exact.
+- **Invariants** (contract tests): spans tile both axes exactly; both axes monotonic; `to_output` empty exactly inside cuts; `to_source` generated exactly inside inserts; `to_source(*to_output(s)) == s` within 1e-9 s for non-cut `s` < `source_length` (`s == source_length` is the closing point); `identity(L)` is exact.
 
 ## 2. `SegmentId` and `EditTarget` (`core/types/ids.h`, `edit.h`)
 
@@ -128,12 +130,12 @@ Signature unchanged (`source, note, eff, const TimeMap&, OutputRange`). `OutputR
 ## 5. `render_region` (`core/render`)
 
 - `RenderInputs` gains `std::shared_ptr<const TimeMap> time_map` (null = build from edits). If set it is authoritative and wins over any timing edits in the edit list: the engine receives that map, and `effective_state`'s timing fields (`onset_shift` etc.) are not applied a second time (the engine never realises timing; the map is the timing). Phase 5's `build_time_map` will produce it. If null it is built from the edits with `build_time_map` with the recording's exact length and must be the identity, else `not_implemented` as before (stretching is Phase 6). `render_region` always passes the recording's duration as the map's `source_length` (never the "largest note" fallback of §6).
-- **Validation up front** (`invalid_argument`): a supplied map's `source_length` must match the recording's duration within half a sample.
+- **Validation up front** (`invalid_argument`): a supplied map's `source_length` must match the recording's duration within half a sample; an edited note must lie inside the recording (`0 <= source_start`, `0 < source_end <= source_length`), else the map's domain precondition would be violated; `read_through_map` also reports `invalid_argument` for a negative range.
 - Frame counts in the plan are **output** frames: `round(map.output_length * rate)`; `snap_region` checks against them. The zone clamp, region and ramps are all output samples. A note's span for the blend plan is `to_output(note.source_start)` .. `to_output_end(note.source_end)`, snapped; a note whose start or end maps to a cut: `invalid_argument` (Phase 5 never produces one: cuts are inside gaps). `render_zone` passes the actual map to the engine.
 - The pristine slice and each zone's reference are `read_through_map`. A warp that is not sample-aligned slope 1 anywhere in the region (or a zone's margin): `not_implemented`.
 - `dirty_regions` is not consumed by the renderer (ADR-0006 item 2); it stays source-axis and is revisited with the layout solver in Phase 5, so nothing breaks now.
 - `RenderResult.source_range` is **removed** (no single source range exists once there are cuts and inserts). Its two users are tests. `buffer.start` (output time) stays.
-- The cache key (`make_render_key`) includes the **whole** map unless it is the identity: `source_length`, `output_length`, and every span as `(kind, source_start, source_end, output_start, output_end)` (same length-prefixed writer). Whole-map hashing cannot miss a span a zone reads. The Phase 6 TODO ("include anchors") is thereby done early.
+- The cache key (`make_render_key`) includes the **whole** map (key format version 2) unless it is the identity: `source_length`, `output_length`, and every span as `(kind, source_start, source_end, output_start, output_end)` (same length-prefixed writer). Whole-map hashing cannot miss a span a zone reads. The Phase 6 TODO ("include anchors") is thereby done early.
 - Guarantees: with an identity map nothing changes (null and undo-null tests). With a map containing a cut and an insert: output length = `output_length`; insert samples are digital silence; every other sample equals the source sample the map names, bit for bit, outside blend zones of edited notes; an empty edit list gives exactly `read_through_map` of the whole range.
 
 ## 6. `build_time_map`

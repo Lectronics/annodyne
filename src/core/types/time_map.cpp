@@ -190,6 +190,9 @@ std::optional<OutputTime> TimeMap::to_output_end(SourceTime s) const noexcept {
     }
     const double length = source_length_.value();
     assert(raw(s) > 0.0 && raw(s) <= length);
+    if (raw(s) <= 0.0) {  // precondition violated: answer like the start of the domain
+        return to_output(make_source(0.0));
+    }
     const double x = std::clamp(raw(s), 0.0, length);
     // First span with source_start >= x; the answering span is the last non-insert one before it.
     auto it = std::ranges::lower_bound(spans_, x, {}, source_start_of);
@@ -250,9 +253,6 @@ Ratio TimeMap::slope_at(OutputTime tau) const noexcept {
     const double length = output_length_.value();
     assert(raw(tau) >= 0.0 && raw(tau) <= length);
     const double y = std::clamp(raw(tau), 0.0, length);
-    if (spans_.empty()) {
-        return Ratio{0.0};
-    }
     auto it = std::ranges::upper_bound(spans_, y, {}, output_start_of);
     while (it != spans_.begin()) {
         --it;

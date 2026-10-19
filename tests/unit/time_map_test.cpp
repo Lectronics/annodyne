@@ -250,3 +250,40 @@ TEST_CASE("an_anchor_at_source_zero_with_later_output_makes_a_leading_insert", "
     CHECK(s(*map.to_output(src(0.0))) == 0.5);
     CHECK(source_of(map.to_source(out(0.5))) == 0.0);
 }
+
+TEST_CASE("a_cut_at_the_start_of_the_domain_and_a_trailing_insert", "[time_map]") {
+    const auto cut_first =
+        TimeMap::make({span(SpanKind::cut, 0, 1, 0, 0), span(SpanKind::warp, 1, 3, 0, 2)}).value();
+    CHECK_FALSE(cut_first.to_output(src(0.5)).has_value());
+    CHECK(s(*cut_first.to_output(src(1.0))) == 0.0);
+    CHECK(source_of(cut_first.to_source(out(0.0))) == 1.0);
+    CHECK_FALSE(cut_first.to_output_end(src(1.0)).has_value());  // the cut ends there
+
+    const auto trailing =
+        TimeMap::make({span(SpanKind::warp, 0, 2, 0, 2), span(SpanKind::insert, 2, 2, 2, 3)})
+            .value();
+    CHECK(s(*trailing.to_output(src(2.0))) == 3.0);  // the closing point
+    const auto end = trailing.to_source(out(3.0));
+    REQUIRE(is_generated(end));
+    CHECK(std::get<GeneratedTime>(end).offset == Seconds{1.0});
+    CHECK(std::get<GeneratedTime>(end).span == 1);
+    CHECK(s(*trailing.to_output_end(src(2.0))) == 2.0);  // the warp's end, left of the insert
+}
+
+TEST_CASE("a_map_of_only_cuts_has_no_output", "[time_map]") {
+    const auto map = TimeMap::make({span(SpanKind::cut, 0, 2, 0, 0)}).value();
+    CHECK(map.output_length() == Seconds{0.0});
+    CHECK_FALSE(map.to_output(src(1.0)).has_value());
+    CHECK_FALSE(map.to_output_end(src(2.0)).has_value());
+    CHECK(source_of(map.to_source(out(0.0))) == 0.0);
+}
+
+TEST_CASE("to_output_end_after_a_leading_insert_and_at_a_trailing_cut", "[time_map]") {
+    const auto map =
+        TimeMap::make({span(SpanKind::insert, 0, 0, 0, 1), span(SpanKind::warp, 0, 2, 1, 3),
+                       span(SpanKind::cut, 2, 3, 3, 3)})
+            .value();
+    CHECK(s(*map.to_output_end(src(1.0))) == 2.0);
+    CHECK(s(*map.to_output_end(src(2.0))) == 3.0);
+    CHECK_FALSE(map.to_output_end(src(3.0)).has_value());  // the last span is a cut
+}

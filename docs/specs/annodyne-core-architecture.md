@@ -254,7 +254,7 @@ class SynthesisEngine(Protocol):
 class RenderResult:
     buffer: AudioBuffer         # output time
     out_range: tuple[float, float]      # → ADR-0002: dropped; derived from buffer (OutputAudio)
-    source_range: tuple[float, float]   # what part of the original was read
+    source_range: tuple[float, float]   # (removed by ADR-0008: cuts and inserts have no single source range)
     cache_key: str
     notes_rendered: list[str]   # which notes were actually re-synthesised
     passthrough: bool           # True if nothing edited here (original audio copied)

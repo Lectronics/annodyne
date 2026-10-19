@@ -107,7 +107,7 @@ struct ParamInfo {
 [[nodiscard]] const ParamInfo& param_info(EditParam param) noexcept;
 
 /// Smallest legal value of length_scale / attack_time_scale after folding (1/1000 = 1000x
-/// compression); keeps the TimeMap invertible.
+/// compression); keeps a note's warp strictly positive in length.
 inline constexpr Ratio k_min_time_scale{1e-3};
 /// Tolerance for the key of a time handle: two handles whose source times differ by less than this
 /// are the same handle.

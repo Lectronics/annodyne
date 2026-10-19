@@ -24,9 +24,11 @@ enum class SpanKind { warp, cut, insert };
 
 /// One piece of the map. Both ranges are always present; the one a kind does not use has zero
 /// length and sits at the boundary position.
-///  warp:   source and output ranges both have positive length; slope = output / source (1 =
-///  untouched) cut:    source range positive, output range zero length (source removed) insert:
-///  source range zero length, output range positive (output with no source)
+// clang-format off
+///  warp:   source and output ranges both positive; slope = output / source (1 = untouched)
+///  cut:    source range positive, output range zero length (source removed)
+///  insert: source range zero length, output range positive (output with no source)
+// clang-format on
 struct TimeSpan {
     SpanKind kind = SpanKind::warp;
     SourceTime source_start;

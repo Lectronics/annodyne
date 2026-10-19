@@ -10,6 +10,9 @@
   `src/cli/scenario` (json-free data + synthetic analysis), `src/cli/scenario_json` (parser, links
   nlohmann), `src/cli/commands` (layer 7). Test-only: `tests/support/` (checks, gain engine).
 
+
+> **Superseded in part by ADR-0008 and `docs/design/phase2-addendum-timemap-spans.md` (2026-10-19):** `TimeMap` is now a finite span model (`identity(length)`, `from_anchors(anchors, length)`, `to_output` -> `optional`, `to_source` -> `variant`, `slope_at`, `spans()`; no `anchors()` or `stretch_ratio`), and `EditTarget` holds `segment_ids` / `orphaned_segment_ids`. `RenderResult` has no `source_range`; the cache key includes the whole TimeMap. Text below describes the Phase 1/2 form.
+
 ## Purpose
 Prove the plumbing from edits to audio before any synthesis exists: pick the edited notes, ask an
 engine for them, blend the results into a copy of the original with crossfades, cache it, and verify

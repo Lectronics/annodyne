@@ -254,3 +254,15 @@ TEST_CASE("the_built_map_inverts_within_tolerance", "[build_time_map]") {
         CHECK(std::abs(back - s) <= tolerance::k_timemap_roundtrip.value());
     }
 }
+
+TEST_CASE("a_note_at_the_start_pushed_later_leaves_silence_before_it", "[build_time_map]") {
+    const std::vector<Note> notes{make_note("a", 0.0, 1.0), make_note("b", 2.0, 3.0)};
+    const auto built = build_to_end(
+        notes, edits_of({timing("a", EditParam::onset_shift, EditOp::set, Seconds{0.5})}));
+    const TimeMap& m = built.map;
+    REQUIRE(m.spans().front().kind == SpanKind::insert);  // 0.5 s before the audio
+    CHECK(m.spans().front().output_end == out(0.5));
+    CHECK(out_of(m, 0.0) == 0.5);
+    CHECK(out_of(m, 6.0) == 6.0);  // the fixed end
+    CHECK(std::holds_alternative<GeneratedTime>(m.to_source(out(0.25))));
+}
