@@ -128,13 +128,13 @@ TEST_CASE("param_may_be_empty_only_for_reset", "[edit_types]") {
 
 TEST_CASE("target_rules_differ_between_add_and_recorded", "[edit_types]") {
     auto spec = pitch_add("a", 1.0);
-    spec.target.note_ids.clear();
+    spec.target.segment_ids.clear();
     CHECK_FALSE(validate(spec).has_value());  // nothing targeted at all
-    spec.target.orphaned_note_ids = {NoteId{"gone"}};
+    spec.target.orphaned_segment_ids = {segment_id(NoteId{"gone"})};
     CHECK(validate(spec).has_value());                // recorded edit with only orphans
     CHECK_FALSE(validate_for_add(spec).has_value());  // but not accepted by add
     spec = pitch_add("a", 1.0);
-    spec.target.note_ids.push_back(NoteId{"a"});
+    spec.target.segment_ids.push_back(segment_id(NoteId{"a"}));
     CHECK_FALSE(validate(spec).has_value());  // duplicate id
     spec = pitch_add("a", 1.0);
     spec.origin.clear();
@@ -159,7 +159,7 @@ TEST_CASE("edit_names_round_trip_for_every_enumerator", "[edit_types]") {
         CHECK(parse_edit_param(to_string(param)) == param);
         CHECK(to_string(param) != "unknown");
     }
-    for (int i = 0; i <= static_cast<int>(EditCategory::sound); ++i) {
+    for (int i = 0; i <= static_cast<int>(EditCategory::breath_assignment); ++i) {
         const auto category = static_cast<EditCategory>(i);
         CHECK(parse_edit_category(to_string(category)) == category);
     }

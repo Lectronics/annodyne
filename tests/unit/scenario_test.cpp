@@ -42,7 +42,7 @@ TEST_CASE("a_complete_scenario_parses_into_typed_edits", "[scenario]") {
     REQUIRE(s->edits.size() == 5);
     CHECK(s->edits[0].param == EditParam::gain);
     CHECK(std::get<Decibels>(s->edits[0].value) == Decibels{6.0});
-    CHECK(s->edits[1].target.note_ids[0].value == "n2");  // note_index 1
+    CHECK(s->edits[1].target.segment_ids[0].value == "n2");  // note_index 1
     CHECK(std::get<FadeShape>(s->edits[2].value) == FadeShape::linear);
     CHECK(std::holds_alternative<TimePair>(s->edits[3].value));
     CHECK(s->edits[4].op == EditOp::reset);

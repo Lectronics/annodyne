@@ -123,10 +123,10 @@ TEST_CASE("remap_moves_edits_to_the_matching_notes_and_reports_each_old_note", "
     const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
 
     const auto& targets = result.edits.active();
-    CHECK(targets[0].spec.target.note_ids == ids({"a"}));
-    CHECK(targets[1].spec.target.note_ids == ids({"b1", "b2"}));
-    CHECK(targets[2].spec.target.note_ids.empty());
-    CHECK(targets[2].spec.target.orphaned_note_ids == ids({"c"}));
+    CHECK(targets[0].spec.target.segment_ids == segments_of(ids({"a"})));
+    CHECK(targets[1].spec.target.segment_ids == segments_of(ids({"b1", "b2"})));
+    CHECK(targets[2].spec.target.segment_ids.empty());
+    CHECK(targets[2].spec.target.orphaned_segment_ids == segments_of(ids({"c"})));
     REQUIRE(result.report.size() == 3);
     CHECK(result.report[0].old_id == NoteId{"a"});
     CHECK(result.report[1].outcome == RemapOutcome::split);
@@ -140,7 +140,7 @@ TEST_CASE("remap_never_drops_an_edit", "[remap]") {
     const auto new_a = analysis_of({make_note("z", 9, 10)});
     const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
     CHECK(result.edits.active().size() == edits.active().size());
-    CHECK(result.edits.active()[1].spec.target.orphaned_note_ids == ids({"ghost"}));
+    CHECK(result.edits.active()[1].spec.target.orphaned_segment_ids == segments_of(ids({"ghost"})));
     // an id unknown to the old analysis is reported as orphaned
     bool found = false;
     for (const auto& e : result.report) {
@@ -166,5 +166,5 @@ TEST_CASE("remapped_effective_state_follows_the_new_note", "[remap]") {
     const auto old_a = analysis_of({make_note("a", 1, 2)});
     const auto new_a = analysis_of({make_note("n", 1.02, 2.02)});
     const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
-    CHECK(result.edits.active()[0].spec.target.note_ids == ids({"n"}));
+    CHECK(result.edits.active()[0].spec.target.segment_ids == segments_of(ids({"n"})));
 }

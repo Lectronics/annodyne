@@ -173,7 +173,11 @@ Result<RemapResult> remap_after_reanalysis(const EditList& edits,
     std::set<NoteId> targeted;
     const auto collect = [&](std::span<const Edit> list) {
         for (const Edit& e : list) {
-            targeted.insert(e.spec.target.note_ids.begin(), e.spec.target.note_ids.end());
+            for (const SegmentId& id : e.spec.target.segment_ids) {
+                if (const auto note = as_note_id(id)) {
+                    targeted.insert(*note);
+                }
+            }
         }
     };
     const EditListParts parts = edits.to_parts();

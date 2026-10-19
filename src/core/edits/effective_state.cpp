@@ -106,7 +106,8 @@ double snap_ratio(double v) {
 }
 
 bool targets(const EditSpec& spec, const NoteId& id) {
-    return std::ranges::find(spec.target.note_ids, id) != spec.target.note_ids.end();
+    return std::ranges::find(spec.target.segment_ids, segment_id(id)) !=
+           spec.target.segment_ids.end();
 }
 
 /// Clamps, then snaps float dust, in the order the design note fixes.

@@ -227,7 +227,9 @@ Result<EditSpec> parse_edit(const Json& j, const std::vector<ScenarioNote>& note
     if (!target) {
         return Unexpected{target.error()};
     }
-    spec.target.note_ids = std::move(*target);
+    for (const NoteId& id : *target) {
+        spec.target.segment_ids.push_back(segment_id(id));
+    }
     if (auto r = validate_for_add(spec); !r) {
         return bad(path, r.error().message);
     }

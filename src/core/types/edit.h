@@ -35,7 +35,13 @@ enum class EditCategory {
     attack,
     separation,  // no parameters yet (Phase 5)
     assignment,  // no parameters yet (Phase 7)
-    sound        // no parameters yet (Phase 12)
+    sound,       // no parameters yet (Phase 12)
+    // ADR-0008: enumerators only; no parameters until their phases, so only a reset can be recorded.
+    gap,                // no parameters yet (Phase 5)
+    layout,             // no parameters yet (Phase 5)
+    breath,             // no parameters yet (Phase 6)
+    breath_chain,       // no parameters yet (Phase 6)
+    breath_assignment   // no parameters yet (Phase 6)
 };
 
 enum class EditOp { set, add, scale, reset };
@@ -109,9 +115,9 @@ inline constexpr Seconds k_handle_key{1e-6};
 
 /// Who an edit applies to.
 struct EditTarget {
-    std::vector<NoteId> note_ids;  // live targets
-    std::vector<NoteId>
-        orphaned_note_ids;  // re-analysis could not re-attach these; kept, ignored by the fold
+    std::vector<SegmentId> segment_ids;  // live targets: notes now, gaps from Phase 5 (ADR-0008)
+    std::vector<SegmentId>
+        orphaned_segment_ids;  // re-analysis could not re-attach these; kept, ignored by the fold
 };
 
 /// What a tool or macro returns: the content of one edit, without bookkeeping.
@@ -135,15 +141,15 @@ struct Edit {
     EditSpec spec;
 };
 
-/// Checks a spec as it may appear in a recorded Edit: non-empty origin; note_ids or
-/// orphaned_note_ids non-empty, no duplicates; the param belongs to the category; param is empty
+/// Checks a spec as it may appear in a recorded Edit: non-empty origin; segment_ids or
+/// orphaned_segment_ids non-empty, no duplicates; the param belongs to the category; param is empty
 /// only for reset; the op is allowed for the parameter; the value type matches (reset: monostate,
 /// or a TimePair when the param is time_handle); numbers are finite and inside the legal range.
 /// Errors: invalid_argument. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<void> validate(const EditSpec& spec);
 
-/// validate() plus the rules for a spec entering EditList::add: note_ids non-empty and
-/// orphaned_note_ids empty. Errors: invalid_argument.
+/// validate() plus the rules for a spec entering EditList::add: segment_ids non-empty and
+/// orphaned_segment_ids empty. Errors: invalid_argument.
 [[nodiscard]] Result<void> validate_for_add(const EditSpec& spec);
 
 }  // namespace anno

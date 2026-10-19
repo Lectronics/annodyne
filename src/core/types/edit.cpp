@@ -37,7 +37,7 @@ constexpr std::optional<E> parse_name(const std::array<std::pair<E, std::string_
 }
 
 using enum EditCategory;
-constexpr std::array<std::pair<EditCategory, std::string_view>, 13> k_category_names{
+constexpr std::array<std::pair<EditCategory, std::string_view>, 18> k_category_names{
     {{pitch, "pitch"},
      {pitch_mod, "pitch_mod"},
      {pitch_drift, "pitch_drift"},
@@ -50,7 +50,12 @@ constexpr std::array<std::pair<EditCategory, std::string_view>, 13> k_category_n
      {attack, "attack"},
      {separation, "separation"},
      {assignment, "assignment"},
-     {sound, "sound"}}};
+     {sound, "sound"},
+     {gap, "gap"},
+     {layout, "layout"},
+     {breath, "breath"},
+     {breath_chain, "breath_chain"},
+     {breath_assignment, "breath_assignment"}}};
 
 constexpr std::array<std::pair<EditOp, std::string_view>, 4> k_op_names{{{EditOp::set, "set"},
                                                                          {EditOp::add, "add"},
@@ -276,12 +281,12 @@ Result<void> validate(const EditSpec& spec) {
     if (spec.origin.empty()) {
         return invalid("edit needs an origin");
     }
-    if (spec.target.note_ids.empty() && spec.target.orphaned_note_ids.empty()) {
-        return invalid("edit targets no notes");
+    if (spec.target.segment_ids.empty() && spec.target.orphaned_segment_ids.empty()) {
+        return invalid("edit targets no segments");
     }
-    std::set<NoteId> ids;
-    for (const auto* list : {&spec.target.note_ids, &spec.target.orphaned_note_ids}) {
-        for (const NoteId& id : *list) {
+    std::set<SegmentId> ids;
+    for (const auto* list : {&spec.target.segment_ids, &spec.target.orphaned_segment_ids}) {
+        for (const SegmentId& id : *list) {
             if (id.value.empty() || !ids.insert(id).second) {
                 return invalid("edit target ids must be non-empty and unique");
             }
@@ -309,8 +314,8 @@ Result<void> validate(const EditSpec& spec) {
 }
 
 Result<void> validate_for_add(const EditSpec& spec) {
-    if (spec.target.note_ids.empty() || !spec.target.orphaned_note_ids.empty()) {
-        return invalid("a new edit must target live notes only");
+    if (spec.target.segment_ids.empty() || !spec.target.orphaned_segment_ids.empty()) {
+        return invalid("a new edit must target live segments only");
     }
     return validate(spec);
 }

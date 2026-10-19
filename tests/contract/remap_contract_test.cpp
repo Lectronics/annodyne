@@ -83,21 +83,22 @@ TEST_CASE("remap_never_drops_or_loses_a_target", "[remap_contract]") {
         for (std::size_t i = 0; i < edits.active().size(); ++i) {
             const auto& before = edits.active()[i].spec.target;
             const auto& after = result.edits.active()[i].spec.target;
-            for (const NoteId& id : before.note_ids) {
-                const auto& to = mapped.at(id);
+            for (const SegmentId& segment : before.segment_ids) {
+                const auto& to = mapped.at(*as_note_id(segment));
                 if (to.empty()) {
-                    CHECK(std::ranges::find(after.orphaned_note_ids, id) !=
-                          after.orphaned_note_ids.end());
+                    CHECK(std::ranges::find(after.orphaned_segment_ids, segment) !=
+                          after.orphaned_segment_ids.end());
                 } else {
                     for (const NoteId& n : to) {
-                        CHECK(std::ranges::find(after.note_ids, n) != after.note_ids.end());
+                        CHECK(std::ranges::find(after.segment_ids, segment_id(n)) !=
+                              after.segment_ids.end());
                     }
                 }
             }
             // no id lives in both lists
-            for (const NoteId& id : after.note_ids) {
-                CHECK(std::ranges::find(after.orphaned_note_ids, id) ==
-                      after.orphaned_note_ids.end());
+            for (const SegmentId& id : after.segment_ids) {
+                CHECK(std::ranges::find(after.orphaned_segment_ids, id) ==
+                      after.orphaned_segment_ids.end());
             }
         }
     }

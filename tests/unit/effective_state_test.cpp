@@ -88,7 +88,7 @@ TEST_CASE("edits_for_other_notes_are_ignored", "[effective_state]") {
 
 TEST_CASE("one_edit_can_target_several_notes", "[effective_state]") {
     auto s = pitch_add("a", 10);
-    s.target.note_ids.push_back(NoteId{"b"});
+    s.target.segment_ids.push_back(segment_id(NoteId{"b"}));
     const auto list = list_with({{s}});
     CHECK(effective_state(make_note("a", 0, 1, 0), list).center == Cents{10});
     CHECK(effective_state(make_note("b", 1, 2, 0), list).center == Cents{10});

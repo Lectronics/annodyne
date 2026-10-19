@@ -235,7 +235,7 @@ TEST_CASE("a_reset_returns_the_category_to_neutral_and_keeps_history", "[edit_co
         const std::size_t before = list.active().size();
         const std::vector<NoteId> ids{notes[0].id};
         std::vector<EditCategory> all;
-        for (int c = 0; c <= static_cast<int>(EditCategory::sound); ++c) {
+        for (int c = 0; c <= static_cast<int>(EditCategory::breath_assignment); ++c) {
             all.push_back(static_cast<EditCategory>(c));
         }
         list = list.reset(ids, all, k_t0).value();

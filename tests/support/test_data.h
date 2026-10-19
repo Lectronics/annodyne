@@ -35,11 +35,21 @@ inline Note make_note(const std::string& id, double start_s, double end_s,
     return note;
 }
 
+/// Segment ids of notes, for comparing against EditTarget.
+inline std::vector<SegmentId> segments_of(const std::vector<NoteId>& notes) {
+    std::vector<SegmentId> out;
+    out.reserve(notes.size());
+    for (const NoteId& id : notes) {
+        out.push_back(segment_id(id));
+    }
+    return out;
+}
+
 inline EditSpec make_spec(const std::string& note_id, EditCategory category,
                           std::optional<EditParam> param, EditOp op, EditValue value) {
     EditSpec spec;
     spec.origin = "test";
-    spec.target.note_ids = {NoteId{note_id}};
+    spec.target.segment_ids = {segment_id(NoteId{note_id})};
     spec.category = category;
     spec.param = param;
     spec.op = op;
