@@ -24,12 +24,22 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
 5. `EditTarget` = `note_ids` + `orphaned_note_ids`. No `source_range` (time handles carry their own
    `SourceTime`) and no `track_id` (an `EditList` is per track).
 6. `set` replaces earlier edits of the same **parameter**.
-7. `add` after `undo` discards the redo tail (linear undo). Persistence (Phase 7) logs undo/redo as
-   events, so the on-disk log stays append-only.
+7. `add` after `undo` moves the redo tail to `EditList::discarded()` (linear undo, nothing deleted).
+   `next_seq_` is an explicit member, so seqs are never reused and the persisted log stays
+   append-only.
 8. `dirty_regions` takes the note list as well as the two edit lists.
 9. `EffectiveNote` gains `center_offset`, `onset_shift`, `length_scale` and `handles`, and lacks
    `harmonic_gains_db` until Phase 12.
-10. `AnalysisResult` omits `beats`, `tempo`, `key`, `chords` until Phase 8.
+10. `AnalysisResult` omits `beats`, `tempo`, `key`, `chords` until Phase 8 (amends ROADMAP "all
+    types from §3").
+11. `TimeMap` (the pure mapping) lives in `core/types` so layer-2 synthesis can use it;
+    `build_time_map` lives in `core/timemap`, not `core/edits` as spec §4.4 lists it. Anchors and
+    time handles share one `TimePair` type; the builder returns a `TimeMapBuild` with a repair count.
+12. Offsets accept `set`/`add`/`reset`; multipliers `set`/`scale`/`reset` (not all three on every
+    parameter as spec §5.1 reads).
+13. Tools and macros return `EditSpec` groups, not `Edit` (spec §5.1, CLAUDE.md rule 2 wording).
+14. Categories `separation`, `assignment`, `sound` exist without parameters on purpose (spec §5.1
+    names them; their parameters arrive in Phases 5, 7, 12).
 
 ## Alternatives considered
 - Keep `param: str`. Rejected: units and ops cannot be checked, typos pass silently.
