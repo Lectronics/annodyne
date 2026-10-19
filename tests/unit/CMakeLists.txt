@@ -103,3 +103,5 @@ anno_cli_exit_test(render_unknown_engine_exits_1 1
     render$<SEMICOLON>${scenario_dir}/pitch_edit.json$<SEMICOLON>--out$<SEMICOLON>${render_out}$<SEMICOLON>--engine$<SEMICOLON>magic)
 anno_cli_exit_test(render_timing_edit_exits_1 1
     render$<SEMICOLON>${scenario_dir}/timing_edit.json$<SEMICOLON>--out$<SEMICOLON>${render_out})
+anno_add_test(NAME dsp_window_fft_stft_test SOURCES dsp_window_fft_stft_test.cpp LABELS unit DEPS anno::core_dsp)
+anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight_interp_test.cpp LABELS unit DEPS anno::core_dsp)

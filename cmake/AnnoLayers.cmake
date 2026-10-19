@@ -52,7 +52,7 @@ function(anno_folder_layer folder out_var)
 endfunction()
 
 # Sets <out_var> to TRUE if <folder> may link the non-anno dependency <dep>. Later phases extend
-# this through their design note (e.g. the FFT library for core/dsp, Threads for core/render).
+# this through their design note and an ADR (the FFT library for core/dsp, Threads for core/render).
 function(anno_external_allowed folder dep out_var)
     set(allowed FALSE)
     if(folder MATCHES "^(host/[a-z0-9_]+|ui)$" AND dep MATCHES "^(juce_|juce::|ARA)")
@@ -60,6 +60,10 @@ function(anno_external_allowed folder dep out_var)
     endif()
     # core/render guards its cache with a std::mutex (ADR-0006).
     if(folder STREQUAL "core/render" AND dep STREQUAL "Threads::Threads")
+        set(allowed TRUE)
+    endif()
+    # pocketfft (ADR-0009): the FFT library, core/dsp only.
+    if(folder STREQUAL "core/dsp" AND dep STREQUAL "anno_pocketfft")
         set(allowed TRUE)
     endif()
     # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).

@@ -72,4 +72,22 @@ inline constexpr Ratio k_hz_conversion_rel{1e-12};
 /// dB <-> linear gain: pow/log10 with < 1 ulp error each.
 inline constexpr Ratio k_gain_conversion_rel{1e-12};
 
+// ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
+
+/// STFT -> ISTFT reconstruction: float spectrogram storage (~6e-8 relative) accumulated over a few
+/// overlapping frames; 1e-5 absolute on a signal of peak <= 1.
+inline constexpr double k_stft_roundtrip_abs = 1e-5;
+/// Real FFT against a naive O(n^2) double DFT of the same data: both are double precision.
+inline constexpr double k_fft_vs_dft_abs = 1e-9;
+/// Resampled sine frequency (measured by zero crossings over ~1 s) within 0.1 %.
+inline constexpr Ratio k_resample_freq_rel{1e-3};
+/// Resampled sine level within 0.1 dB (kernel ripple at cutoff 0.97 is far below this mid-band).
+inline constexpr Decibels k_resample_level{0.1};
+/// K-weighted 1 kHz sine: the BS.1770 filter has +0.691 dB gain at 1 kHz (the -0.691 in the LUFS
+/// formula compensates it); 0.1 dB covers the analytic-coefficient differences at other sample rates.
+inline constexpr Decibels k_k_weight_1khz{0.1};
+/// Exactness of interpolation on data that the interpolator reproduces exactly (linear on lines,
+/// cubic on cubics): double rounding only.
+inline constexpr double k_interp_exact_abs = 1e-9;
+
 }  // namespace anno::tolerance
