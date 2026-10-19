@@ -2,7 +2,7 @@
 
 - **Phase:** 5 (Timing)
 - **Status:** draft
-- **Spec sections:** `melodyne-core-architecture.md` §2 (time axes), §4.4–4.6, §5.3–5.6; `melodyne-implementation-guide.md` B8 (resynthesis), Part B §11–12 (Time Tool, Attack Speed)
+- **Spec sections:** `annodyne-core-architecture.md` §2 (time axes), §4.4–4.6, §5.3–5.6; `annodyne-implementation-guide.md` B8 (resynthesis), Part B §11–12 (Time Tool, Attack Speed)
 - **Folders / CMake targets:**
   - `src/core/timemap/` — region segmenting, stretch allocation (layer 3)
   - `src/core/analysis/perceived_pitch/` — vibrato model estimation (layer 1)
@@ -47,7 +47,7 @@ render_note_stretch()        → AudioBuffer    (per region render + aligned spl
 | `NoteStretchPlan` | struct | — | render job | value |
 
 ```cpp
-namespace melo::timemap {
+namespace anno {
 
 enum class RegionKind { attack, sibilant, steady, release };
 
@@ -79,9 +79,9 @@ struct StretchAllocation {
     bool clamped;                          // true if limits stopped us reaching the target
 };
 
-} // namespace melo::timemap
+} // namespace anno
 
-namespace melo::analysis {
+namespace anno {
 
 /// Vibrato as an analytic signal: mod(s) = extent(s) * cos(phase(s)).
 struct VibratoModel {
@@ -94,9 +94,9 @@ struct VibratoModel {
     bool present;                          // false → treat modulation as plain curve
 };
 
-} // namespace melo::analysis
+} // namespace anno
 
-namespace melo::synthesis {
+namespace anno {
 
 struct StretchedPitchCurve {
     NoteId note;
@@ -124,10 +124,10 @@ struct NoteStretchPlan {
     std::uint64_t noise_seed;              // hash(note id, analysis version)
 };
 
-} // namespace melo::synthesis
+} // namespace anno
 ```
 
-**Layer note:** `NoteStretchPlan` holds `timemap` types but lives in `synthesis`, which is a lower layer than `timemap`. See Open question 1.
+**Layer note:** `TimeMap` (the data type) lives in `core/types`, so `synthesis` can use it; `core/timemap` only builds it. Resolved, see Open question 1.
 
 ---
 
@@ -177,7 +177,7 @@ Rules:
                                                          double attack_time_scale);
 ```
 
-The anchors feed the existing `build_time_map`, which also resolves overlaps with neighbouring notes (architecture spec §5.4 step 5). A neighbour gives up gap first, then its steady region, never its attack.
+The anchors feed `build_time_map`, which also resolves overlaps with neighbouring notes (ADR-0008 decision 4): the gap absorbs first, a neighbour gives up its steady region only when the gap is used up, never its attack.
 
 ### 3. `estimate_vibrato` (`core/analysis/perceived_pitch/`)
 
@@ -325,7 +325,7 @@ Called from the existing `SynthesisEngine::render_note` path whenever the note's
 ## Dependencies
 
 - `core/timemap`: `core/types`, `core/edits`.
-- `core/synthesis/stretch`: `core/types`, `core/dsp`, `core/synthesis/harmonic_noise`, `core/synthesis/psola`, `core/synthesis/phase_vocoder`, `core/analysis/perceived_pitch` (for `VibratoModel`). Needs the `TimeMap` *type* (Open question 1).
+- `core/synthesis/stretch`: `core/types`, `core/dsp`, `core/synthesis/harmonic_noise`, `core/synthesis/psola`, `core/synthesis/phase_vocoder`, `core/analysis/perceived_pitch` (for `VibratoModel`). Uses the `TimeMap` *type* from `core/types` (Open question 1, resolved).
 
 ## Tests
 
@@ -354,7 +354,7 @@ Called from the existing `SynthesisEngine::render_note` path whenever the note's
 
 ## Open questions
 
-1. **`TimeMap` type location.** `synthesis` (layer 2) needs the `TimeMap` type, but `core/timemap` is layer 3. Proposal: move the `TimeMap` *data type* (anchors, forward/inverse evaluation) into `core/types`, and keep `build_time_map` in `core/timemap`. This also matches the existing `SynthesisEngine::render_note` signature, which already takes a `TimeMap`. Needs an ADR before implementation.
+1. ~~**`TimeMap` type location.**~~ **Resolved by ADR-0008.** The `TimeMap` data type is in `core/types` (placed there in Phase 1, ADR-0005 §11); `build_time_map` stays in `core/timemap`. ADR-0008 also changes the neighbour rule used above: a moved note shifts into the gap, and neighbours stretch only when the gap is used up (second handle added automatically at the next transient).
 2. **Default steady engine.** `harmonic_noise` vs `psola` for small ratios on clean voice. Decided by the Phase 4 listening gate; this note assumes `harmonic_noise` until then.
 3. **Release weight.** 0.3 is a starting guess. Tune with the Phase 5 listening sheet; record the result in an ADR.
 4. **Tremolo regeneration.** On by default. Confirm by listening that it doesn't add an artificial pulse on notes with irregular amplitude.

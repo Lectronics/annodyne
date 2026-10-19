@@ -43,3 +43,8 @@ Phase 9 adds a real-time reader next to the mutex cache.
 
 ## Spec updates
 Pointers in `annodyne-core-architecture.md` §4.5, §4.6, §5.5 and the folder tree.
+
+
+## Amendment (ADR-0008, 2026-10-19)
+
+`RenderInputs` gains an optional `TimeMap` (authoritative when set). `render_region` walks spans: slope-1 warps copy shifted source samples, inserts render digital silence, cuts render nothing; slope ≠ 1 stays `not_implemented`. The cache key includes the map spans (decision 7's "will include anchors" is done now, as spans). `RenderResult.source_range` is removed. Frame counts and regions are output-axis. See `docs/design/phase2-addendum-timemap-spans.md`.

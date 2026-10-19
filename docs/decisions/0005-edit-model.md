@@ -107,3 +107,8 @@ Flex-style policy in item 16.
 ## Still open
 Order of time-stretch and pitch correction in the renderer (item 16). The match thresholds and
 `min_segment` are tunable and need real material (Phases 2-3) before they are final.
+
+
+## Amendment (ADR-0008, 2026-10-19)
+
+Item 16 (Flex): stretching only when needed. A moved note shifts into the gap; when it would hit the next note a second handle is added automatically at the next transient and the audio between the two handles is stretched. Explicit `time_handle` edits keep their meaning. `build_time_map` keeps the Flex behaviour until the layout solver (Phase 5) implements this; `dirty_regions`' timing rule is revisited then.
