@@ -3,6 +3,7 @@
 #include <compare>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,33 @@ struct NoteId {
 
     friend auto operator<=>(const NoteId&, const NoteId&) = default;
 };
+
+/// What a segment of a track's source time is (ADR-0008). Notes exist from Phase 1; gaps arrive with
+/// gap analysis in Phase 5.
+enum class SegmentKind { note, gap };
+
+/// Identity of a segment: a note or a gap. The kind is part of the identity, so a gap id never equals
+/// a note id with the same text. Compare for equality/order only; the text format is not part of the
+/// contract.
+struct SegmentId {
+    SegmentKind kind = SegmentKind::note;
+    std::string value;
+
+    friend auto operator<=>(const SegmentId&, const SegmentId&) = default;
+};
+
+/// The segment id of a note.
+[[nodiscard]] inline SegmentId segment_id(const NoteId& id) {
+    return SegmentId{.kind = SegmentKind::note, .value = id.value};
+}
+
+/// The note id of a note-kind segment id; empty for a gap.
+[[nodiscard]] inline std::optional<NoteId> as_note_id(const SegmentId& id) {
+    if (id.kind != SegmentKind::note) {
+        return std::nullopt;
+    }
+    return NoteId{id.value};
+}
 
 /// Stable identity of a recording's content. Compare for equality only; the text format is not
 /// part of the contract.

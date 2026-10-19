@@ -34,7 +34,7 @@ TimeMapBuild build_to_end(const std::vector<Note>& notes, const EditList& edits)
 }
 
 double out_of(const TimeMap& m, double s) {
-    return m.to_output(src(s)).unchecked_since_origin().value();
+    return m.to_output(src(s))->unchecked_since_origin().value();
 }
 double raw_s(SourceTime t) {
     return t.unchecked_since_origin().value();
@@ -96,7 +96,7 @@ TEST_CASE("stretching_stops_at_the_next_changed_handle", "[build_time_map]") {
     CHECK(std::abs(out_of(m, 2.0) - 2.2) < 1e-12);
     CHECK(std::abs(out_of(m, 5.0) - 4.8) < 1e-12);
     CHECK(std::abs(out_of(m, 3.5) - 3.5) < 1e-12);  // midpoint of an unchanged-length span
-    CHECK(std::abs(m.stretch_ratio(src(3.5)).value() - 2.6 / 3.0) < 1e-12);
+    CHECK(std::abs(m.slope_at(*m.to_output(src(3.5))).value() - 2.6 / 3.0) < 1e-12);
 }
 
 TEST_CASE("length_scale_stretches_the_body_and_protects_the_attack", "[build_time_map]") {
@@ -106,8 +106,8 @@ TEST_CASE("length_scale_stretches_the_body_and_protects_the_attack", "[build_tim
     // note a: attack 1.0..1.1 keeps slope 1, body 1.1..2.0 doubles (0.9 s -> 1.8 s)
     CHECK(out_of(m, 1.0) == 1.0);
     CHECK(std::abs(out_of(m, 1.1) - 1.1) < 1e-12);
-    CHECK(m.stretch_ratio(src(1.05)) == Ratio{1.0});
-    CHECK(std::abs(m.stretch_ratio(src(1.5)).value() - 2.0) < 1e-12);
+    CHECK(m.slope_at(*m.to_output(src(1.05))) == Ratio{1.0});
+    CHECK(std::abs(m.slope_at(*m.to_output(src(1.5))).value() - 2.0) < 1e-12);
     CHECK(std::abs(out_of(m, 2.0) - 2.9) < 1e-12);
     // b and c are unedited and are compressed into the remaining 3.1 s up to the fixed end
     CHECK(std::abs(out_of(m, 3.0) - (2.9 + 3.1 / 4.0)) < 1e-12);
@@ -118,9 +118,9 @@ TEST_CASE("attack_time_scale_changes_only_the_attack_segment", "[build_time_map]
     const auto built = build(
         notes3(), edits_of({timing("a", EditParam::attack_time_scale, EditOp::set, Ratio{3.0})}));
     const TimeMap& m = built.map;
-    CHECK(std::abs(m.stretch_ratio(src(1.05)).value() - 3.0) < 1e-12);
+    CHECK(std::abs(m.slope_at(*m.to_output(src(1.05))).value() - 3.0) < 1e-12);
     CHECK(std::abs(out_of(m, 1.1) - 1.3) < 1e-12);
-    CHECK(std::abs(m.stretch_ratio(src(1.5)).value() - 1.0) < 1e-12);  // body unchanged
+    CHECK(std::abs(m.slope_at(*m.to_output(src(1.5))).value() - 1.0) < 1e-12);  // body unchanged
 }
 
 TEST_CASE("a_time_handle_inside_the_body_is_an_absolute_anchor", "[build_time_map]") {
@@ -246,9 +246,11 @@ TEST_CASE("the_built_map_inverts_within_tolerance", "[build_time_map]") {
     const auto built =
         build(notes3(), edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{1.5}),
                                   timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.3})}));
+    const double length = built.map.source_length().value();
     for (int i = 0; i < 66; ++i) {
-        const double s = -1.0 + 0.137 * i;
-        const double back = raw_s(built.map.to_source(built.map.to_output(src(s))));
+        const double s = length * i / 65.0;
+        const double back =
+            raw_s(std::get<SourceTime>(built.map.to_source(*built.map.to_output(src(s)))));
         CHECK(std::abs(back - s) <= tolerance::k_timemap_roundtrip.value());
     }
 }

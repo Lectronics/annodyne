@@ -10,7 +10,7 @@ sides up to the next changed handle or the file ends; unedited notes in between 
 Attack segments scale only with `attack_time_scale`; the body absorbs `length_scale`. Conflicts are
 repaired deterministically (outputs pushed later, pulled back from the fixed end, coincident
 boundary takes the later output, unedited timeline if there is no room) and counted in
-`TimeMapBuild::repaired_notes`. With no timing edits the result is exactly `TimeMap::identity()`.
+`TimeMapBuild::repaired_notes`. With no timing edits the result is exactly `TimeMap::identity(length)`.
 
 References: architecture spec §2, §5.4; implementation guide §11 (time handles);
 `docs/design/phase1-data-model.md`.

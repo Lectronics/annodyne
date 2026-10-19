@@ -17,9 +17,12 @@ struct TimeMapParams {
     /// Minimum output length of a segment that timing edits changed (builder policy, not a TimeMap
     /// invariant). Segments no edit touched keep their source length even when shorter.
     Seconds min_segment{0.001};
-    /// End of the recording. Fixed anchor (source_end -> same output time): audio after the last
-    /// edited handle is stretched up to it, so handle edits keep the file length. The origin
-    /// (default) means unknown: the tail after the last handle is then shifted, not stretched.
+    /// End of the recording: the TimeMap's source_length, and a fixed anchor (source_end -> same
+    /// output time): audio after the last edited handle is stretched up to it, so handle edits keep
+    /// the file length. The origin (default) means unknown: the tail after the last handle is then
+    /// shifted, not stretched, and the domain ends at the last note or anchor (map-only use in
+    /// tests; render_region always passes the recording's end). An anchor pushed later at source 0
+    /// becomes silence before the audio (a leading insert span).
     SourceTime source_end;
 };
 
@@ -40,7 +43,7 @@ struct TimeMapBuild {
 ///  - Conflicts are repaired deterministically and counted, never an error: outputs are pushed
 ///    later, and pulled back from the fixed end, so each segment keeps min_segment; a coincident
 ///    boundary takes the later output; if there is no room at all the unedited timeline is used.
-///  - With no timing edits the result is exactly TimeMap::identity() and repaired_notes == 0.
+///  - With no timing edits the result is exactly TimeMap::identity(length) and repaired_notes == 0.
 /// Preconditions: `notes` sorted by source_start. Errors: invalid_argument if active notes overlap
 /// in source time (polyphony is Phase 11), are unsorted, belong to another track than `edits`, or
 /// end after a non-origin params.source_end.

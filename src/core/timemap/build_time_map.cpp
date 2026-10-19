@@ -188,8 +188,17 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
         }
     }
     const int repaired_notes = static_cast<int>(std::ranges::count(repaired, true));
+    // The domain ends at the recording's end; when that is unknown (map-only use) at the last note or
+    // anchor, whichever is later.
+    double length = std::max(raw(params.source_end), done.back().s);
+    for (const Note& n : notes) {
+        if (n.is_active) {
+            length = std::max(length, raw(n.source_end));
+        }
+    }
     if (is_identity(done)) {
-        return TimeMapBuild{.map = TimeMap::identity(), .repaired_notes = repaired_notes};
+        return TimeMapBuild{.map = TimeMap::identity(Seconds{length}),
+                            .repaired_notes = repaired_notes};
     }
     std::vector<TimePair> pairs;
     pairs.reserve(done.size());
@@ -197,7 +206,7 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
         pairs.push_back({.source = SourceTime::unchecked_from_origin(Seconds{a.s}),
                          .output = OutputTime::unchecked_from_origin(Seconds{a.t})});
     }
-    auto map = TimeMap::from_anchors(std::move(pairs));
+    auto map = TimeMap::from_anchors(std::move(pairs), Seconds{length});
     if (!map) {
         return fail(ErrorCode::internal,
                     "build_time_map produced non-monotone anchors: " + map.error().message);

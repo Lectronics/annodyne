@@ -123,15 +123,15 @@ TEST_CASE("every_source_instant_whose_output_position_changes_is_dirty", "[dirty
         const double end = raw(notes.back().source_end) + 1.0;
         const DirtyParams params{.crossfade_margin = Seconds{0.05}, .source_end = src(end)};
         const auto regions = dirty_regions(notes, old_list, new_list, params).value();
-        const auto old_map = build_time_map(notes, old_list, TimeMapParams{}).value().map;
-        const auto new_map = build_time_map(notes, new_list, TimeMapParams{}).value().map;
+        const auto old_map = build_time_map(notes, old_list, TimeMapParams{.source_end = src(end)}).value().map;
+        const auto new_map = build_time_map(notes, new_list, TimeMapParams{.source_end = src(end)}).value().map;
         // Instants strictly before `end`: the range is half-open, and `end * 2000 / 2000.0` can
         // land one ulp past `end` depending on the (library-dependent) random notes.
         for (int i = 0; i < 2000; ++i) {
             const double s = end * i / 2000.0;
             const double moved =
-                std::abs(old_map.to_output(src(s)).unchecked_since_origin().value() -
-                         new_map.to_output(src(s)).unchecked_since_origin().value());
+                std::abs(old_map.to_output(src(s))->unchecked_since_origin().value() -
+                         new_map.to_output(src(s))->unchecked_since_origin().value());
             if (moved > 1e-9) {
                 CHECK(inside(regions, s));
             }
