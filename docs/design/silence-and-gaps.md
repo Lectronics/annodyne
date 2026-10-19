@@ -275,6 +275,8 @@ struct Layout {
 
 ```cpp
 /// Turn a layout into spans. Note segments → warp spans from their stretch anchors.
+/// Checking that every cut and insert lies inside a gap segment is mandatory here
+/// (TimeMap::make cannot know the timeline).
 /// Gap segments → from plan_gap_layout(): warp (kept head/tail), cut (removed
 /// middle) and insert (added room tone). Error if any invariant in §1.3 fails.
 /// Pure; thread-safe; not RT-safe.

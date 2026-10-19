@@ -87,7 +87,7 @@ public:
 - Ownership: value type, immutable; shared by const reference.
 - Real-time safe: all queries (binary search over spans; no allocation). `make`/`from_anchors` allocate.
 - **Slope 1.** A warp has slope 1 when `output_end - output_start == source_end - source_start` within 1e-9 s (exact for the builder's data); `read_through_map` applies the sample-level test of §3.
-- **Domain.** Finite. Queries outside it are a precondition violation (asserted in debug, clamped in release), not an error value, so the query return types stay `optional` / `variant`. This amends the wording of ADR-0008 decision 2.
+- **Domain.** Finite. Queries outside it are a precondition violation (asserted in debug, clamped in release), not an error value, so the query return types stay `optional` / `variant`.
 - **`stretch_ratio(SourceTime)` and `anchors()` are removed** (callers: tests only). `slope_at` and `spans()` replace them.
 - **Invariants** (contract tests): spans tile both axes exactly; both axes monotonic; `to_output` empty exactly inside cuts; `to_source` generated exactly inside inserts; `to_source(*to_output(s)) == s` within 1e-9 s for non-cut `s`; `identity(L)` is exact.
 
