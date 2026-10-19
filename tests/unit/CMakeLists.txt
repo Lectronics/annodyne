@@ -108,3 +108,5 @@ anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight
 anno_add_test(NAME pitch_test SOURCES pitch_test.cpp LABELS unit DEPS anno::core_analysis_pitch)
 anno_add_test(NAME onsets_test SOURCES onsets_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_pitch)
 anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit DEPS anno::core_analysis_segmentation anno::core_analysis_onsets anno::core_analysis_pitch)
+anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS unit DEPS anno::core_analysis_perceived_pitch anno::core_analysis_segmentation)
+anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)
