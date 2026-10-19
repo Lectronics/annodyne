@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-using namespace melo;
+using namespace anno;
 
 namespace {
 

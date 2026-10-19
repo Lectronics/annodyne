@@ -69,7 +69,7 @@ Scenario set to grow over the phases (one folder per tool):
 
 ## 3. Audition packages (for humans)
 
-`melo-cli audition <scenario.json> --out audition/<phase>-<topic>/<scenario>/` writes:
+`anno-cli audition <scenario.json> --out audition/<phase>-<topic>/<scenario>/` writes:
 
 ```
 original.wav            # the source region

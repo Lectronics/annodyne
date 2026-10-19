@@ -9,7 +9,7 @@
 // value(); conversions between units are the named functions at the end of this file.
 // Design: docs/design/phase0-foundations.md §4.
 
-namespace melo {
+namespace anno {
 
 struct RatioTag;
 
@@ -168,7 +168,7 @@ inline constexpr LinearGain k_silence_floor_gain{1e-10};
 enum class Rounding { nearest, down, up };
 
 // ---- Conversions --------------------------------------------------------------------------------
-// All pure, thread-safe and real-time safe. Preconditions are checked with MELO_EXPECTS (always
+// All pure, thread-safe and real-time safe. Preconditions are checked with ANNO_EXPECTS (always
 // on). Not constexpr: C++20 <cmath> is not constexpr.
 
 /// Duration to a whole number of frames. Pre: d finite; sample_rate finite and > 0;
@@ -247,4 +247,4 @@ namespace unit_literals {
 
 }  // namespace unit_literals
 
-}  // namespace melo
+}  // namespace anno

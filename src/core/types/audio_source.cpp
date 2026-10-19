@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace melo {
+namespace anno {
 
 namespace {
 
@@ -105,4 +105,4 @@ Result<AudioBuffer> AudioSource::read(Samples start, Samples count) const {
     return out;
 }
 
-}  // namespace melo
+}  // namespace anno

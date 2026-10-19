@@ -15,15 +15,15 @@ plus a CLI that later phases extend.
 
 ```
 CMakeLists.txt  CMakePresets.json  .clang-format  .clang-tidy  .gitignore
-cmake/  MeloOptions.cmake      # C++20, no extensions, output dirs build/<preset>/bin
-        MeloWarnings.cmake     # melo_warnings INTERFACE target
-        MeloSanitizers.cmake   # MELO_SANITIZER = none | address_undefined | thread
-        MeloLayers.cmake       # layer table, melo_add_library/executable, melo_check_layers()
-        MeloTesting.cmake      # Catch2 v3 (FetchContent, pinned) + melo_add_test()
+cmake/  AnnoOptions.cmake      # C++20, no extensions, output dirs build/<preset>/bin
+        AnnoWarnings.cmake     # anno_warnings INTERFACE target
+        AnnoSanitizers.cmake   # ANNO_SANITIZER = none | address_undefined | thread
+        AnnoLayers.cmake       # layer table, anno_add_library/executable, anno_check_layers()
+        AnnoTesting.cmake      # Catch2 v3 (FetchContent, pinned) + anno_add_test()
 src/core/types/   units.h  error.h  result.h  contract.h  audio_buffer.{h,cpp}  audio_source.{h,cpp}
 src/core/io/      wav.h  wav.cpp  detail/wav_format.h
-src/cli/          main.cpp                         # executable melo-cli (dispatch only)
-src/cli/commands/ info.{h,cpp}                     # library melo_cli_commands
+src/cli/          main.cpp                         # executable anno-cli (dispatch only)
+src/cli/commands/ info.{h,cpp}                     # library anno_cli_commands
 tests/tolerances.h
 tests/unit/       units_test.cpp result_test.cpp audio_buffer_test.cpp audio_source_test.cpp
                   wav_test.cpp cli_info_test.cpp
@@ -48,34 +48,34 @@ under `tests/audio/` (as AUDIO_VERIFICATION §1 already places them).
 
 | Target | Folder | Layer | Links |
 |---|---|---|---|
-| `melo_core_types` | `src/core/types` | 0 | std only |
-| `melo_core_io` | `src/core/io` | 0 + R4 (who may link it) | `core_types` |
-| `melo_cli_commands` | `src/cli/commands` | 7 | `core_types`, `core_io` |
-| `melo_cli` → binary `melo-cli` | `src/cli` | 7 | `cli_commands` |
-| `melo_warnings` | INTERFACE | — | every melo target |
+| `anno_core_types` | `src/core/types` | 0 | std only |
+| `anno_core_io` | `src/core/io` | 0 + R4 (who may link it) | `core_types` |
+| `anno_cli_commands` | `src/cli/commands` | 7 | `core_types`, `core_io` |
+| `anno_cli` → binary `anno-cli` | `src/cli` | 7 | `cli_commands` |
+| `anno_warnings` | INTERFACE | — | every anno target |
 
-Naming: target = `melo_` + folder path with `/` → `_`; alias `melo::<rest>`.
-`melo_add_library(<folder> …)` and `melo_add_executable(<folder> OUTPUT_NAME … …)` set custom
-properties `MELO_LAYER`, `MELO_FOLDER`, link `melo_warnings`, set include root `src/`.
+Naming: target = `anno_` + folder path with `/` → `_`; alias `anno::<rest>`.
+`anno_add_library(<folder> …)` and `anno_add_executable(<folder> OUTPUT_NAME … …)` set custom
+properties `ANNO_LAYER`, `ANNO_FOLDER`, link `anno_warnings`, set include root `src/`.
 
-**`cmake/MeloLayers.cmake`** is the single source of truth: the layer table for every folder in
+**`cmake/AnnoLayers.cmake`** is the single source of truth: the layer table for every folder in
 architecture §6 plus `core/io` (layer 0, ADR-0001) and a `cli/*` prefix rule (layer 7, covers
 `cli/commands`), a per-target **external allowlist** (`core/dsp`: the FFT library; `host/*`, `ui`:
 `juce_*` modules and ARA SDK targets; everyone else: none — later phases extend it through their
 design note, e.g. `Threads::Threads` for render in Phase 9, ONNX Runtime for `core/models`), and
-`melo_check_layers()`, called at the end of the root CMakeLists. It:
+`anno_check_layers()`, called at the end of the root CMakeLists. It:
 
 1. Collects targets by walking `BUILDSYSTEM_TARGETS` recursively over every directory under `src/`.
-   **Any library or executable target without `MELO_LAYER` fails** (no plain `add_library` escape);
+   **Any library or executable target without `ANNO_LAYER` fails** (no plain `add_library` escape);
    `UTILITY` targets (custom/codegen) are exempt.
 2. Builds two edge sets (config genexes `$<$<CONFIG:…>:x>` → `x`; `ALIASED_TARGET` resolved):
    - **direct edges** from `LINK_LIBRARIES` (everything the target links, any visibility) —
      checked by R1, R2 (for the layer-5 target itself), R3, R4, R5;
    - **usage edges** from `INTERFACE_LINK_LIBRARIES` entries **not** wrapped in
      `$<LINK_ONLY:…>` (i.e. PUBLIC/INTERFACE deps) — the only edges R2t walks.
-   A dep that is not a melo target must be on that target's external allowlist (this also rejects
+   A dep that is not a anno target must be on that target's external allowlist (this also rejects
    raw paths and `-l` flags); otherwise fail.
-3. Applies the rules (fail = `FATAL_ERROR` with the message prefix `MELO LAYER VIOLATION:`):
+3. Applies the rules (fail = `FATAL_ERROR` with the message prefix `ANNO LAYER VIOLATION:`):
    - **R1** dependency layer ≤ target layer (layers 0–7 from `architecture.md`).
    - **R2 layer-5 allowlist**: `tools/*`, `macros/*`, `features/*` may link only `core_types`,
      `core_edits`, `core_tuning`, and other layer-5 targets; `features/dna` and
@@ -90,31 +90,31 @@ design note, e.g. `Threads::Threads` for render in Phase 9, ONNX Runtime for `co
    - R1, R3, R4 and R5 check every direct edge.
    - All violations are collected, then reported in one `FATAL_ERROR` (one line per violation), so
      a fixture's expected `R<n>` appears regardless of check order.
-   - **R3** `core_types` links no melo target.
+   - **R3** `core_types` links no anno target.
    - **R4 io restriction** (ADR-0001): only layer 6–7 targets may link `core_io` (tests are not
      layered targets and may link it).
-   - **R5** no cycles among melo targets (DFS over the link graph).
-4. Writes `build/<preset>/melo_layers.json` (folder → layer, allowlists, R2/R4 sets) via
+   - **R5** no cycles among anno targets (DFS over the link graph).
+4. Writes `build/<preset>/anno_layers.json` (folder → layer, allowlists, R2/R4 sets) via
    `file(GENERATE)` for the include checker.
 
 **Include-level check**: `scripts/check_includes.py` (Python 3, `find_package(Python3 REQUIRED
-COMPONENTS Interpreter)`) reads `melo_layers.json`, maps every `#include "…"` **and** `#include <…>`
+COMPONENTS Interpreter)`) reads `anno_layers.json`, maps every `#include "…"` **and** `#include <…>`
 whose path starts with a `src/` folder to its target and applies R1–R4; also rejects another target's
 `detail/` headers, any use of `unchecked_from_origin`/`unchecked_since_origin` outside
 `core/types` and `core/timemap`, and any use of `to_serialized_seconds`/`from_serialized_seconds`
 outside `core/types`, `project` and `cli/*` (§4). CTest `layer_includes`, label `contract`.
 
 **Fixture tests** (label `contract`): each folder in `tests/contract/layer_rules/` is a tiny project
-that includes `MeloLayers.cmake` and builds a dummy graph. CTest runs `cmake -S <fixture> -B <tmp>`:
+that includes `AnnoLayers.cmake` and builds a dummy graph. CTest runs `cmake -S <fixture> -B <tmp>`:
 - negative fixtures (`deny_*`) pass only if output matches `PASS_REGULAR_EXPRESSION
-  "MELO LAYER VIOLATION: R<n>"` for the expected rule (not merely any failure);
+  "ANNO LAYER VIOLATION: R<n>"` for the expected rule (not merely any failure);
 - positive controls (`allowed`, `allow_dna_to_analysis`, `allow_private_transitive` — tool →
   `core_edits` → PRIVATE `core_dsp`) must configure successfully;
 - `deny_transitive_leak` is the same graph with a PUBLIC link and must fail with R2.
 
-**Warnings** (`melo_warnings`): GCC/Clang `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
+**Warnings** (`anno_warnings`): GCC/Clang `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
 -Wshadow -Werror`; MSVC `/W4 /WX /permissive- /utf-8`. `CMAKE_CXX_EXTENSIONS OFF`, `cxx_std_20`.
-Catch2 is added `SYSTEM` without `melo_warnings`.
+Catch2 is added `SYSTEM` without `anno_warnings`.
 
 **Dependencies**: Catch2 v3 via `FetchContent_Declare(… GIT_TAG v3.7.1 FIND_PACKAGE_ARGS 3)`;
 Python 3 (build-time tool only). WAV is in-house (~250 lines).
@@ -124,13 +124,13 @@ Python 3 (build-time tool only). WAV is in-house (~250 lines).
 | Configure preset | Inherits | Settings |
 |---|---|---|
 | `base` (hidden) | — | generator `Ninja`, `binaryDir` `${sourceDir}/build/${presetName}`, `CMAKE_EXPORT_COMPILE_COMMANDS ON` |
-| `debug-asan` | base | `Debug`, `MELO_SANITIZER=address_undefined` (MSVC: ASan only) |
-| `debug-tsan` | base | `Debug`, `MELO_SANITIZER=thread`; `condition`: host is not Windows |
-| `release` | base | `Release`, `MELO_SANITIZER=none` |
+| `debug-asan` | base | `Debug`, `ANNO_SANITIZER=address_undefined` (MSVC: ASan only) |
+| `debug-tsan` | base | `Debug`, `ANNO_SANITIZER=thread`; `condition`: host is not Windows |
+| `release` | base | `Release`, `ANNO_SANITIZER=none` |
 
 Matching build and test presets; test presets set `output.outputOnFailure`. No `noTestsAction:
 error`: `ctest -L audio` legitimately finds nothing until Phase 1–3, and ctest exits 0 then.
-`MeloSanitizers.cmake`: Clang/GCC `-fsanitize=address,undefined -fno-omit-frame-pointer
+`AnnoSanitizers.cmake`: Clang/GCC `-fsanitize=address,undefined -fno-omit-frame-pointer
 -fno-sanitize-recover=undefined` (or `thread`) on compile and link; test env
 `ASAN_OPTIONS=halt_on_error=1:detect_stack_use_after_return=1`, `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`.
 MSVC: `/fsanitize=address /Zi`, and `/RTC1` is stripped from the Debug flags (incompatible).
@@ -143,7 +143,7 @@ constexpr (see below). `TimeRange` lives in its own `core/types/time_range.h` so
 pull in `result.h`/`<string>`.
 
 ```cpp
-namespace melo {
+namespace anno {
 
 /// A value of one unit. Construction from Rep is explicit; no implicit conversion to or from Rep or
 /// between Tags. Read the raw value with value().
@@ -199,7 +199,7 @@ public:
     constexpr TimeRange() noexcept = default;                  // empty range at the origin
     /// For ranges from untrusted values. Errors: invalid_argument if end < start.
     [[nodiscard]] static Result<TimeRange> make(TimePoint<Axis> start, TimePoint<Axis> end);
-    /// For ranges that can't be invalid (start + buffer length). MELO_EXPECTS(duration >= 0). RT safe.
+    /// For ranges that can't be invalid (start + buffer length). ANNO_EXPECTS(duration >= 0). RT safe.
     [[nodiscard]] static TimeRange from_start(TimePoint<Axis> start, Seconds duration) noexcept;
     [[nodiscard]] constexpr TimePoint<Axis> start() const noexcept;
     [[nodiscard]] constexpr TimePoint<Axis> end() const noexcept;
@@ -221,7 +221,7 @@ inline constexpr Hz       k_a4_standard_hz{440.0};
 inline constexpr Decibels k_silence_floor_db{-200.0};       // for zero amplitude, never -inf
 enum class Rounding { nearest, down, up };                   // nearest = half away from zero
 
-// Explicit conversions. Pure, thread-safe, real-time safe. Preconditions are MELO_EXPECTS (always on).
+// Explicit conversions. Pure, thread-safe, real-time safe. Preconditions are ANNO_EXPECTS (always on).
 // Not constexpr: C++20 <cmath> (floor/ceil/round/isfinite) is not constexpr.
 [[nodiscard]] Samples to_samples(Seconds d, Hz sample_rate, Rounding r) noexcept;
     // pre: d finite, sample_rate finite > 0, |d * rate| < 2^62
@@ -238,7 +238,7 @@ template <class Axis>       // same pre as to_seconds
     // pre: a not NaN; |a| <= 10^(k_silence_floor_db/20) -> k_silence_floor_db; +inf violates pre
 
 namespace unit_literals { /* 1.5_s, 200.0_cents, -6.0_db, 440.0_hz, 512_samples, 0.5_ratio */ }
-}  // namespace melo
+}  // namespace anno
 ```
 
 Decisions:
@@ -301,11 +301,11 @@ template <> class [[nodiscard]] Result<void>;  // default = success; Result(Unex
 - Migration to `std::expected<T, Error>` later = replace `fail()`/`Unexpected` with `std::unexpected`
   and the abort with the library's behaviour; call sites using `return x;`, `return fail(…)`,
   `has_value`, `value`, `error`, `and_then`, `transform` keep compiling.
-- `contract.h` (not `assert.h`, which would shadow the C header): `melo::detail::contract_violation(
+- `contract.h` (not `assert.h`, which would shadow the C header): `anno::detail::contract_violation(
   const char* expr, std::source_location)` prints and `std::abort()`s in all builds;
-  `MELO_EXPECTS(cond)` always on (cheap public preconditions), `MELO_ASSERT(cond)` debug only. The
+  `ANNO_EXPECTS(cond)` always on (cheap public preconditions), `ANNO_ASSERT(cond)` debug only. The
   only macros in the project.
-- Exceptions: none thrown by melo code. `std::bad_alloc` from the standard library is the one
+- Exceptions: none thrown by anno code. `std::bad_alloc` from the standard library is the one
   remaining possibility and is not handled (documented).
 
 ## 6. `AudioBuffer`, `PositionedAudio`, `AudioSource` (`core/types`)
@@ -322,7 +322,7 @@ public:
     [[nodiscard]] Samples frame_count() const noexcept;
     [[nodiscard]] Hz sample_rate() const noexcept;
     [[nodiscard]] Seconds duration() const noexcept;
-    [[nodiscard]] std::span<const float> channel(int index) const;   // MELO_EXPECTS(0 <= index < channel_count())
+    [[nodiscard]] std::span<const float> channel(int index) const;   // ANNO_EXPECTS(0 <= index < channel_count())
     [[nodiscard]] std::span<float> channel(int index);
 private:
     std::vector<float> samples_;   // channel-major: ch * frames + i
@@ -384,21 +384,21 @@ chunks); `invalid_argument` from `write_wav` if the data would exceed the 4 GiB 
 2^(bits−1): exact for PCM16/24, **rounded** for PCM32 (24-bit mantissa). Float32 write → read is
 bit-identical. Thread-safe for distinct paths; not RT safe.
 
-## 8. `melo-cli info <file>`
+## 8. `anno-cli info <file>`
 
-`melo_cli_commands` (`src/cli/commands/info.h`):
+`anno_cli_commands` (`src/cli/commands/info.h`):
 `[[nodiscard]] Result<InfoReport> make_info_report(const std::filesystem::path&)` and
 `[[nodiscard]] std::string format_info(const InfoReport&)` (split: compute vs print, split-function
 #4). `InfoReport` = `WavInfo` + `Seconds duration` + `SourceId` + `std::vector<Decibels> peak_dbfs`
-(per channel). `main.cpp` (executable `melo-cli`) only dispatches: exit 0 ok, 1 error (message to
+(per channel). `main.cpp` (executable `anno-cli`) only dispatches: exit 0 ok, 1 error (message to
 stderr), 2 usage.
 
 ## 9. Tests and `tests/tolerances.h`
 
-`melo_add_test(NAME … SOURCES … LABELS …)` → Catch2 executable + `catch_discover_tests` with labels
+`anno_add_test(NAME … SOURCES … LABELS …)` → Catch2 executable + `catch_discover_tests` with labels
 `unit`, `contract`, `audio`, `golden`, `torture`.
 
-`tests/tolerances.h` (`namespace melo::tolerance`), two blocks:
+`tests/tolerances.h` (`namespace anno::tolerance`), two blocks:
 - **Human-gated (AUDIO_VERIFICATION §1; change only via ADR)** — every row of the table: pitch
   round-trip `Cents{3}`, vibrato rate `Hz{0.2}` and extent `Ratio{0.10}`, mod/drift scaling
   `Ratio{0.10}`, timing `Seconds{0.002}`, length `Samples{1}`, level `Decibels{0.3}`, formant
@@ -437,7 +437,7 @@ Tests written first:
 - **unit/wav**: float32 write→read bit-exact; hand-built PCM16/24/32 fixtures decode to known
   floats; extensible header; unknown chunk skipped; truncated / non-RIFF / ADPCM / PCM8 → expected
   codes; missing file → `not_found`.
-- **unit/cli_info**: `make_info_report` fields on a generated WAV; `melo-cli` run via CTest: exit 0,
+- **unit/cli_info**: `make_info_report` fields on a generated WAV; `anno-cli` run via CTest: exit 0,
   exit 1 on missing file, exit 2 with no args.
 - **contract/layer rules**: the fixtures in §2 + `layer_includes`.
 
@@ -470,7 +470,7 @@ float rounds to float32 precision. The null-test infrastructure starts in Phase 
 - `PositionedAudio<Axis>` as a separate struct instead of a field on `AudioBuffer`: most buffers
   (scratch, engine I/O) have no meaningful position (split-class #3).
 - `make_info_report` / `format_info`; `read_wav_info` / `read_wav` (split-function #4).
-- `cli_commands` library vs `melo-cli` executable: commands are testable and layer-checked (split #4).
+- `cli_commands` library vs `anno-cli` executable: commands are testable and layer-checked (split #4).
 - No `AudioSource` interface yet: one implementation until Phase 9 (join #5); the pImpl handle keeps
   that change local.
 - `Error` is one struct, not a hierarchy (join #5).
@@ -478,7 +478,7 @@ float rounds to float32 precision. The null-test infrastructure starts in Phase 
 ## Dependencies
 
 `core_types`: std only. `core_io`: `core_types`, `<filesystem>`. `cli_commands`: `core_types`,
-`core_io`. `melo-cli`: `cli_commands`. Tests: Catch2 v3.7.1. Build tools: CMake ≥ 3.25, Ninja,
+`core_io`. `anno-cli`: `cli_commands`. Tests: Catch2 v3.7.1. Build tools: CMake ≥ 3.25, Ninja,
 Python 3.
 
 ## ADRs written in Phase 0
@@ -517,10 +517,10 @@ Python 3.
 1. `cmake --preset debug-asan && cmake --build --preset debug-asan && ctest --preset debug-asan` —
    all green, no sanitizer reports. Same for `debug-tsan` and `release`.
 2. `ctest --preset debug-asan -L contract` runs every layer fixture: negatives pass only on their
-   exact `MELO LAYER VIOLATION: R<n>` message; positive controls configure.
-3. Manual proof in the real tree: add `target_link_libraries(melo_core_types PRIVATE melo_core_io)`
+   exact `ANNO LAYER VIOLATION: R<n>` message; positive controls configure.
+3. Manual proof in the real tree: add `target_link_libraries(anno_core_types PRIVATE anno_core_io)`
    → configure fails with `R3`; revert. Add a plain `add_library(x …)` under `src/` → fails as untagged.
-4. `./build/release/bin/melo-cli info <generated.wav>` prints rate, channels, frames, duration, id,
+4. `./build/release/bin/anno-cli info <generated.wav>` prints rate, channels, frames, duration, id,
    peak dBFS.
 5. `clang-format --dry-run -Werror` and `run-clang-tidy -p build/debug-asan` clean.
 6. CI green on Linux, macOS, Windows on the private GitHub repo (`gh run watch`).
@@ -536,12 +536,12 @@ Python 3.
 | 2 | should | Transitive leaks, untagged targets, genex/alias/raw entries, cycles | R2t, untagged = fail, normalisation + external allowlist, R5 (§2) |
 | 3 | should | Angle includes unchecked; Python undeclared | Both include forms scanned; `find_package(Python3)` (§2, Dependencies) |
 | 4 | should | `WILL_FAIL` passes on any failure | `PASS_REGULAR_EXPRESSION` per rule + positive controls (§2) |
-| 5 | should | CLI executable unlayered/untestable; bad manual proof | `melo_cli_commands` lib + `melo_add_executable`; proof uses `core_types → core_io` |
+| 5 | should | CLI executable unlayered/untestable; bad manual proof | `anno_cli_commands` lib + `anno_add_executable`; proof uses `core_types → core_io` |
 | 6 | should | `core_io` at layer 0 lets analysis/render do I/O | R4: layers 6–7 and tests only; ADR-0001 amends docs; gated on acceptance |
 | 7 | should | ADR-0002 lacked replacement for positioned buffers | `PositionedAudio<Axis>` + replacement list in ADR-0002 |
 | 8 | should | `from_origin` escape hatch makes axis mixing easy | Renamed `unchecked_*`, checker-restricted; `to_sample_index`, `TimeRange` added |
 | 9 | should | LU wrongly deferred; dimensionless values untyped | `LoudnessUnits`, `Ratio`, `LinearGain` added; `_prob`/`_rad` suffixes (ADR-0003) |
-| 10 | should | Conversion preconditions / NaN / UB unspecified | Preconditions stated, `MELO_EXPECTS`, tested via abort helper |
+| 10 | should | Conversion preconditions / NaN / UB unspecified | Preconditions stated, `ANNO_EXPECTS`, tested via abort helper |
 | 11 | should | Result not actually std::expected-compatible; API gaps | `Unexpected`/`fail()`, constrained ctor, `value() &&` by value, `value_or &&`, `error() &&`, rules for F |
 | 12 | should | `assert.h` shadows C header | Renamed `contract.h` |
 | 13 | should | `create` overflow / throwing vector | Overflow + `max_size` check → `out_of_range`; `bad_alloc` documented |

@@ -1,6 +1,6 @@
 # Building Melodyne-Class Processing: Implementation Guide
 
-*Companion to `melodyne-features.md`. For every Melodyne tool: what back-end processes it needs, and how researchers and commercial developers get very good versions of those processes. Researched October 2026.*
+*Companion to `annodyne-features.md`. For every Melodyne tool: what back-end processes it needs, and how researchers and commercial developers get very good versions of those processes. Researched October 2026.*
 
 ---
 
@@ -321,7 +321,7 @@ This is where audio quality is won or lost. There are several families; top prod
 
 # Part B – Tool-by-Tool Breakdown
 
-Numbering follows `melodyne-features.md`. Each entry lists the **back-end processes needed** (with the building block from Part A) and then **how to make that tool very good**.
+Numbering follows `annodyne-features.md`. Each entry lists the **back-end processes needed** (with the building block from Part A) and then **how to make that tool very good**.
 
 ### 1. Audio analysis and note detection ("blobs")
 **Back-end processes:** f0 tracking (B1) → onset detection (B2) → note segmentation (B3) → perceived pitch per note (B4) → partial analysis (B5) → harmonic/noise split (B6) → envelope (B7) → per-note amplitude curve (B13).

@@ -8,8 +8,8 @@
 #include <cmath>
 #include <limits>
 
-using namespace melo;
-using namespace melo::unit_literals;
+using namespace anno;
+using namespace anno::unit_literals;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 

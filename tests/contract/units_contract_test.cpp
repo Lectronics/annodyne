@@ -7,7 +7,7 @@
 
 #include <type_traits>
 
-using namespace melo;
+using namespace anno;
 
 namespace {
 

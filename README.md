@@ -1,4 +1,4 @@
-# Melo — Claude Code starter kit
+# Annodyne — Claude Code starter kit
 
 Drop these files into the root of an empty git repository, then start Claude Code there.
 

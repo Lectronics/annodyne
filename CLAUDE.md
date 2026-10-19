@@ -1,4 +1,4 @@
-# Melo — note-based audio editor (C++)
+# Annodyne — note-based audio editor (C++)
 
 A Melodyne-class editor: analyse audio into notes, let users edit pitch, timing, level and timbre per note, and render the result **non-destructively**. People will listen closely to every correction, so audible quality is a hard requirement, not a polish step.
 
@@ -6,9 +6,9 @@ A Melodyne-class editor: analyse audio into notes, let users edit pitch, timing,
 
 Read the relevant spec before designing or changing anything. Do not import them here; open them when needed.
 
-- `docs/specs/melodyne-features.md` — what each tool does
-- `docs/specs/melodyne-implementation-guide.md` — which algorithms to use and how to make them good
-- `docs/specs/melodyne-core-architecture.md` — data types, core functions, edit model, render pipeline, folder layout
+- `docs/specs/annodyne-features.md` — what each tool does
+- `docs/specs/annodyne-implementation-guide.md` — which algorithms to use and how to make them good
+- `docs/specs/annodyne-core-architecture.md` — data types, core functions, edit model, render pipeline, folder layout
 - `docs/ROADMAP.md` — phases, gates and the current phase
 - `docs/AUDIO_VERIFICATION.md` — objective audio checks and the human listening protocol
 - `docs/decisions/` — accepted architecture decisions (ADRs). These override the specs where they differ.
@@ -47,7 +47,7 @@ cmake --build --preset debug-asan  # build
 ctest --preset debug-asan          # all tests
 ctest --preset debug-asan -L audio # audio checks only
 cmake --preset release && cmake --build --preset release
-./build/release/bin/melo-cli audition <scenario.json> --out audition/<name>   # listening package
+./build/release/bin/anno-cli audition <scenario.json> --out audition/<name>   # listening package
 run-clang-tidy -p build/debug-asan <changed files>
 clang-format -i <changed files>
 ```
@@ -67,4 +67,4 @@ Dependency direction is enforced by CMake targets: lower layers never link highe
 
 ## Tech stack
 
-C++20, CMake ≥ 3.25 with presets, Catch2 v3, clang-format, clang-tidy. JUCE and the ARA SDK only inside `src/host/` and `src/ui/`; `src/core/` has no JUCE dependency. Errors via `melo::Result<T>` (an `expected`-style type). Change any of this only through an ADR.
+C++20, CMake ≥ 3.25 with presets, Catch2 v3, clang-format, clang-tidy. JUCE and the ARA SDK only inside `src/host/` and `src/ui/`; `src/core/` has no JUCE dependency. Errors via `anno::Result<T>` (an `expected`-style type). Change any of this only through an ADR.

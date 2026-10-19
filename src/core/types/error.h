@@ -3,18 +3,18 @@
 #include <string>
 #include <string_view>
 
-namespace melo {
+namespace anno {
 
 /// Closed set of failure kinds. Add a code through a design note, not ad hoc.
 enum class ErrorCode {
     invalid_argument,    // caller passed a value outside the documented range
     out_of_range,        // index or size beyond what the object holds or can hold
     io_error,            // the OS failed to open, read or write
-    unsupported_format,  // valid input in a format Melo does not handle
+    unsupported_format,  // valid input in a format Annodyne does not handle
     corrupt_data,        // input that claims a format but breaks it (truncated, inconsistent)
     not_found,           // a named file or object does not exist
     cancelled,           // the operation was cancelled through its cancel token
-    internal,            // a bug in Melo; always worth a report
+    internal,            // a bug in Annodyne; always worth a report
 };
 
 /// Stable lower-case name of a code, e.g. "corrupt_data". Pure; thread-safe; real-time safe.
@@ -36,4 +36,4 @@ struct Unexpected {
 /// Not real-time safe (allocates).
 [[nodiscard]] Unexpected fail(ErrorCode code, std::string message);
 
-}  // namespace melo
+}  // namespace anno

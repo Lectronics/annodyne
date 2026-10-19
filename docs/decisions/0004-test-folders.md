@@ -6,7 +6,7 @@
 
 ## Context
 `CLAUDE.md` and ROADMAP Phase 0 use `tests/{unit,contract,audio,golden,torture}` with CTest labels
-of the same names. `melodyne-core-architecture.md` §6 lists `tests/{golden,null,roundtrip,torture}`.
+of the same names. `annodyne-core-architecture.md` §6 lists `tests/{golden,null,roundtrip,torture}`.
 `docs/AUDIO_VERIFICATION.md` §1 already places the null and round-trip checks under `tests/audio/`
 with label `audio`.
 
@@ -23,4 +23,4 @@ tests under `tests/audio/`.
 None for code yet. Phase 3 puts the null test in `tests/audio/`.
 
 ## Spec updates
-`docs/specs/melodyne-core-architecture.md` §6 `tests/` tree is updated.
+`docs/specs/annodyne-core-architecture.md` §6 `tests/` tree is updated.

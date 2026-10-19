@@ -18,7 +18,7 @@
 // RIFF/WAVE layout: Microsoft "Multimedia Programming Interface and Data Specifications 1.0"
 // (1991) and "WAVEFORMATEXTENSIBLE" (KSDATAFORMAT_SUBTYPE_PCM / _IEEE_FLOAT GUIDs).
 
-namespace melo::io {
+namespace anno::io {
 
 namespace {
 
@@ -368,4 +368,4 @@ Result<void> write_wav(const std::filesystem::path& path, const AudioBuffer& aud
     return {};
 }
 
-}  // namespace melo::io
+}  // namespace anno::io

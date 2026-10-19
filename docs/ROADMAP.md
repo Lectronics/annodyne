@@ -1,4 +1,4 @@
-# Melo C++ Implementation Roadmap
+# Annodyne C++ Implementation Roadmap
 
 This is the plan Claude Code follows to build the editor. It is ordered so that **structure is settled and checked before code depends on it**, and so that **something audible exists early** and gets listened to at every stage.
 
@@ -34,15 +34,15 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `.clang-format`, `.clang-tidy`, warnings as errors, CI (build + test on Linux, macOS, Windows).
 - Catch2 v3, `tests/tolerances.h`, test labels `unit`, `contract`, `audio`, `golden`, `torture`.
 - `core/types/units.h`: strong types `SourceTime`, `OutputTime`, `Seconds`, `Samples`, `Cents`, `Decibels`, `Hz` with explicit conversions only.
-- `melo::Result<T>` (expected-style) and `melo::Error`.
+- `anno::Result<T>` (expected-style) and `anno::Error`.
 - WAV read/write (float32), `AudioSource` with read-only access, `AudioBuffer`.
-- `melo-cli` skeleton with `info <file>`.
+- `anno-cli` skeleton with `info <file>`.
 - A layer-violation test: a CMake check (or a script in CI) that fails if a forbidden link is added.
 
 **Verify:** CI green on all platforms; a deliberately forbidden link fails the build.
 
 **Starter prompt:**
-> Read CLAUDE.md, docs/ROADMAP.md (Phase 0) and docs/specs/melodyne-core-architecture.md sections 1–3 and 6. Enter plan mode and propose the Phase 0 repository setup: CMake targets, presets, units.h design and Result<T>. Write the design note, then have structure-reviewer review it before creating files.
+> Read CLAUDE.md, docs/ROADMAP.md (Phase 0) and docs/specs/annodyne-core-architecture.md sections 1–3 and 6. Enter plan mode and propose the Phase 0 repository setup: CMake targets, presets, units.h design and Result<T>. Write the design note, then have structure-reviewer review it before creating files.
 
 ---
 
@@ -75,7 +75,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `SynthesisEngine` interface; a `PassthroughEngine` that returns the source segment.
 - `render_region`, `RenderResult`, `RenderCache` (keyed by source, analysis version, relevant edits, engine settings).
 - Crossfade utilities (equal-power, linear, log) in `core/dsp`.
-- `melo-cli render <source> --edits edits.json --out out.wav` and `melo-cli audition` (writes the package layout from `AUDIO_VERIFICATION.md` §3).
+- `anno-cli render <source> --edits edits.json --out out.wav` and `anno-cli audition` (writes the package layout from `AUDIO_VERIFICATION.md` §3).
 - Objective check framework in `tests/audio/`: null test, untouched-region test, click detector, sanity, determinism.
 
 **Verify:** null and undo-null tests bit-exact; a deliberate gain-only edit (a temporary test engine that applies gain) passes the untouched-region and click tests.
@@ -93,7 +93,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `analysis/perceived_pitch`: stability-weighted pitch; `decompose_pitch_curve` (centre/drift/mod).
 - `analysis/loudness`: per-note loudness and amplitude curve.
 - `analysis/orchestrator`: `analyse()` for the `melodic` algorithm.
-- `melo-cli analyse <file> --json` and a simple plot export (CSV or PNG) of pitch curve + notes for humans to inspect.
+- `anno-cli analyse <file> --json` and a simple plot export (CSV or PNG) of pitch curve + notes for humans to inspect.
 
 **Verify:**
 - Synthetic signals: pure tones, vibrato tones, glides, harmonic tones in noise → pitch within ±3 cents (10-cent RPA ≥ 95% on clean synthetic).

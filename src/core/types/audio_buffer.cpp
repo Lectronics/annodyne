@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace melo {
+namespace anno {
 
 Result<AudioBuffer> AudioBuffer::create(int channels, Samples frames, Hz sample_rate) {
     if (channels < 1) {
@@ -39,16 +39,16 @@ Seconds AudioBuffer::duration() const noexcept {
 }
 
 std::span<const float> AudioBuffer::channel(int index) const noexcept {
-    MELO_EXPECTS(index >= 0 && index < channel_count_);
+    ANNO_EXPECTS(index >= 0 && index < channel_count_);
     const auto frames = static_cast<std::size_t>(frame_count_.value());
     return std::span<const float>{samples_}.subspan(static_cast<std::size_t>(index) * frames,
                                                     frames);
 }
 
 std::span<float> AudioBuffer::channel(int index) noexcept {
-    MELO_EXPECTS(index >= 0 && index < channel_count_);
+    ANNO_EXPECTS(index >= 0 && index < channel_count_);
     const auto frames = static_cast<std::size_t>(frame_count_.value());
     return std::span<float>{samples_}.subspan(static_cast<std::size_t>(index) * frames, frames);
 }
 
-}  // namespace melo
+}  // namespace anno

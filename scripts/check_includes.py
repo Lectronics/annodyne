@@ -2,8 +2,8 @@
 """Include-level layer check (docs/design/phase0-foundations.md §2).
 
 CMake link rules cannot stop `#include "core/render/..."`, because every target shares the src/
-include root. This script applies the same rules to includes, using the melo_layers.json that
-cmake/MeloLayers.cmake writes at configure time:
+include root. This script applies the same rules to includes, using the anno_layers.json that
+cmake/AnnoLayers.cmake writes at configure time:
 
   R1  a file includes a header from a higher layer
   R2  a layer-5 file (tools, macros, features) includes outside its allowlist
@@ -68,7 +68,7 @@ def check_file(path: Path, rel: str, own: str, cfg: dict) -> list[str]:
         dep = owning_folder("/".join(parts[:-1]), folders)
         where = f"{rel}: #include \"{inc}\""
         if dep is None:
-            problems.append(f"{where}: unknown target folder (not in melo_layers.json)")
+            problems.append(f"{where}: unknown target folder (not in anno_layers.json)")
             continue
         if dep == own:
             continue
@@ -92,7 +92,7 @@ def check_file(path: Path, rel: str, own: str, cfg: dict) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--layers", required=True, type=Path, help="melo_layers.json from the build")
+    parser.add_argument("--layers", required=True, type=Path, help="anno_layers.json from the build")
     parser.add_argument("--src", required=True, type=Path, help="the src/ directory to check")
     args = parser.parse_args()
 
@@ -111,7 +111,7 @@ def main() -> int:
         problems.extend(check_file(path, rel, own, cfg))
 
     for problem in problems:
-        print(f"MELO INCLUDE VIOLATION: {problem}")
+        print(f"ANNO INCLUDE VIOLATION: {problem}")
     print(f"check_includes: {checked} files checked, {len(problems)} violation(s)")
     return 1 if problems else 0
 

@@ -1,6 +1,6 @@
 # Melodyne-Class Editor: Core Architecture Spec
 
-*Third document in the set, after `melodyne-features.md` (what the tools do) and `melodyne-implementation-guide.md` (how to make each process good). This one defines the **code structure**: the core functions and what they return, the non-destructive edit model, how edits turn into changed audio, and the folder layout for every tool.*
+*Third document in the set, after `annodyne-features.md` (what the tools do) and `annodyne-implementation-guide.md` (how to make each process good). This one defines the **code structure**: the core functions and what they return, the non-destructive edit model, how edits turn into changed audio, and the folder layout for every tool.*
 
 Signatures are written as typed Python-style pseudocode because it is easy to read. They map one-to-one onto C++ classes (the likely language for a real-time plug-in) or onto a Python research prototype.
 
@@ -420,7 +420,7 @@ The edit log is the only irreplaceable part besides the original audio. Analysis
 Rule of the layout: **`core/` is the only place that touches audio. Tools never process audio; they only read the analysis and write `Edit` objects.** That keeps every tool small and makes undo, reset and edition limits uniform.
 
 ```
-melo/
+anno/
 ├── core/
 │   ├── types/                 # AudioSource, Note, tracks, AnalysisResult, Edit, EffectiveNote
 │   ├── dsp/                   # stft/istft, windows, filters, resampling, crossfades, k-weighting

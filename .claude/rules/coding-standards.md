@@ -23,7 +23,7 @@ Goal: a codebase a new developer (or a fresh Claude session) can understand one 
 | Functions, variables | `snake_case` | `detect_pitch`, `hop_s` |
 | Members | `snake_case_` (trailing underscore) for private; plain for public struct fields | `cursor_`, `notes` |
 | Constants | `k_snake_case` | `k_max_harmonics` |
-| Namespaces | `melo::<module>` | `melo::analysis::pitch` |
+| Namespaces | `anno::<module>` | `anno::analysis::pitch` |
 | Files | `snake_case.h/.cpp`, named after the main type or function | `pitch_track.h` |
 
 **Units go in the type or the name, always.** Prefer strong types from `core/types/units.h`: `SourceTime`, `OutputTime`, `Seconds`, `Samples`, `Cents`, `Decibels`, `Hz`, `Ratio`, `LinearGain`, `LoudnessUnits`, and `TimeRange<Axis>` (`SourceRange`, `OutputRange`) from `core/types/time_range.h` (ADR-0003). Where a raw number is unavoidable (inside a kernel), suffix the name: `_s`, `_samples`, `_cents`, `_db`, `_lu`, `_hz`, `_ratio`, `_prob` (0..1 probability), `_rad` (phase). A function that takes or returns time must say which axis.
@@ -41,7 +41,7 @@ Goal: a codebase a new developer (or a fresh Claude session) can understand one 
 
 - **Inputs by `const&` or `std::span<const T>`, outputs by return value.** No output parameters, except `std::span<float>` destination buffers on the real-time path.
 - More than 3 parameters, or any parameter with a sensible default → bundle into a `…Params` struct with default member initialisers. Example: `detect_pitch(const AudioSource&, const PitchParams&)`.
-- Fallible functions return `melo::Result<T>`. Errors are an `enum class` code plus a message. Exceptions are not used for control flow and never cross the audio thread.
+- Fallible functions return `anno::Result<T>`. Errors are an `enum class` code plus a message. Exceptions are not used for control flow and never cross the audio thread.
 - Prefer pure free functions for algorithms (analysis, DSP, tuning maths). They are trivially testable and need no mocks.
 - Mark functions `[[nodiscard]]` when ignoring the result is a bug (all `Result<T>` returns, all analysis and render functions).
 - Every public function has a doc comment with: what it does, units and time axis of inputs/outputs, preconditions, what it returns (including error cases), thread safety and whether it is real-time safe.

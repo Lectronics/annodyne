@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace melo {
+namespace anno {
 
 std::string_view to_string(ErrorCode code) noexcept {
     switch (code) {
@@ -22,4 +22,4 @@ Unexpected fail(ErrorCode code, std::string message) {
     return Unexpected{Error{.code = code, .message = std::move(message)}};
 }
 
-}  // namespace melo
+}  // namespace anno

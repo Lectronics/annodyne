@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-using namespace melo;
-using namespace melo::io;
+using namespace anno;
+using namespace anno::io;
 
 namespace {
 
@@ -82,7 +82,7 @@ Bytes riff(const std::vector<std::pair<const char*, Bytes>>& chunks) {
 }
 
 std::filesystem::path temp_path(const std::string& name) {
-    const auto dir = std::filesystem::temp_directory_path() / "melo_wav_test";
+    const auto dir = std::filesystem::temp_directory_path() / "anno_wav_test";
     std::filesystem::create_directories(dir);
     return dir / name;
 }

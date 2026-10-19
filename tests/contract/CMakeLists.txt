@@ -1,9 +1,9 @@
-melo_add_test(NAME units_contract_test SOURCES units_contract_test.cpp LABELS contract DEPS melo::core_types)
-melo_add_test(NAME result_contract_test SOURCES result_contract_test.cpp LABELS contract DEPS melo::core_types)
+anno_add_test(NAME units_contract_test SOURCES units_contract_test.cpp LABELS contract DEPS anno::core_types)
+anno_add_test(NAME result_contract_test SOURCES result_contract_test.cpp LABELS contract DEPS anno::core_types)
 
-# ---- Precondition aborts (MELO_EXPECTS) -------------------------------------------------------
+# ---- Precondition aborts (ANNO_EXPECTS) -------------------------------------------------------
 add_executable(contract_violation_cases contract_violation_cases.cpp)
-target_link_libraries(contract_violation_cases PRIVATE melo::core_types melo_warnings)
+target_link_libraries(contract_violation_cases PRIVATE anno::core_types anno_warnings)
 
 set(violation_cases
     to_samples_nan to_samples_zero_rate to_samples_too_large to_cents_zero_hz to_hz_nan
@@ -23,38 +23,38 @@ set_tests_properties(contract_violation.helper_ok PROPERTIES LABELS contract)
 # ---- Layer rules: configure fixture projects ----------------------------------------------------
 # Negative fixtures pass only if configure reports the expected rule; positive controls must
 # configure cleanly (design note §2).
-function(melo_layer_fixture name expected)
+function(anno_layer_fixture name expected)
     set(build_dir "${CMAKE_CURRENT_BINARY_DIR}/layer_rules/${name}")
     add_test(NAME layer_rules.${name}
         COMMAND ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/layer_rules/${name}" -B "${build_dir}"
                 -G "${CMAKE_GENERATOR}" -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
                 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-                -DMELO_CMAKE_DIR=${PROJECT_SOURCE_DIR}/cmake)
+                -DANNO_CMAKE_DIR=${PROJECT_SOURCE_DIR}/cmake)
     set_tests_properties(layer_rules.${name} PROPERTIES LABELS contract)
     if(NOT expected STREQUAL "PASS")
         set_tests_properties(layer_rules.${name} PROPERTIES
-            PASS_REGULAR_EXPRESSION "MELO LAYER VIOLATION: ${expected}:")
+            PASS_REGULAR_EXPRESSION "ANNO LAYER VIOLATION: ${expected}:")
     endif()
 endfunction()
 
-melo_layer_fixture(allowed PASS)
-melo_layer_fixture(allow_dna_to_analysis PASS)
-melo_layer_fixture(allow_private_transitive PASS)
-melo_layer_fixture(deny_untagged R0)
-melo_layer_fixture(deny_upward R1)
-melo_layer_fixture(deny_tool_to_render R2)
-melo_layer_fixture(deny_tool_to_analysis R2)
-melo_layer_fixture(deny_transitive_leak R2)
-melo_layer_fixture(deny_types_link R3)
-melo_layer_fixture(deny_tool_to_io R4)
-melo_layer_fixture(deny_cycle R5)
-melo_layer_fixture(deny_external R6)
+anno_layer_fixture(allowed PASS)
+anno_layer_fixture(allow_dna_to_analysis PASS)
+anno_layer_fixture(allow_private_transitive PASS)
+anno_layer_fixture(deny_untagged R0)
+anno_layer_fixture(deny_upward R1)
+anno_layer_fixture(deny_tool_to_render R2)
+anno_layer_fixture(deny_tool_to_analysis R2)
+anno_layer_fixture(deny_transitive_leak R2)
+anno_layer_fixture(deny_types_link R3)
+anno_layer_fixture(deny_tool_to_io R4)
+anno_layer_fixture(deny_cycle R5)
+anno_layer_fixture(deny_external R6)
 
 # ---- Include-level rules ------------------------------------------------------------------------
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME layer_includes
     COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/scripts/check_includes.py"
-            --layers "${PROJECT_BINARY_DIR}/melo_layers.json" --src "${PROJECT_SOURCE_DIR}/src")
+            --layers "${PROJECT_BINARY_DIR}/anno_layers.json" --src "${PROJECT_SOURCE_DIR}/src")
 set_tests_properties(layer_includes PROPERTIES LABELS contract)
 
 # The checker must catch violations, not just pass on clean code: every listed pattern must appear.

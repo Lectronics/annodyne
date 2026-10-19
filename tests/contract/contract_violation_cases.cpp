@@ -1,5 +1,5 @@
 // Helper for the precondition-abort tests. Each case breaks one precondition and must end in
-// melo::detail::contract_violation (prints "contract violation", then aborts). Driven by
+// anno::detail::contract_violation (prints "contract violation", then aborts). Driven by
 // expect_contract_violation.cmake, because a SIGABRT would fail a normal CTest test.
 
 #include "core/types/audio_buffer.h"
@@ -15,7 +15,7 @@
 namespace {
 
 int run(std::string_view name) {
-    using namespace melo;
+    using namespace anno;
     constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
     constexpr double k_inf = std::numeric_limits<double>::infinity();
 

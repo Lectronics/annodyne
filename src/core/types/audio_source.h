@@ -11,7 +11,7 @@
 // AudioSource: read-only access to an original recording (architecture spec §1, §3).
 // Design: docs/design/phase0-foundations.md §6.
 
-namespace melo {
+namespace anno {
 
 /// Stable identity of a recording's content. Compare for equality only; the text format is not
 /// part of the contract.
@@ -55,4 +55,4 @@ private:
     std::shared_ptr<const Impl> impl_;
 };
 
-}  // namespace melo
+}  // namespace anno

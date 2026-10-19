@@ -8,7 +8,7 @@
 
 #include <filesystem>
 
-using namespace melo;
+using namespace anno;
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 
@@ -18,7 +18,7 @@ std::filesystem::path write_test_wav() {
     auto buf = AudioBuffer::create(2, Samples{24000}, Hz{48000.0}).value();
     buf.channel(0)[100] = 0.5F;   // -6.02 dBFS
     buf.channel(1)[200] = -1.0F;  // 0 dBFS
-    const auto dir = std::filesystem::temp_directory_path() / "melo_cli_info_test";
+    const auto dir = std::filesystem::temp_directory_path() / "anno_cli_info_test";
     std::filesystem::create_directories(dir);
     const auto path = dir / "info.wav";
     REQUIRE(io::write_wav(path, buf).has_value());

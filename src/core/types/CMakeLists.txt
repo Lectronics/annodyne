@@ -1,4 +1,4 @@
-melo_add_library(core/types
+anno_add_library(core/types
     SOURCES
         audio_buffer.cpp
         audio_source.cpp

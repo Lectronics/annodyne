@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-namespace melo {
+namespace anno {
 
 namespace {
 
@@ -21,10 +21,10 @@ bool is_valid_rate(Hz rate) {
 }  // namespace
 
 Samples to_samples(Seconds d, Hz sample_rate, Rounding rounding) noexcept {
-    MELO_EXPECTS(std::isfinite(d.value()));
-    MELO_EXPECTS(is_valid_rate(sample_rate));
+    ANNO_EXPECTS(std::isfinite(d.value()));
+    ANNO_EXPECTS(is_valid_rate(sample_rate));
     const double frames = d.value() * sample_rate.value();
-    MELO_EXPECTS(std::fabs(frames) < k_max_sample_magnitude);
+    ANNO_EXPECTS(std::fabs(frames) < k_max_sample_magnitude);
 
     double whole = 0.0;
     switch (rounding) {
@@ -36,34 +36,34 @@ Samples to_samples(Seconds d, Hz sample_rate, Rounding rounding) noexcept {
 }
 
 Seconds to_seconds(Samples n, Hz sample_rate) noexcept {
-    MELO_EXPECTS(is_valid_rate(sample_rate));
+    ANNO_EXPECTS(is_valid_rate(sample_rate));
     return Seconds{static_cast<double>(n.value()) / sample_rate.value()};
 }
 
 Hz to_hz(Cents pitch, Hz a4_reference) noexcept {
-    MELO_EXPECTS(std::isfinite(pitch.value()));
-    MELO_EXPECTS(is_valid_rate(a4_reference));
+    ANNO_EXPECTS(std::isfinite(pitch.value()));
+    ANNO_EXPECTS(is_valid_rate(a4_reference));
     return a4_reference * std::exp2((pitch - k_a4_cents).value() / k_cents_per_octave);
 }
 
 Cents to_cents(Hz f, Hz a4_reference) noexcept {
-    MELO_EXPECTS(std::isfinite(f.value()) && f.value() > 0.0);
-    MELO_EXPECTS(is_valid_rate(a4_reference));
+    ANNO_EXPECTS(std::isfinite(f.value()) && f.value() > 0.0);
+    ANNO_EXPECTS(is_valid_rate(a4_reference));
     return k_a4_cents + Cents{k_cents_per_octave * std::log2((f / a4_reference).value())};
 }
 
 Ratio to_ratio(Cents interval) noexcept {
-    MELO_EXPECTS(std::isfinite(interval.value()));
+    ANNO_EXPECTS(std::isfinite(interval.value()));
     return Ratio{std::exp2(interval.value() / k_cents_per_octave)};
 }
 
 LinearGain to_linear_gain(Decibels g) noexcept {
-    MELO_EXPECTS(std::isfinite(g.value()));
+    ANNO_EXPECTS(std::isfinite(g.value()));
     return LinearGain{std::pow(10.0, g.value() / k_db_per_decade_amplitude)};
 }
 
 Decibels to_decibels(LinearGain a) noexcept {
-    MELO_EXPECTS(std::isfinite(a.value()));
+    ANNO_EXPECTS(std::isfinite(a.value()));
     const double magnitude = std::fabs(a.value());
     if (magnitude <= k_silence_floor_gain.value()) {
         return k_silence_floor_db;
@@ -71,4 +71,4 @@ Decibels to_decibels(LinearGain a) noexcept {
     return Decibels{k_db_per_decade_amplitude * std::log10(magnitude)};
 }
 
-}  // namespace melo
+}  // namespace anno

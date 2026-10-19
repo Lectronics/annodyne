@@ -6,8 +6,8 @@
 #include <cmath>
 #include <limits>
 
-using namespace melo;
-using namespace melo::unit_literals;
+using namespace anno;
+using namespace anno::unit_literals;
 
 TEST_CASE("create_makes_a_zero_filled_planar_buffer", "[audio_buffer]") {
     auto created = AudioBuffer::create(2, Samples{100}, Hz{48000.0});

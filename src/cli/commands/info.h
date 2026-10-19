@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-// `melo-cli info <file>`. Computing the report and formatting it are separate so the report can be
+// `anno-cli info <file>`. Computing the report and formatting it are separate so the report can be
 // tested without capturing stdout (coding-standards §5, split-function #4).
 
-namespace melo::cli {
+namespace anno::cli {
 
 struct InfoReport {
     io::WavInfo wav;
@@ -28,4 +28,4 @@ struct InfoReport {
 /// Human-readable multi-line text for a report, ending in a newline.
 [[nodiscard]] std::string format_info(const InfoReport& report);
 
-}  // namespace melo::cli
+}  // namespace anno::cli

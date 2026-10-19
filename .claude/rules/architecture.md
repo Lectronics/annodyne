@@ -27,7 +27,7 @@ Each folder under `src/` is its own CMake library target. A target may only link
 
 `features/dna` and `features/sound_editor` may call analysis functions (layer 1) to request re-analysis, but still never synthesise audio themselves.
 
-These rules are enforced at configure time by `cmake/MeloLayers.cmake` (`MELO LAYER VIOLATION: R<n>`) and at include level by `scripts/check_includes.py`; see `docs/design/phase0-foundations.md` §2.
+These rules are enforced at configure time by `cmake/AnnoLayers.cmake` (`ANNO LAYER VIOLATION: R<n>`) and at include level by `scripts/check_includes.py`; see `docs/design/phase0-foundations.md` §2.
 
 ## What goes where
 
@@ -48,7 +48,7 @@ These rules are enforced at configure time by `cmake/MeloLayers.cmake` (`MELO LA
 
 ## The core contracts (do not change without an ADR)
 
-- `AnalysisResult`, `Note`, track types, `Edit`, `EditList`, `EffectiveNote`, `TimeMap`, `RenderResult` as defined in `docs/specs/melodyne-core-architecture.md`.
+- `AnalysisResult`, `Note`, track types, `Edit`, `EditList`, `EffectiveNote`, `TimeMap`, `RenderResult` as defined in `docs/specs/annodyne-core-architecture.md`.
 - `effective_state(note, edits)` is a pure fold in `seq` order up to the undo cursor.
 - `render_region` output outside dirty regions equals the source bit-for-bit.
 - Polyphonic change-only rendering: `out = original − Σ separated_original[edited] + Σ render(edited)`.

@@ -10,7 +10,7 @@
 // Typed time ranges and the persistence form of time points (ADR-0003).
 // Design: docs/design/phase0-foundations.md §4.
 
-namespace melo {
+namespace anno {
 
 /// Half-open range [start, end) on one time axis. Invariant: start() <= end().
 template <class Axis>
@@ -31,7 +31,7 @@ public:
     /// For ranges that cannot be invalid, e.g. a start plus a buffer length.
     /// Pre: duration >= 0. Real-time safe.
     [[nodiscard]] static TimeRange from_start(TimePoint<Axis> start, Seconds duration) noexcept {
-        MELO_EXPECTS(duration >= Seconds{0.0});
+        ANNO_EXPECTS(duration >= Seconds{0.0});
         return TimeRange{start, start + duration};
     }
 
@@ -70,4 +70,4 @@ template <class Axis>
     return TimePoint<Axis>::unchecked_from_origin(Seconds{s});
 }
 
-}  // namespace melo
+}  // namespace anno

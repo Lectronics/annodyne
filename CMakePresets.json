@@ -17,7 +17,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MELO_SANITIZER": "address_undefined"
+        "ANNO_SANITIZER": "address_undefined"
       }
     },
     {
@@ -26,7 +26,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MELO_SANITIZER": "thread"
+        "ANNO_SANITIZER": "thread"
       },
       "condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -36,7 +36,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MELO_SANITIZER": "none"
+        "ANNO_SANITIZER": "none"
       }
     }
   ],

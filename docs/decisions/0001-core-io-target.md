@@ -5,8 +5,8 @@
 - **Phase:** 0
 
 ## Context
-ROADMAP Phase 0 requires WAV read/write, and `melo-cli info` needs it. The folder layout in
-`melodyne-core-architecture.md` §6 has no place for audio file I/O:
+ROADMAP Phase 0 requires WAV read/write, and `anno-cli info` needs it. The folder layout in
+`annodyne-core-architecture.md` §6 has no place for audio file I/O:
 - `core/types` must be plain data with no I/O (`architecture.md`, "What goes where").
 - `project` (layer 6) is about the document model, not audio decoding.
 - CLAUDE rule 2 says only `src/core/` touches audio samples, so the code belongs under `core/`.
@@ -18,11 +18,11 @@ real-time path (`realtime-audio.md`).
 `cli/commands` (a library holding the testable CLI commands) is also missing from the layer table.
 
 ## Decision
-- Add `src/core/io/` → CMake target `melo_core_io`. For **its own** dependencies it is layer 0: it
+- Add `src/core/io/` → CMake target `anno_core_io`. For **its own** dependencies it is layer 0: it
   may link only `core_types` and the standard library.
-- **Who may link it** is restricted (rule R4 in `cmake/MeloLayers.cmake`): only layer 6–7 targets
+- **Who may link it** is restricted (rule R4 in `cmake/AnnoLayers.cmake`): only layer 6–7 targets
   (`project`, `host/*`, `ui`, `cli/*`) and test executables. Any other link fails configuration
-  with `MELO LAYER VIOLATION: R4`.
+  with `ANNO LAYER VIOLATION: R4`.
 - `cli/*` (including `cli/commands`) is layer 7.
 
 ## Alternatives considered
@@ -41,4 +41,4 @@ real-time path (`realtime-audio.md`).
 ## Spec updates
 - `.claude/rules/architecture.md` layer table: adds `core/io` and `cli/*` rows.
 - `CLAUDE.md` layout summary: adds `io` to `src/core/{…}`.
-- `docs/specs/melodyne-core-architecture.md` §6: adds `core/io/`.
+- `docs/specs/annodyne-core-architecture.md` §6: adds `core/io/`.

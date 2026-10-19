@@ -1,5 +1,5 @@
 ---
-# clang-tidy for Melo (coding-standards §1). Every disabled check has a reason.
+# clang-tidy for Annodyne (coding-standards §1). Every disabled check has a reason.
 Checks: >
   bugprone-*,
   cppcoreguidelines-*,
@@ -59,7 +59,7 @@ CheckOptions:
   - { key: readability-identifier-naming.GlobalConstantPrefix,     value: k_ }
   - { key: readability-identifier-naming.MacroDefinitionCase,      value: UPPER_CASE }
   # The only macros are the contract checks (coding-standards §1).
-  - { key: cppcoreguidelines-macro-usage.AllowedRegexp,            value: '^MELO_' }
+  - { key: cppcoreguidelines-macro-usage.AllowedRegexp,            value: '^ANNO_' }
   # AudioSource is deliberately copy-only so a moved-from object stays valid (design note §6).
   - { key: cppcoreguidelines-special-member-functions.AllowMissingMoveFunctions, value: true }
   - { key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor, value: true }

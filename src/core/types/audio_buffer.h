@@ -10,7 +10,7 @@
 // AudioBuffer and PositionedAudio (architecture spec §3, ADR-0002).
 // Design: docs/design/phase0-foundations.md §6.
 
-namespace melo {
+namespace anno {
 
 /// Planar float32 audio. Carries no time position (ADR-0002); see PositionedAudio.
 /// Invariant: channel_count() >= 1, sample_rate() finite and > 0, every channel holds
@@ -61,4 +61,4 @@ using OutputAudio = PositionedAudio<OutputAxis>;
     return SourceRange::from_start(audio.start, audio.audio.duration());
 }
 
-}  // namespace melo
+}  // namespace anno

@@ -5,7 +5,7 @@
 #include <format>
 #include <utility>
 
-namespace melo::cli {
+namespace anno::cli {
 
 Result<InfoReport> make_info_report(const std::filesystem::path& path) {
     auto audio = io::read_wav(path);
@@ -46,4 +46,4 @@ std::string format_info(const InfoReport& report) {
     return text;
 }
 
-}  // namespace melo::cli
+}  // namespace anno::cli

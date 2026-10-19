@@ -11,11 +11,11 @@
 
 // Result<T>: a value or an Error, shaped like C++23 std::expected<T, Error> (the project is C++20).
 // Differences from std::expected, by design: value()/error() on the wrong state is a contract
-// violation (abort), not an exception; the error type is always melo::Error.
+// violation (abort), not an exception; the error type is always anno::Error.
 // The class is [[nodiscard]], so ignoring a returned Result is a compile error under -Werror.
 // Design: docs/design/phase0-foundations.md §5.
 
-namespace melo {
+namespace anno {
 
 template <class T>
 class Result;
@@ -118,12 +118,12 @@ public:
 private:
     template <class Self>
     static auto checked_value(Self* self) {
-        MELO_EXPECTS(self->has_value());
+        ANNO_EXPECTS(self->has_value());
         return std::get_if<0>(&self->state_);
     }
     template <class Self>
     static auto checked_error(Self* self) {
-        MELO_EXPECTS(!self->has_value());
+        ANNO_EXPECTS(!self->has_value());
         return std::get_if<1>(&self->state_);
     }
 
@@ -149,15 +149,15 @@ public:
     explicit operator bool() const noexcept { return has_value(); }
 
     /// Precondition: has_value(). Exists for symmetry with Result<T>.
-    void value() const { MELO_EXPECTS(has_value()); }
+    void value() const { ANNO_EXPECTS(has_value()); }
 
     /// Precondition: !has_value().
     [[nodiscard]] const Error& error() const& {
-        MELO_EXPECTS(!has_value());
+        ANNO_EXPECTS(!has_value());
         return *error_;
     }
     [[nodiscard]] Error error() && {
-        MELO_EXPECTS(!has_value());
+        ANNO_EXPECTS(!has_value());
         return std::move(*error_);
     }
 
@@ -165,7 +165,7 @@ public:
     template <class F>
     [[nodiscard]] auto and_then(F&& f) const& {
         using R = std::remove_cvref_t<std::invoke_result_t<F>>;
-        static_assert(detail::IsResult<R>::value, "and_then: f must return a melo::Result");
+        static_assert(detail::IsResult<R>::value, "and_then: f must return a anno::Result");
         if (!has_value()) {
             return R{Unexpected{*error_}};
         }
@@ -199,7 +199,7 @@ template <class Self, class F>
 auto Result<T>::and_then_impl(Self&& self, F&& f) {
     using Arg = decltype(std::forward<Self>(self).value());
     using R = std::remove_cvref_t<std::invoke_result_t<F, Arg>>;
-    static_assert(detail::IsResult<R>::value, "and_then: f must return a melo::Result");
+    static_assert(detail::IsResult<R>::value, "and_then: f must return a anno::Result");
     if (!self.has_value()) {
         return R{Unexpected{std::forward<Self>(self).error()}};
     }
@@ -225,4 +225,4 @@ auto Result<T>::transform_impl(Self&& self, F&& f) {
     }
 }
 
-}  // namespace melo
+}  // namespace anno

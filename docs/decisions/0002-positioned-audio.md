@@ -5,7 +5,7 @@
 - **Phase:** 0
 
 ## Context
-In `melodyne-core-architecture.md` §3, `AudioBuffer.start_time` is a `float` "in source time or
+In `annodyne-core-architecture.md` §3, `AudioBuffer.start_time` is a `float` "in source time or
 output time; the owner says which". That is an untyped time value crossing module boundaries, which
 CLAUDE.md rule 3 forbids ("never pass raw double seconds across module boundaries") and which the
 strong types in `core/types/units.h` cannot check.
@@ -40,5 +40,5 @@ strong types in `core/types/units.h` cannot check.
 - Phase 2–4 design notes use the signatures in the table above.
 
 ## Spec updates
-`docs/specs/melodyne-core-architecture.md` §3 (`AudioBuffer`) and §4.5/§4.6 (`render_note`,
+`docs/specs/annodyne-core-architecture.md` §3 (`AudioBuffer`) and §4.5/§4.6 (`render_note`,
 `RenderResult`) get a pointer to this ADR.

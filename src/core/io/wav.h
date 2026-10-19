@@ -10,9 +10,9 @@
 // WAV file I/O (ADR-0001). Only layers 6-7 and tests may link core/io.
 // Design: docs/design/phase0-foundations.md §7.
 
-namespace melo::io {
+namespace anno::io {
 
-/// Sample encodings Melo reads. Anything else is ErrorCode::unsupported_format.
+/// Sample encodings Annodyne reads. Anything else is ErrorCode::unsupported_format.
 enum class WavSampleFormat { pcm16, pcm24, pcm32, float32 };
 
 /// Stable lower-case name, e.g. "pcm24". Pure; real-time safe.
@@ -47,4 +47,4 @@ struct WavInfo {
 /// Thread-safe for distinct paths; not real-time safe.
 [[nodiscard]] Result<void> write_wav(const std::filesystem::path& path, const AudioBuffer& audio);
 
-}  // namespace melo::io
+}  // namespace anno::io

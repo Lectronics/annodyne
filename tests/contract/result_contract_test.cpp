@@ -8,7 +8,7 @@
 #include <string>
 #include <type_traits>
 
-using namespace melo;
+using namespace anno;
 
 // Values convert implicitly when the conversion is implicit and non-narrowing.
 static_assert(std::is_convertible_v<int, Result<int>>);

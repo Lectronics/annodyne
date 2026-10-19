@@ -9,7 +9,7 @@
 //
 // Engineering block: numerical tolerances for exact-maths tests, justified individually.
 
-namespace melo::tolerance {
+namespace anno::tolerance {
 
 // ---- Human-gated (AUDIO_VERIFICATION §1; change only via ADR) ---------------------------------
 
@@ -55,4 +55,4 @@ inline constexpr Ratio k_hz_conversion_rel{1e-12};
 /// dB <-> linear gain: pow/log10 with < 1 ulp error each.
 inline constexpr Ratio k_gain_conversion_rel{1e-12};
 
-}  // namespace melo::tolerance
+}  // namespace anno::tolerance

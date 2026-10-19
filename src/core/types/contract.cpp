@@ -7,10 +7,10 @@
 #include <crtdbg.h>
 #endif
 
-namespace melo::detail {
+namespace anno::detail {
 
 void contract_violation(const char* expression, std::source_location where) noexcept {
-    std::fprintf(stderr, "melo: contract violation: %s\n  at %s:%u in %s\n", expression,
+    std::fprintf(stderr, "anno: contract violation: %s\n  at %s:%u in %s\n", expression,
                  where.file_name(), static_cast<unsigned>(where.line()), where.function_name());
     std::fflush(stderr);
 #ifdef _WIN32
@@ -21,4 +21,4 @@ void contract_violation(const char* expression, std::source_location where) noex
     std::abort();
 }
 
-}  // namespace melo::detail
+}  // namespace anno::detail
