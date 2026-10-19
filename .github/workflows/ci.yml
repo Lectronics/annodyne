@@ -91,5 +91,8 @@ jobs:
         run: CC=clang CXX=clang++ cmake --preset release
       - name: Run clang-tidy
         run: |
+          # Only files in the build (compile_commands.json); the include-checker fixtures under
+          # tests/contract/include_rules/ are deliberately not valid C++.
           git ls-files -- 'src/*.cpp' 'tests/unit/*.cpp' 'tests/contract/*.cpp' \
+            | grep -v '^tests/contract/include_rules/' \
             | xargs -P 4 -n 1 clang-tidy -p build/release --quiet

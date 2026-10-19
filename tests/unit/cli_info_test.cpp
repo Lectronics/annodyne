@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <filesystem>
+#include <string>
 
 using namespace anno;
 using Catch::Matchers::ContainsSubstring;
@@ -14,13 +15,14 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-std::filesystem::path write_test_wav() {
+// Each test case passes its own file name: ctest runs cases in parallel processes.
+std::filesystem::path write_test_wav(const std::string& name) {
     auto buf = AudioBuffer::create(2, Samples{24000}, Hz{48000.0}).value();
     buf.channel(0)[100] = 0.5F;   // -6.02 dBFS
     buf.channel(1)[200] = -1.0F;  // 0 dBFS
     const auto dir = std::filesystem::temp_directory_path() / "anno_cli_info_test";
     std::filesystem::create_directories(dir);
-    const auto path = dir / "info.wav";
+    const auto path = dir / name;
     REQUIRE(io::write_wav(path, buf).has_value());
     return path;
 }
@@ -28,7 +30,7 @@ std::filesystem::path write_test_wav() {
 }  // namespace
 
 TEST_CASE("info_report_summarises_a_wav", "[cli]") {
-    const auto report = cli::make_info_report(write_test_wav());
+    const auto report = cli::make_info_report(write_test_wav("summarises.wav"));
     REQUIRE(report.has_value());
     CHECK(report->wav.channel_count == 2);
     CHECK(report->wav.frame_count == Samples{24000});
@@ -48,7 +50,7 @@ TEST_CASE("info_report_propagates_read_errors", "[cli]") {
 }
 
 TEST_CASE("format_info_lists_every_field", "[cli]") {
-    const auto report = cli::make_info_report(write_test_wav()).value();
+    const auto report = cli::make_info_report(write_test_wav("format.wav")).value();
     const std::string text = cli::format_info(report);
     CHECK_THAT(text, ContainsSubstring("float32"));
     CHECK_THAT(text, ContainsSubstring("48000 Hz"));
