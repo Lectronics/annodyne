@@ -1,7 +1,10 @@
 anno_add_library(core/types
     SOURCES
         audio_buffer.cpp
+        analysis_validate.cpp
         audio_source.cpp
         contract.cpp
+        edit.cpp
         error.cpp
+        time_map.cpp
         units.cpp)
