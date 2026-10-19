@@ -13,18 +13,25 @@ Produce the two frame-level inputs of note segmentation: a pitch track (f0 in ce
 
 ### Types
 ```cpp
+/// Generic parameters of any estimator.
 struct PitchParams {
     Hz min_f0{50.0};
     Hz max_f0{1600.0};
-    Seconds hop{0.005};              // PitchTrack grid hop
-    Hz analysis_rate{24000.0};       // the signal is resampled to this before analysis (never above the source rate)
-    Seconds window{0.040};           // YIN integration window; must cover >= 2 periods of min_f0 (checked)
-    double bin_cents = 10.0;         // pitch resolution of the HMM
-    double beta_mean = 0.1;          // pYIN threshold prior (Beta distribution mean)
-    double voiced_to_unvoiced = 0.01, unvoiced_to_voiced = 0.01;
-    double max_jump_cents = 80.0;    // largest f0 change per hop the HMM allows (80 cents / 5 ms)
-    double octave_penalty = 0.5;     // extra cost of jumping by ~1200 cents, in -log units
+    Seconds hop{0.005};              // PitchTrack grid hop (a whole number of source samples is not required: frames are at i * hop)
     int n_alternates = 2;
+};
+
+/// pYIN-only parameters, held by PYinEstimator (other estimators have their own).
+struct PYinParams {
+    Hz analysis_rate{24000.0};       // the signal is resampled to this before analysis (never above the source rate)
+    Seconds window{0.040};           // YIN integration window; must cover >= 2 periods of min_f0 (checked at estimate())
+    double bin_cents = 10.0;         // pitch resolution of the HMM
+    double beta_mean = 0.1;          // threshold prior (Beta distribution mean)
+    double voiced_to_unvoiced_prob = 0.01;
+    double unvoiced_to_voiced_prob = 0.01;
+    double max_jump_cents = 80.0;    // f0 change per hop with the smooth (triangular) transition
+    double jump_prob = 1e-4;         // floor probability of ANY larger jump, so a legato step (200 cents in one hop) is representable at a cost
+    double octave_penalty = 0.5;     // extra cost of jumping by ~1200 cents, in -log units
 };
 
 /// Interface so a neural estimator (RMVPE/PESTO/CREPE, Phase 13) can replace the DSP one.
@@ -38,12 +45,16 @@ public:
     [[nodiscard]] virtual Result<PitchTrack> estimate(const AudioSource& src, const PitchParams& params) const = 0;
 };
 
-class PYinEstimator final : public PitchEstimator { /* name "pyin" */ };
+class PYinEstimator final : public PitchEstimator {
+public:
+    explicit PYinEstimator(PYinParams params = {});   // name "pyin", version 1
+};
 
 /// Spec entry point: runs the default (pYIN) estimator.
 [[nodiscard]] Result<PitchTrack> detect_pitch(const AudioSource& src, const PitchParams& params);
 ```
-Time axis: the returned `PitchTrack::grid` is on the **source** axis: `start = SourceTime{}`, `hop = params.hop`, `n_frames = floor(duration / hop) + 1`; frame i is analysed over a window centred on `i * hop`. Units: `f0` is `Cents` absolute (A4 = 6900), NaN when unvoiced; `voicing_prob`, `confidence_prob` in 0..1.
+Time axis: the returned `PitchTrack::grid` is on the **source** axis: `start = SourceTime{}`, `hop = params.hop`, `n_frames = floor(duration / hop) + 1` (0 for an empty source); frame i is analysed over a window centred on `i * hop`.
+Edge cases: an empty source gives an empty valid track; a source shorter than the window is zero-padded; a source rate below `2 * max_f0` → invalid_argument (cannot represent the range; the message says so); a source rate below `analysis_rate` is analysed at its own rate. Stereo is mixed to mono first (`read_mono`). Units: `f0` is `Cents` absolute (A4 = 6900), NaN when unvoiced; `voicing_prob`, `confidence_prob` in 0..1.
 
 ### Method (Mauch & Dixon 2014, pYIN; de Cheveigné & Kawahara 2002, YIN)
 1. Mono mix → `resample` to `analysis_rate` (a pure copy if the source rate is lower).
@@ -59,7 +70,7 @@ Time axis: the returned `PitchTrack::grid` is on the **source** axis: `start = S
 ## 2. Onsets
 ```cpp
 struct OnsetParams {
-    Seconds hop{0.005};
+    Seconds hop{0.005};                     // rounded to whole samples; onset times use the actual hop (hop_samples / rate)
     int n_fft = 2048;                       // at 44.1/48 kHz; scaled with the sample rate to ~43 ms
     int filterbank_bands_per_octave = 24;   // log-spaced triangular filters 27.5 Hz..16 kHz (SuperFlux)
     double log_lambda = 1.0;                // log(1 + lambda * |X|)
@@ -74,10 +85,11 @@ struct OnsetParams {
 };
 
 /// Errors: invalid_argument (bad params), out_of_range from the source.
-/// `pitch` may be null (spectral onsets only). Pure; thread-safe; not real-time safe.
-[[nodiscard]] Result<OnsetList> detect_onsets(const AudioSource& src, const PitchTrack* pitch, const OnsetParams& params);
+/// Pure; thread-safe; not real-time safe.
+[[nodiscard]] Result<OnsetList> detect_onsets(const AudioSource& src, const OnsetParams& params);          // spectral onsets only
+[[nodiscard]] Result<OnsetList> detect_onsets(const AudioSource& src, const PitchTrack& pitch, const OnsetParams& params);  // plus pitch-change onsets and voicing-based kinds
 ```
-Method (Böck & Widmer 2013, SuperFlux): STFT (hop = `hop`) → log-filterbank magnitude → frequency max filter over `max_filter_bins` → positive lagged difference summed over bands → **level-independent** normalisation (divide by a local floor, so quiet passages are not missed) → adaptive-threshold peak picking with `min_gap` → refinement of each peak to the point of steepest RMS rise within `refine_window` before it (sample-accurate attacks). **Pitch-change onsets**: from the pitch track, a step of ≥ `pitch_change_threshold` between two regions each stable for `pitch_stable` is a legato note change (`OnsetKind::pitch_change`); spectral onsets within `min_gap` of a pitch-change onset are merged (the stronger kept, spectral kind wins when energy rises). `OnsetKind::attack`/`consonant` is decided by whether the frame before the onset is unvoiced/low level (consonant) or not. Phoneme cues (`OnsetKind::phoneme`) are not produced in Phase 3.
+Method (Böck & Widmer 2013, SuperFlux): STFT (hop = `hop`) → log-filterbank magnitude → frequency max filter over `max_filter_bins` → positive lagged difference summed over bands → **level-independent** normalisation (divide by a local floor, so quiet passages are not missed) → adaptive-threshold peak picking with `min_gap` → refinement of each peak to the point of steepest RMS rise within `refine_window` before it (sample-accurate attacks). **Pitch-change onsets**: from the pitch track, a step of ≥ `pitch_change_threshold` between two regions each stable for `pitch_stable` is a legato note change (`OnsetKind::pitch_change`). Strength scale: **both kinds are normalised so 1.0 is the detection threshold** (spectral: ODF / adaptive threshold; pitch change: step_cents / `pitch_change_threshold`), which makes "the stronger is kept" meaningful when a spectral onset lies within `min_gap` of a pitch-change onset (the spectral kind wins ties because it carries the sample-accurate time). `OnsetKind::attack`/`consonant` is decided by the voicing probability of the frame before the onset: < 0.5 (unvoiced) → consonant, else attack; **without a pitch track every spectral onset is `attack`** (no voicing data; `consonant` classification needs the pitch overload). The interaction with the note HMM (which has its own 33-cent bins) is tested end to end: a legato step must give two notes. Phoneme cues (`OnsetKind::phoneme`) are not produced in Phase 3.
 
 Output: `OnsetList` sorted by time, parallel arrays valid per `validate`; `strength` is the normalised ODF value at the peak (≥ 0).
 
@@ -90,14 +102,16 @@ None (analysis only).
 - Onsets are a separate target from pitch (different cues, different tuning); pitch-change onsets take the pitch track as an optional input rather than recomputing it (split function rule 4).
 
 ## Dependencies
-`core/types`, `core/dsp`. No external libraries.
+`core/types`, `core/dsp` (`read_mono`, `resample`, `RealFft`, `stft`). No external libraries. Each module has a `README.md` (purpose, method, references, limitations, tuning parameters); `-ffp-contract=off` on both targets.
 
 ## Tests
-- Unit (synthetic ground truth): pure tones 80-1200 Hz → f0 within 3 cents (clean; target ≤ 1 cent recorded); vibrato 5.5 Hz ±50 cents → track follows within 5 cents rms; linear glide (1 octave/s) within 5 cents; harmonic tone (10 partials) in white noise at 20 dB SNR → 10-cent RPA ≥ 95 %; weak-fundamental tone (partial 1 at −20 dB) → no octave error (alternates contain the octave); silence and noise → unvoiced (false-alarm rate reported); `alternates` shape; params validation; determinism.
+- Gate (ROADMAP, recorded precisely): **stationary pure tones 80-1200 Hz: every voiced frame within ±3 cents** (target ≤ 1 cent measured and recorded); **vibrato (5.5 Hz ±50 cents), a linear glide (1 octave/s) and harmonic tones (10 partials; clean and in white noise at 20 dB SNR): 10-cent RPA ≥ 95 % against the instantaneous truth at frame centres** (±3 cents is not demanded of moving pitch: the frame window averages the curve, a measurement effect recorded in the review). The clean sets run at source rates 22.05, 32, 44.1 and 48 kHz and mono/stereo. **`octave_errors == 0` on the chosen f0** for the harmonic and the weak-fundamental tone (partial 1 at −20 dB), and the octave appears in `alternates`.
+- Other: silence and noise → unvoiced (false-alarm rate reported); `alternates` shape (each `grid.n_frames` long); params validation (window shorter than two periods, rate below 2×max_f0); edge inputs (empty source → empty valid track, shorter than the window); determinism. The synthetic generator is a deliverable: `tests/support/synth_signals.h` (harmonic tone with vibrato/glide/steps/bursts and seeded noise), tolerances in `tests/tolerances.h`.
 - Onsets: tone-burst train → onsets ±5 ms; vibrato tone (±50 cents) produces no more false onsets than allowed (≤ 1 over 3 s) while plain flux on the same signal produces more (the SuperFlux effect is checked, not assumed); legato pitch step (A4→B4, no level dip) → one `pitch_change` onset ±15 ms; quiet burst 40 dB below a loud one still detected; empty/short signals return empty lists.
 - Contract: `validate` passes on every output; times strictly increasing.
 
 ## Open questions
+0. Naming: `_prob` suffixes on unit-less probabilities per the naming rule.
 1. 10-cent bins vs 20: 10 cents is the pYIN default; revisit only if debug-build speed forces it.
 2. Whether `analysis_rate` 24 kHz is high enough for 1600 Hz with a good sub-cent refinement; verified by the synthetic tests (raise to 32 kHz otherwise; recorded in the review).
 

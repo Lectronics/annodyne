@@ -9,13 +9,26 @@
 ## Purpose
 Turn the pitch track and onsets into `Note`s (start, attack end, release start, end, boundary type, confidence), then describe each note: the single pitch a listener hears, the stable centre with slow drift and fast modulation (vibrato) separated, the amplitude curve and the K-weighted loudness. Everything is source-axis and read-only on the audio.
 
-## Deviation from the spec signatures (recorded here, no ADR: the spec is prose)
-The spec's `perceived_pitch(note, …)` and `decompose_pitch_curve(note, …)` take a note that already carries its curves, while `segment_notes` returns notes "with pitch curve filled". `Note` stores only centre + drift + mod, so the raw f0 has nowhere to live before decomposition. Resolution: `segment_notes` returns **valid** `Note`s with timing and a rough pitch only (`grid.n_frames == 0`, empty curves: valid per `validate(Note)`); `decompose_pitch_curve` takes the `PitchTrack` and returns the curves; the orchestrator assembles the finished `Note`. `Note` itself does not change.
+## Deviation from the spec signatures (ADR-0010)
+The spec's `segment_notes` returns `Note`s "with pitch curve filled", but `Note` stores only centre + drift + mod, so the raw f0 has nowhere to live before decomposition, and a half-built `Note` (empty curves, loudness 0) would pass `validate`. Resolution (ADR-0010): `segment_notes` returns **`NoteSpan`s** (timing, rough pitch, boundary type, confidence), `decompose_pitch_curve`, `measure_loudness` and `perceived_pitch` take the pieces they need, and the **orchestrator alone builds a `Note`**. `Note` and `AnalysisResult` do not change; a contract test asserts every note in `analyse()` output has `grid.n_frames > 0` and full curves. `detect_onsets` gains an optional pitch input; `measure_loudness` takes the mono and K-weighted signals instead of the source.
 
 ## 1. Segmentation
 ```cpp
+/// One segmented note before it is described: no curves, no loudness. NOT a Note.
+struct NoteSpan {
+    NoteId id;
+    SourceTime source_start, attack_end, release_start, source_end;   // start <= attack_end <= release_start <= end
+    Cents rough_pitch;               // the HMM's note pitch (a bin centre); refined by perceived_pitch
+    SeparationIn separation_in = SeparationIn::hard;
+    double confidence_prob = 1.0;    // 0..1
+};
+
+/// The frame grid of a note: the pitch-track frames in [source_start, source_end): start = frame_time of
+/// the first pitch frame >= source_start, hop = pitch.grid.hop, n_frames = number of such frames (>= 1).
+/// Curves (drift, mod, amp) are values AT those frames; nothing is interpolated off-grid.
+[[nodiscard]] FrameGrid note_grid(const NoteSpan& span, const FrameGrid& pitch_grid);
+
 struct SegmentParams {
-    TrackId track{"t1"};
     Seconds min_note{0.060};
     Seconds vibrato_smooth{0.150};        // moving-mean of f0 in cents before the HMM (about one vibrato cycle)
     double note_bin_cents = 100.0 / 3.0;  // 3 pitch states per semitone
@@ -28,68 +41,92 @@ struct SegmentParams {
     Seconds stable_min{0.030};
 };
 
-/// Notes sorted by source_start, non-overlapping (monophonic), is_active = true, voice 0.
-/// `perceived_pitch` and `pitch_center` hold the HMM's note pitch (refined later); the id is
-/// "n" + start in milliseconds (6 digits; a collision gets "_1", "_2"). separation_in is soft when the
-/// previous note ends within 20 ms of this note's start, else hard. confidence_prob = mean voiced
-/// posterior over the note times the Viterbi margin (0..1).
-/// Errors: invalid_argument (bad params, pitch/onsets invalid, grids mismatch), out_of_range from src.
+/// Spans sorted by source_start, non-overlapping (monophonic). The id is "n" + start in milliseconds
+/// (6 digits; a collision gets "_1", "_2"). separation_in is soft when the previous note ends within
+/// 20 ms of this note's start, else hard. confidence_prob = mean voiced posterior over the note times
+/// the Viterbi margin (0..1). Time clamps: every time lies in [0, pitch duration] where the duration is
+/// grid.start + n_frames * hop; a preroll never reaches into the previous note (start >= previous end);
+/// an end never passes the next start; the four times are made ordered. The only inputs are the pitch
+/// track (f0, voicing, confidence) and the onsets (the energy cue is carried by the onset strengths;
+/// the audio itself is not read, so no source is needed). An empty or all-unvoiced track gives no
+/// notes (not an error).
+/// Errors: invalid_argument (bad params, invalid pitch track or onset list).
 /// Pure; thread-safe; not real-time safe.
-[[nodiscard]] Result<std::vector<Note>> segment_notes(const PitchTrack& pitch, const OnsetList& onsets,
-                                                      const AudioSource& src, const SegmentParams& params);
+[[nodiscard]] Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const OnsetList& onsets, const SegmentParams& params);
 ```
 Method (Mauch & Dixon 2014 note HMM, with onset fusion): the f0 curve is smoothed in cents over `vibrato_smooth` so vibrato does not flip the pitch bin. States: for each pitch bin an **attack** and a **stable** state, plus one **silence** state. Observation: Gaussian of the smoothed f0 around the bin centre (`pitch_sigma_cents`) times the voicing probability (silence emits `1 - voicing`). Transitions: attack→stable, stable→stable (`stay_stable`), stable→attack of a neighbouring or equal bin (a new note, including the same pitch repeated), stable→silence, silence→attack. Attack transitions are multiplied by `onset_boost` within ±30 ms of an onset from `OnsetList`, so a repeated same-pitch note needs an onset to split (the most common failure, a named test) and a vibrato cannot split a note without one. Viterbi → runs of attack+stable states of one bin = notes; notes shorter than `min_note` are dropped or merged into the neighbour with the nearest pitch.
 Times: `source_start` = the earlier of the HMM start and a consonant/attack onset within `preroll_max` before it (the consonant belongs to the note); `source_end` = last voiced frame + one hop (or the next note's start when abutting). `attack_end` = first time the f0 stays within `stable_band` of the note pitch for `stable_min` (never before the voiced start), `release_start` = the symmetric last stable time; the four times satisfy start ≤ attack_end ≤ release_start ≤ end (clamped).
 
 ## 2. Pitch curve description
+Both functions use one weight definition, in the `perceived_pitch` target (no duplicated constants):
 ```cpp
+struct StabilityWeightParams {
+    double rate_scale_cents_per_s = 600.0;  // |d f0/dt| at which the stability weight is e^-1
+    double gamma = 1.0;                      // exponent on the stability weight
+    Decibels amp_range{30.0};                // frames more than this below the note's loudest get weight 0
+};
+
+/// w_i = exp(-(|d f0_i/dt| / rate_scale)^2)^gamma * a_i, with the derivative a central difference of the
+/// (gap-filled) f0 in cents per second and a_i = clamp(1 - (amp_max - amp_i) / amp_range, 0, 1) from the
+/// note's amp curve (a_i = 1 when `amp` is empty). Pure.
+[[nodiscard]] std::vector<double> stability_weights(std::span<const Cents> f0, Seconds hop, std::span<const Decibels> amp, const StabilityWeightParams& params);
+
+enum class CyclePolicy { whole_cycles, all_frames };
+
 struct PitchDecompositionParams {
-    Hz drift_cutoff{2.5};       // below: drift, above: modulation (vibrato)
-    Seconds trim_start{0.040};  // attack excluded when estimating the centre
-    Seconds trim_end{0.060};    // release excluded
+    Hz drift_cutoff{2.5};          // below: drift, above: modulation (vibrato)
+    double trim_start_fraction = 0.25;   // trims: min(fixed trim, fraction of the note) per side
+    Seconds trim_start{0.040};
+    Seconds trim_end{0.060};
+    StabilityWeightParams weights;
 };
 
 struct PitchDecomposition {
     Cents center;               // absolute, constant over the note
-    FrameGrid grid;             // note grid: start = note.source_start, hop = pitch hop
-    std::vector<Cents> drift;   // slow component relative to center, grid.n_frames long
+    std::vector<Cents> drift;   // slow component relative to center, grid.n_frames long (the note_grid)
     std::vector<Cents> mod;     // fast component relative to center
     double voiced_fraction = 0; // share of frames that were voiced before filling
 };
 
-/// f0 over the note's frames (unvoiced gaps filled by linear interpolation in cents, hold at the
-/// ends), low-passed at drift_cutoff (zero-phase, two-pass one-pole cascade) into slow = center +
-/// drift; mod = f0 − slow. center = stability-weighted mean of `slow` over the trimmed region
-/// (weights as in perceived_pitch). drift = slow − center. Exact reconstruction:
-/// center + drift[i] + mod[i] == filled f0[i] to float precision. Errors: invalid_argument (note
-/// has no frames in the track, or bad params). Pure; thread-safe.
-[[nodiscard]] Result<PitchDecomposition> decompose_pitch_curve(const Note& note, const PitchTrack& pitch, const PitchDecompositionParams& params);
+/// f0 at the frames of `note_grid(span, pitch.grid)` (unvoiced gaps filled by linear interpolation in
+/// cents, hold at the ends; this fill is internal, `interp_curve` is not given NaN), low-passed at
+/// drift_cutoff (zero-phase, two-pass one-pole cascade) into slow = center + drift; mod = f0 − slow.
+/// center = stability-weighted mean of `slow` over the trimmed region, with the weights of
+/// `stability_weights` using `amp` (the note's amp curve on the same grid; empty = amp term 1).
+/// drift = slow − center. Exact reconstruction: center + drift[i] + mod[i] == filled f0[i] to float
+/// precision. Trims are min(fixed trim, trim fraction × note length) per side; if the trimmed region
+/// has < 3 frames the whole note is used. Errors: invalid_argument (bad params, amp size != frame
+/// count) or fewer than 3 voiced frames in the note (degenerate; `segment_notes` guarantees ≥ 12
+/// frames and voiced notes, so the orchestrator never hits this: a contract test checks it).
+/// Pure; thread-safe.
+[[nodiscard]] Result<PitchDecomposition> decompose_pitch_curve(const NoteSpan& span, const PitchTrack& pitch, std::span<const Decibels> amp, const PitchDecompositionParams& params);
 
 struct PerceivedPitchParams {
-    double gamma = 1.0;          // weight = exp(−(|df/dt| / scale)^2)^gamma
-    double rate_scale_cents_per_s = 600.0;
+    StabilityWeightParams weights;       // the same definition as decompose_pitch_curve
+    double trim_fraction = 0.25;         // as above: min(fixed trim, fraction of the note) per side
     Seconds trim_start{0.040};
     Seconds trim_end{0.060};
-    bool whole_vibrato_cycles = true;
+    CyclePolicy cycles = CyclePolicy::whole_cycles;
 };
 
 /// The pitch a listener hears: stability-weighted mean (log-frequency = cents) of center + drift +
-/// mod over the trimmed note, weights falling with |d f0/dt| (slow-changing frames count more:
-/// d'Alessandro & Castellengo 1994; Mesz & Eguia; pyAMPACT) and with low amp. For a vibrato note
-/// (modulation periodicity found by an FFT peak of `mod` in 3-9 Hz) the average runs over whole
-/// cycles only, to avoid a partial-cycle bias. A scoop in the first `trim_start` is excluded by the
-/// trim and by the weights. Error: invalid_argument if the note has < 3 usable frames.
-/// Pure; thread-safe.
+/// mod over the trimmed note, weights from `stability_weights` (slow-changing frames count more:
+/// d'Alessandro & Castellengo 1994; Mesz & Eguia; pyAMPACT). For a vibrato note (FFT peak of `mod` in
+/// 3-9 Hz) and `CyclePolicy::whole_cycles` the average runs over whole cycles only, to avoid a
+/// partial-cycle bias. A scoop in the first `trim_start` is excluded by the trim and the weights.
+/// Takes the finished curves from a Note (grid, pitch_drift, pitch_mod, amp, pitch_center), so the
+/// orchestrator builds those first. Error: invalid_argument if the note has < 3 frames or curves of
+/// inconsistent length. Pure; thread-safe.
 [[nodiscard]] Result<Cents> perceived_pitch(const Note& note, const PerceivedPitchParams& params);
 ```
-`perceived_pitch` reads `center`, `drift`, `mod` and `amp` from the note, so the orchestrator calls loudness first.
+Orchestrator order per note: `note_grid` → `measure_loudness` (amp on the grid) → `decompose_pitch_curve` (uses amp) → `perceived_pitch`.
 
 ## 3. Loudness
 ```cpp
 struct LoudnessParams {
-    Seconds amp_window{0.020};        // short-term RMS window for the amp curve (on the note grid)
-    Decibels absolute_gate{-70.0};    // BS.1770 absolute gate for the single loudness value
-    Seconds exclude_attack{0.0};      // part of the attack to exclude (default: from attack_end)
+    Seconds amp_window{0.020};        // short-term RMS window for the amp curve, centred on each grid frame
+    Decibels absolute_gate{-70.0};    // BS.1770 absolute gate (LUFS)
+    Decibels amp_floor{-120.0};       // amp curve floor (dBFS)
 };
 
 struct NoteLoudness {
@@ -97,14 +134,18 @@ struct NoteLoudness {
     std::vector<Decibels> amp;        // dBFS RMS of the UNWEIGHTED signal per grid frame (what the Amplitude tool changes)
 };
 
-/// `mono` is the unweighted mix, `k_weighted` its `k_weight()` output (computed once per source),
-/// both at `rate`. loudness = −0.691 + 10 log10(mean square of k_weighted over [attack_end,
-/// source_end] with the absolute gate); notes shorter than 400 ms use their own span (no 400 ms
-/// blocks). Quiet frames below −120 dBFS are floored at −120. Errors: invalid_argument (spans
-/// differ in length, note times outside the signal). Pure; thread-safe.
-[[nodiscard]] Result<NoteLoudness> measure_loudness(std::span<const float> mono, std::span<const float> k_weighted, Hz rate, const Note& note, const FrameGrid& grid, const LoudnessParams& params);
+/// `plain` is the unweighted mix (`read_mono`), `k_weighted` its `k_weight()` output (computed once per
+/// source), same rate and length. loudness: **integrated over the note's own span [attack_end,
+/// source_end]** = −0.691 + 10 log10(mean square of k_weighted) with the BS.1770 absolute gate applied
+/// to 400 ms-or-shorter blocks of the span (one block if the span is shorter): blocks below the gate are
+/// ignored; if every block is gated out the value is the gate itself (−70 LUFS: "silent"). There is no
+/// relative gate and no step at 400 ms: the note is the programme. Per implementation guide B13,
+/// sibilant/breath exclusion needs the noise track (Phase 4); until then the span is used whole.
+/// amp[i] = 10 log10(mean square of `plain` over amp_window centred on frame i) in dBFS, floored at
+/// amp_floor, on `grid` (the note_grid). Errors: invalid_argument (signals differ in rate/length, grid
+/// or note times outside the signal). Pure; thread-safe; not real-time safe.
+[[nodiscard]] Result<NoteLoudness> measure_loudness(const MonoAudio& plain, const MonoAudio& k_weighted, const NoteSpan& span, const FrameGrid& grid, const LoudnessParams& params);
 ```
-Per implementation guide B13, sibilant/breath exclusion needs the noise track (Phase 4); until then `[attack_end, source_end]` is used.
 
 ## Effect on audio
 None.
@@ -118,7 +159,7 @@ None.
 `core/types`, `core/dsp` (`interp_curve`, `k_weight`, `RealFft`). No external libraries.
 
 ## Tests
-- Segmentation (synthetic melodies built from tones with known note lists): onset ±20 ms, offset ±30 ms, pitch ±10 cents; **repeated same-pitch notes** with a short dip → N notes; one long vibrato note (±60 cents) → one note; legato A4→B4 → two notes with `soft` separation; glide handled as one transition (policy recorded); silence gaps; notes shorter than `min_note` dropped; consonant preroll pulled into the start; output sorted, non-overlapping, `validate(Note)` passes.
+- Segmentation (synthetic melodies from `tests/support/synth_signals.h`): onset ±20 ms, offset ±30 ms, pitch ±10 cents; **repeated same-pitch notes** with a short dip → N notes; one long vibrato note (±60 cents) → one note; legato A4→B4 → two notes with `soft` separation; glide handled as one transition (policy recorded); silence gaps; notes shorter than `min_note` dropped; consonant preroll pulled into the start and clamped to the previous note's end; ends clamped to the file; empty and all-unvoiced tracks give no notes; output sorted, non-overlapping, times ordered; a 60-100 ms note decomposes and gets a perceived pitch (trim fraction); `note_grid` frame count equals the frames in [start, end).
 - `decompose_pitch_curve`: reconstruction exact (1e-4 cents); a 5.5 Hz ±50 cent vibrato lands in `mod` (amplitude ±5 cents) and a slow 0.5 Hz drift in `drift`; centre equals the generating centre ±1 cent.
 - `perceived_pitch`: vibrato tone = geometric mean (cents mean) ±2 cents; a scoop up into the pitch does not move it by more than 5 cents; stable note equals its centre ±0.5 cents; < 3 frames is an error.
 - Loudness: a −23 dBFS 1 kHz sine measures −23.0 ± 0.1 LUFS; amp curve of a tone equals its RMS ± 0.1 dB; a note shorter than 400 ms works; gate drops a silent note to the floor.
