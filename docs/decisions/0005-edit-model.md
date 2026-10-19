@@ -28,7 +28,7 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
    `next_seq_` is an explicit member, so seqs are never reused and the persisted log stays
    append-only.
 8. `dirty_regions` takes the note list as well as the two edit lists.
-9. `EffectiveNote` gains `center_offset`, `onset_shift`, `length_scale` and `handles`, and lacks
+9. `EffectiveNote` gains `onset_shift`, `length_scale` and `handles`, and lacks
    `harmonic_gains_db` until Phase 12.
 10. `AnalysisResult` omits `beats`, `tempo`, `key`, `chords` until Phase 8 (amends ROADMAP "all
     types from §3").
@@ -44,7 +44,8 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
 ## Alternatives considered
 - Keep `param: str`. Rejected: units and ops cannot be checked, typos pass silently.
 - One `Edit` struct with `seq` filled in by the list. Rejected: a tool could forge sequence numbers.
-- Keep dead redo branches in the log. Rejected for Phase 1: cursor semantics become a tree.
+- Keep dead redo branches as redoable branches (a tree). Rejected for Phase 1; they are kept as
+  inert history in `discarded()`.
 - `set` per category. Rejected: a gain `set` would erase a within-note-flatten `set`.
 
 ## Consequences
@@ -55,3 +56,9 @@ Full reasoning: `docs/design/phase1-data-model.md`, "Decisions that go beyond th
 ## Spec updates
 `docs/specs/annodyne-core-architecture.md` §3 (`Note`, `AnalysisResult`), §4.4 (`dirty_regions`,
 `EditList`) and §5.1 (`Edit`, `EditTarget`) get a pointer to this ADR once it is accepted.
+
+## Provisional status
+Accepted by nobody yet. Until a human accepts it: no `EditList` persistence format (Phase 7), no
+edits to `docs/specs/`, and the Phase 1 exit gate is conditional. Decisions 1, 6 and 7 (seq as
+identity, per-parameter `set`, `discarded()` history) are the ones that must not be frozen without a
+human. Product policies left open: absolute time handles, and pushing a neighbour on overlap.

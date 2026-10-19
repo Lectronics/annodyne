@@ -232,9 +232,8 @@ public:
 
 | Type | struct/class | Invariant | Owner | Shared how |
 |---|---|---|---|---|
-| `Anchor` | struct (`SourceTime s`, `OutputTime tau`) | — | value | value |
-| `TimeMap` | **class** | ≥ 1 anchor; anchors strictly increasing in both `s` and `tau`; slope 1 outside the anchor range; consecutive anchors are at least `min_segment` apart in both axes | value | `shared_ptr<const TimeMap>` |
-| `TimeMapParams` | struct | — | caller | value |
+| `TimeMapBuild` | struct (`TimeMap map`, `int repaired_notes`) | — | value | value |
+| `TimeMapParams` | struct (`min_segment`) | `min_segment` is builder policy, not a `TimeMap` invariant | caller | value |
 
 ## Public functions
 
@@ -251,7 +250,7 @@ public:
 /// The fold: every active edit that targets `note`, in seq order, applied onto the analysed values.
 [[nodiscard]] EffectiveNote effective_state(const Note& note, const EditList& edits);
 
-struct DirtyParams { Seconds crossfade_margin{0.050}; };
+struct DirtyParams { Seconds crossfade_margin{0.050}; SourceTime source_end; };  // end of the recording
 /// Source ranges whose rendered content may differ between two edit lists of the same track.
 [[nodiscard]] Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
     const EditList& old_edits, const EditList& new_edits, const DirtyParams& params);
@@ -266,24 +265,25 @@ struct RemapResult { EditList edits; std::vector<RemapEntry> report; };
 
 // core/timemap
 struct TimeMapParams { Seconds min_segment{0.001}; };
-[[nodiscard]] Result<TimeMap> build_time_map(std::span<const Note> notes, const EditList& edits,
-                                             const TimeMapParams& params);
+[[nodiscard]] Result<TimeMapBuild> build_time_map(std::span<const Note> notes,
+                                                  const EditList& edits,
+                                                  const TimeMapParams& params);
 ```
 
 `TimeMap` members (all pure, thread-safe, real-time safe, `noexcept` unless noted):
-`identity()`, `from_anchors(vector<Anchor>) -> Result<TimeMap>`, `to_output(SourceTime) ->
+`identity()`, `from_anchors(vector<TimePair>) -> Result<TimeMap>`, `to_output(SourceTime) ->
 OutputTime`, `to_source(OutputTime) -> SourceTime`, `stretch_ratio(SourceTime) -> Ratio` (right
-derivative at an anchor), `anchors() -> span<const Anchor>`, `is_identity()`.
+derivative at an anchor), `anchors() -> span<const TimePair>`, `is_identity()`.
 
 ### `EditList` semantics
 
 | | |
 |---|---|
-| `add` | Validates every spec; assigns `seq` from the explicit `next_seq_` member (never reused), `group` = the first `seq` of the call; appends. **If the cursor is not at the end, the redo tail moves to `discarded()` first** (it can no longer be redone, but nothing is deleted: the full history is `discarded() + active() + redo_tail()`, so a persisted log stays append-only and seqs are never reused). One call = one group = one undo step. A drag gesture batches its ticks in the tool and calls `add` once on release. Errors: `invalid_argument` (empty group, invalid spec). |
+| `add` | Validates every spec; assigns `seq` from the explicit `next_seq_` member (never reused), `group` = the first `seq` of the call; appends. **If the cursor is not at the end, the redo tail moves to `discarded()` first** (it can no longer be redone, but nothing is deleted: the full history is the union of `discarded()`, `active()` and `redo_tail()` ordered by seq, so a persisted log stays append-only and seqs are never reused). `discarded()` is strictly increasing in seq, group-contiguous and seq-disjoint from the rest. One call = one group = one undo step. A drag gesture batches its ticks in the tool and calls `add` once on release. Errors: `invalid_argument` (empty group, invalid spec). |
 | `reset` | One `reset` edit per category, origin `"reset"`, targeting all the notes, in one group. Keeps history. Errors: `invalid_argument` for empty note or category lists. |
 | `undo` / `redo` | Move the cursor over one whole group. Nothing is deleted. Error: `out_of_range` when there is nothing to undo or redo. |
 | `retargeted` | Rewrites `note_ids` through a `NoteIdMap` (old id → new ids), in all three partitions (active, redo tail, discarded). Ids absent from the mapping, or mapped to nothing, move to `orphaned_note_ids` (they never come back). Same seqs, groups and cursor. Duplicates in the result are removed. |
-| `from_parts` | `EditListParts {track, edits, cursor, discarded, next_seq}`. For persistence (Phase 7) and tests. Errors: `corrupt_data` if `seq` is not strictly increasing, `next_seq` is not above every seq, a group is not contiguous, a spec is invalid or the cursor is past the end. Recorded (retargeted) edits with only orphaned ids are valid. |
+| `from_parts` | `EditListParts {track, edits, cursor, discarded, next_seq}`. For persistence (Phase 7) and tests. Errors: `corrupt_data` if `seq` is not strictly increasing in `edits` or in `discarded`, the two overlap in seq, `next_seq` is not above every seq, a group is not contiguous, a spec is invalid or the cursor is past the end. Recorded (retargeted) edits with only orphaned ids are valid. |
 | Pure? | Yes. Every method returns a new list; nothing mutates. Copy is O(n) in the edit count (see Open questions). |
 | Thread safety | Concurrent const access is safe. |
 | Real-time safe | No (allocates). |
@@ -304,7 +304,9 @@ derivative at an anchor), `anchors() -> span<const Anchor>`, `is_identity()`.
      neutral and the note stays bit-exact passthrough (CLAUDE.md rule 5);
   3. `center = note.pitch_center + center_offset`;
   4. if both fades are 0, `fade_shape` is the neutral value (equal-sounding states compare equal);
-  5. `is_edited` = any field differs from neutral (exact comparison after the snap).
+  5. `is_edited` = any field differs from neutral (exact comparison after the snap). For the pitch
+     it is the snapped folded offset that is compared with 0 (the offset is a fold-internal value;
+     `EffectiveNote` stores only `center`).
 - Precondition: `note.track_id == edits.track_id()` (`ANNO_EXPECTS`). Edits that name unknown ids
   simply never match. Orphaned ids are ignored by the fold.
 - Pure; real-time safe: **no** (allocates for `handles`, copies the id).
@@ -320,8 +322,8 @@ derivative at an anchor), `anchors() -> span<const Anchor>`, `is_identity()`.
   `[source_start − margin, source_end + margin]` is dirty.
 - If a *timing* field differs (`onset_shift`, `length_scale`, `handles`, `attack_time_scale`), the
   TimeMap changes there and overlap repair can cascade later notes. Conservatively, everything from
-  the end of the previous active note (or the origin for the first note) to the end of the last
-  active note plus margin is dirty. This is deliberately coarse; a TimeMap diff can replace it in
+  the end of the previous active note (or the origin for the first note) to `params.source_end` (the
+  end of the recording, so the tail after the last note is included) is dirty. This is deliberately coarse; a TimeMap diff can replace it in
   Phase 5 without an API change.
 - Result: sorted, merged, non-overlapping ranges, clamped at the source origin.
 - Errors: `invalid_argument` if the two lists have different `track_id`s or a note's `track_id`
@@ -383,14 +385,20 @@ Phase 11 → `invalid_argument`), and the edit list (`track_id` must match).
      Phase 1).
 3. Merge coincident source points (a note starting at 0, abutting notes, a zero-length attack, a
    release at the end): one anchor remains, with the **later** `output` of the candidates, which
-   stretches the earlier segment rather than creating a jump.
-4. Repair, left to right, with `min_segment` as the minimum output spacing between consecutive
-   anchors:
-   - if a note's first anchor is not at least `min_segment` after the previous anchor's output, the
-     **whole note shifts later**, keeping its attack segment's shape (consonant protection);
+   stretches the earlier segment rather than creating a jump. For abutting notes A then B, if
+   A's end output exceeds B's desired start output, B is **rigidly shifted** (all of B's anchors by
+   the same amount) so that B's start equals A's end; B's internal shape (attack, body, handles) is
+   preserved. If B's desired start is later, A's end is moved to it (A's body stretches).
+4. Repair, left to right. `min_segment` is enforced **only on segments whose output length differs
+   from their source length** (an untouched segment keeps its source length even when shorter than
+   `min_segment`, so an unedited note with sub-millisecond gaps stays `output == source` unless an
+   earlier edited note pushes it, which the coarse dirty range already covers):
+   - if a note's first anchor is not at least `min_segment` after the previous anchor's output
+     (and the previous segment is edited), the **whole note shifts later** rigidly, keeping its
+     attack segment's shape (consonant protection);
    - a handle whose target does not fit strictly between its neighbours is clamped; if no room
      remains it is dropped;
-   - a body shorter than `min_segment` is extended to `min_segment`;
+   - an edited body shorter than `min_segment` is extended to `min_segment`;
    - each repaired note (shifted, clamped, dropped or extended) counts once in `repaired_notes`.
    Negative shifts before the origin, crossing handles and zero-length segments are ordinary user
    input handled here; none is an error.
@@ -442,10 +450,10 @@ None in Phase 1 (nothing renders). The contracts here fix what Phase 2+ must hon
 7. `add` after `undo` discards the redo tail (linear undo).
 8. `created_at` is a parameter of `add`, not read from the clock, so the list stays pure and
    deterministic.
-9. `EffectiveNote` additionally carries `center_offset`, `onset_shift`, `length_scale`, `handles`
+9. `EffectiveNote` additionally carries `onset_shift`, `length_scale`, `handles`
    (the TimeMap needs them); lacks `harmonic_gains_db` until Phase 12.
 10. `dirty_regions` takes the notes.
-11. Free functions `validate(...)`, `find_note`, `match_notes`; `TimeMap::repair_count`.
+11. Free functions `validate(...)`, `find_note`, `match_notes`.
 12. `AnalysisResult` omits `beats`, `tempo`, `key`, `chords` until Phase 8.
 13. `TimeMap` lives in `core/types` (layer 0) and `build_time_map` in `core/timemap` (spec §4.4
     lists it under edits). `Anchor`/handle are one `TimePair`; `TimeMapBuild` carries the repair
@@ -475,7 +483,7 @@ Test names describe behaviour; tolerances in `tests/tolerances.h` (new engineeri
 - **Unit**
   - validators: each rejected shape has a test;
   - param table: every `EditParam` has a category, kind and neutral;
-  - `EditList`: add/undo/redo/reset/from_parts, group contiguity, redo-tail kept in `discarded()`
+  - `EditList`: add/undo/redo/reset/from_parts, double branching (A B C, undo, add D, add E F, undo, add G), group contiguity, redo-tail kept in `discarded()`
     with seqs never reused, `retargeted`, retarget → `from_parts` round trip, orphan-only edits;
   - `effective_state`: each parameter's op semantics, ignoring other notes, ignoring the undone tail;
   - `TimeMap`: forward/inverse/slope on hand-built anchors, `from_anchors` rejections;
@@ -507,11 +515,24 @@ Answered by a safe default now; a human decides at audit #1. Each is cheap to ch
 4. **Default `FadeShape`** (neutral): `linear` chosen arbitrarily; Phase 6 may change it.
 5. **`EditList` copy cost** is O(n) per `add`. Fine for thousands of edits; a persistent structure
    can replace the vector internally without an API change.
-6. **Match thresholds** (`keep_overlap` 0.8, `child_coverage` 0.5) are untuned guesses until Phase 7
+6. **Handles are absolute output targets.** Moving a note with `onset_shift` leaves its handles
+   behind (they may then be clamped or dropped). A relative handle would follow the note. Tools
+   could re-emit handles when they move a note; which is wanted?
+7. **Overlap push policy** is open question 1; both 6 and 1 are product behaviour, not data model.
+8. **Match thresholds** (`keep_overlap` 0.8, `child_coverage` 0.5) are untuned guesses until Phase 7
    has real re-analysis data.
 
 ## Review log
 ### Round 1 — CHANGES REQUIRED (7 blocking, 9 should-fix, 6 notes)
+- Round 2 (4 blocking, all document edits, applied): stale layer-3 rows and signatures unified
+  (`Result<TimeMapBuild>`, `TimePair`); `min_segment` repair only on edited segments and rigid
+  shift for abutting notes (identity of unedited notes); `dirty_regions` extends to
+  `DirtyParams::source_end`; `center_offset` removed from decision 9 and ADR. Reviewer conditions
+  for proceeding with ADR-0005 `proposed`: (1) no `EditList` persistence format in Phase 7 until a
+  human accepts the ADR, (2) no spec edits until then, (3) the Phase 1 review records the ADR as
+  provisional and the exit gate as conditional, (4) handle/overlap policies in Open questions
+  (done). Decisions that must not be frozen without a human: no `id` / seq identity, per-parameter
+  `set`, `discarded()` history.
 - B1 (ADR acceptance): cannot be resolved without a human. Mitigated by choosing the ROADMAP-closest
   options and listing the decisions in "Open questions"; ADR-0005 stays `proposed`. **Needs a human.**
 - B2: `TimeMap` moved to `core/types`; builder stays in `core/timemap`.
