@@ -1,8 +1,8 @@
 # Phase 2 review: Render pipeline skeleton (passthrough)
 
-- **Status:** DRAFT. Not closed: CI on `phase-2` and a human look at the open items below are
-  pending. ROADMAP "Current phase" and the `phase-2` tag are not set.
-- **Branch:** `phase-2` (pushed)
+- **Status:** CLOSED 2026-10-19. CI green on `phase-2` (run 39255721167: Linux, macOS, Windows, tidy,
+  format). The open items below are carried forward, not blockers.
+- **Git tag:** `phase-2`
 
 ## Built
 Design note: [`docs/design/phase2-render-skeleton.md`](../design/phase2-render-skeleton.md).
@@ -28,7 +28,7 @@ ADRs: 0006 (render API), 0007 (nlohmann/json), both accepted by the owner.
 | Structure review of the design note | Round 1 CHANGES REQUIRED (6 blocking), round 2 CHANGES REQUIRED (3 blocking), all fixed before coding | design note, Review log |
 | Build + tests, ASan/UBSan, TSan, release | 303/303 locally in each preset | local runs |
 | clang-tidy, clang-format, include/layer check | clean on changed files (tidy found ~60 style findings in new code; all fixed) | local runs |
-| CI (Linux, macOS, Windows, tidy) | pending for `phase-2` | `gh run list --branch phase-2` |
+| CI (Linux, macOS, Windows, tidy) | Green (after fixing a Phase 1 contract test that probed one ulp past the range end on Linux, and missing includes) | run 39255721167 |
 | Objective audio checks | Pass (null, undo-null, untouched, click calibration, sanity, determinism, length); audio-verifier report | `audition/phase2-passthrough/` |
 | Human listening | not required: no engine changes audio yet (passthrough is bit-exact; the test gain engine is not in `src/`). A package was built for the CLI path | `audition/phase2-passthrough/INDEX.md` |
 | Structure audit | not due (Phases 1, 5, 9, 12) | |
@@ -63,7 +63,6 @@ or pitch round-trip yet (no engine).
 `cli/checks` extracted so `audition` and the tests share one implementation of the measurements;
 `scenario_json` parse functions split to stay under the cognitive-complexity limit.
 
-## To close the phase
-1. CI green on `phase-2`.
-2. Owner decides the `phase-1` tag question and the open items above.
-3. Set ROADMAP "Current phase" to 3, tag `phase-2`, push.
+## Closing
+Done: CI green, ROADMAP current phase set to 3, tag `phase-2`. Still the owner's call: moving the
+`phase-1` tag (needs a force-push) and the open items above.

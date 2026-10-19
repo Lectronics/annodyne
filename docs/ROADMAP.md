@@ -2,7 +2,7 @@
 
 This is the plan Claude Code follows to build the editor. It is ordered so that **structure is settled and checked before code depends on it**, and so that **something audible exists early** and gets listened to at every stage.
 
-**Current phase:** Phase 2 *(update this line when a phase closes)*
+**Current phase:** Phase 3 *(update this line when a phase closes)*
 
 ---
 
