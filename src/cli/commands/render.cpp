@@ -4,6 +4,8 @@
 #include "core/io/wav.h"
 #include "core/synthesis/passthrough/passthrough_engine.h"
 
+#include <memory>
+
 namespace anno::cli {
 
 Result<EngineChoice> parse_engine(std::string_view name) {

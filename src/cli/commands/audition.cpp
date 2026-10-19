@@ -10,6 +10,9 @@
 #include <cmath>
 #include <format>
 #include <fstream>
+#include <memory>
+#include <string>
+#include <utility>
 
 namespace anno::cli {
 

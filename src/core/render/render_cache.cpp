@@ -2,6 +2,7 @@
 
 #include "core/types/contract.h"
 
+#include <memory>
 #include <utility>
 
 namespace anno {
