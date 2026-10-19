@@ -1,7 +1,7 @@
 # Design note: Phase 3 — note segmentation, pitch description, loudness
 
 - **Phase:** 3
-- **Status:** draft
+- **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §3 (`Note`), §4.2 (`segment_notes`, `perceived_pitch`, `decompose_pitch_curve`, `measure_loudness`); implementation guide B3, B4, B13; ROADMAP Phase 3
 - **Folders / CMake targets:** `src/core/analysis/segmentation`, `perceived_pitch`, `loudness` (layer 1; link `core/types`, `core/dsp`)
 - **Depends on:** `phase3-dsp.md`, `phase3-pitch-onsets.md`
@@ -176,3 +176,12 @@ None.
 
 ## Review log
 *(structure-reviewer findings go here)*
+
+## Implementation notes
+- `SegmentParams::onset_boost` was replaced by `onset_new_note_prob` (0.98): an onset is modelled as strong evidence, so at the frames within +-10 ms of an onset the new-note probability is 0.98 and the stay probability drops to its floor. A multiplier on a 1e-3 prior could not split a repeated same-pitch note (the HMM has no emission difference between "same note" and "new note of the same pitch"); the likelihood-ratio view needs ~1e4.
+- A new note from a stable state goes 80 % to pitches within +-1 semitone and 20 % to any other (`note_hmm.cpp`).
+- Short runs are absorbed **right to left** into the following adjacent run (a glide chain collects onto the note it reaches), else into a preceding long run, else dropped; the minimum is the longer of `min_note` and 10 pitch frames.
+- `confidence_prob` = mean voicing probability over the note x the share of its voiced frames within 60 cents of its pitch (the "Viterbi margin" of the draft was not implemented).
+- `note_grid` uses an epsilon of 1e-9 frames when rounding, so a time that is an exact multiple of the hop is not pushed to the next frame.
+- `decompose_pitch_curve` and `perceived_pitch` share `TrimParams` and `StabilityWeightParams` (one definition). Loudness: per-block absolute gate over [attack_end, source_end] with no relative gate (ADR-0010 item 3).
+- Test fixtures: `tests/support/synth_melody.h` builds exact f0 tracks (no estimator in the loop) for the segmentation tests; `synth_signals.h` has the audio generators.

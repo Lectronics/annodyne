@@ -1,7 +1,7 @@
 # Design note: Phase 3 — core/dsp signal basics
 
 - **Phase:** 3
-- **Status:** draft
+- **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §4.1 (signal basics); implementation guide B2 (STFT use), B13 (K-weighting); ADR-0009 (pocketfft)
 - **Folder / CMake target:** `src/core/dsp` (layer 0; links `core/types`, private dep `pocketfft`)
 
@@ -140,3 +140,11 @@ None blocking. Sample-rate conversion quality is verified on tones only; a liste
 
 ## Review log
 *(structure-reviewer findings go here)*
+
+## Implementation notes
+- The pocketfft header is `pocketfft_hdronly.h` (pinned commit in `cmake/AnnoPocketfft.cmake`). The fixture layer rules `allow_dsp_pocketfft` / `deny_analysis_pocketfft` pass.
+- `RealFft` wraps pocketfft's function API (`r2c` / `c2r`); the class holds only the length.
+- The K-weighting filter has **+0.691 dB** gain at 1 kHz (not 0 dB): that is where the -0.691 in the LUFS formula comes from. The test pins +0.691 +- 0.1 dB at 44.1, 48 and 96 kHz, a -3.01 LUFS reading for a full-scale mono sine, and about -6 dB at 38 Hz (the high-pass has Q = 0.5).
+- `interp_curve` is unit-agnostic and propagates NaN; `read_mono` mixes by the mean (antiphase stereo gives silence).
+- `-ffp-contract=off` is also set on every `core/analysis/*` target.
+- Tolerances for these tests live in `tests/tolerances.h` (analysis DSP block).

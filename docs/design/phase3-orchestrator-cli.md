@@ -1,7 +1,7 @@
 # Design note: Phase 3 — analyse(), the CLI command, golden metrics
 
 - **Phase:** 3
-- **Status:** draft
+- **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §4.2 (`analyse` orchestrator), §3 (`AnalysisResult`); ROADMAP Phase 3 (`anno-cli analyse`, plot export, golden checks); `docs/AUDIO_VERIFICATION.md` §1
 - **Folders / CMake targets:** `src/core/analysis/orchestrator` (layer 1), `src/cli/commands/analyse` (layer 7; nlohmann via ADR-0007), `tests/support/analysis_metrics.h`, `tests/golden/`
 
@@ -79,3 +79,9 @@ None: analysis does not render. No audio-verifier run is needed; the audio check
 
 ## Review log
 *(structure-reviewer findings go here)*
+
+## Implementation notes
+- CLI targets: `cli/analysis_json` (nlohmann, private), `cli/plot` (no third-party code), `cli/commands/analyse`. The JSON writer builds `Json(nullptr)` / `Json(v)` with parentheses: `Json{v}` makes a one-element array (an nlohmann initializer-list pitfall found by the test).
+- `anno-cli analyse <file.wav> [--json f] [--plot-dir d] [--pitch-track] [--track-id id]`; exit codes 0 / 1 / 2 as the other commands (process tests `anno_cli.analyse_*`).
+- The golden test (`tests/golden/golden_vocals_test.cpp`) prints a warning and passes when no recordings are present; `ANNO_REQUIRE_GOLDEN=<n>` makes the inventory test fail unless n complete recordings (wav + notes.json + pitch.json) exist. The Phase 3 close requires 3.
+- `analyse()` result is a `shared_ptr<const AnalysisResult>`; it is deterministic (hash test), leaves the source untouched, and every note passes the completeness contract test (grid frames, curve lengths, finite loudness and pitch).

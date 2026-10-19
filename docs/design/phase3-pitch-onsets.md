@@ -1,7 +1,7 @@
 # Design note: Phase 3 — pitch (f0) tracking and onset detection
 
 - **Phase:** 3
-- **Status:** draft
+- **Status:** implemented (reviewed in two rounds; see Review log and Implementation notes)
 - **Spec sections:** architecture §3 (`PitchTrack`, `OnsetList`), §4.2 (`detect_pitch`, `detect_onsets`); implementation guide B1, B2; ROADMAP Phase 3
 - **Folders / CMake targets:** `src/core/analysis/pitch` and `src/core/analysis/onsets` (layer 1; link `core/types`, `core/dsp`)
 - **Depends on:** `phase3-dsp.md`
@@ -118,3 +118,18 @@ None (analysis only).
 
 ## Review log
 *(structure-reviewer findings go here)*
+
+## Implementation notes
+**Pitch**
+- Files: `pitch_estimator` (interface, `detect_pitch`), `pyin` (orchestration, lag-centre correction), `pyin_observe` (candidates), `pitch_hmm` (Viterbi), `yin` (difference function by FFT autocorrelation). `PYinParams` is held by `PYinEstimator`; `PitchParams` is generic.
+- `octave_penalty` was **dropped**: any jump larger than `max_jump_cents` costs -log(`jump_prob`) = 9.2 nats, which already makes an octave jump improbable, and a separate penalty on the "any jump" path would need an O(bins^2) loop. Octave alternatives come from weak octave candidates (mass 1e-3 of the strongest) and the exclusion-based alternate paths.
+- `voicing_prob` is the observed voiced mass of the frame (sum of candidate masses), forced to the side of 0.5 chosen by the Viterbi path (>= 0.5 on voiced frames, < 0.5 on unvoiced); `confidence_prob` is the chosen candidate's mass (voiced) or the unvoiced mass.
+- YIN measures at the middle of its two windows (frame time + lag / 2); each voiced run is resampled back onto the frame grid (`compensate_lag_centre`), which keeps vibrato and glides within the 10-cent gate at low pitches.
+- Refinement is the parabolic peak of the normalised cross-correlation (no fractional-lag search was needed). **Measured:** stationary harmonic tones 80-1200 Hz at 44.1 and 48 kHz: maximum error 0.92 cents (gate 3 cents).
+- Debug-ASan cost: the `pitch_test` binary takes about 25 s (every case runs 0.6-1 s of audio at 200 frames/s); release is far faster than real time.
+
+**Onsets**
+- `OnsetParams::window` (43 ms) replaced `n_fft`; `min_activation` (0.15) was added; `log_lambda` is 1000 (magnitudes of a [-1, 1] signal) and `refine_window` 25 ms (the activation peak lags the true onset by up to half the STFT window).
+- A peak where the signal is clearly louder at the start of the refinement region than at its end is an **offset** and is dropped (spectral flux responds to the end of a note). A spectral onset **without** a 6 dB energy rise (legato) that meets a pitch-change onset within `min_gap` is that pitch change; one **with** an energy rise wins.
+- Pitch-change onsets are found between two voiced frames separated by at most 60 ms of unvoiced frames (the f0 estimate blends across a step: a 200-cent legato step is unvoiced for about 35 ms), each side voiced and stable for 40 ms; strength = step / 80 cents.
+- SuperFlux's frequency max filter is demonstrated on +-200 cents vibrato with 25 partials (plain flux: 5 onsets, SuperFlux: at most 1); +-300 cents defeats both.
