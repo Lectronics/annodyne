@@ -21,6 +21,10 @@ constexpr ParamInfo multiplier_row(EditParam p, EditCategory c, double min, doub
                                    double scale_min) {
     return {p, c, ValueKind::ratio, false, true, 1.0, min, max, scale_min};
 }
+/// An amount in [min, max] with neutral 0: set only (scaling a neutral 0 means nothing).
+constexpr ParamInfo amount_row(EditParam p, EditCategory c, double min, double max) {
+    return {p, c, ValueKind::ratio, false, false, 0.0, min, max, -k_inf};
+}
 constexpr ParamInfo keyed_row(EditParam p, EditCategory c, ValueKind k) {
     return {p, c, k, false, false, 0.0, -k_inf, k_inf, -k_inf};
 }
@@ -37,7 +41,7 @@ constexpr std::array<ParamInfo, k_edit_param_count> k_table{{
     multiplier_row(EditParam::transition_out_scale, EditCategory::transition, 0.0, k_inf, -k_inf),
     offset_row(EditParam::formant_offset, EditCategory::formant, ValueKind::cents),
     offset_row(EditParam::gain, EditCategory::amplitude, ValueKind::decibels),
-    multiplier_row(EditParam::within_note_flatten, EditCategory::amplitude, 0.0, 1.0, 0.0),
+    amount_row(EditParam::within_note_flatten, EditCategory::amplitude, 0.0, 1.0),
     offset_row(EditParam::fade_in, EditCategory::fade, ValueKind::seconds, 0.0),
     offset_row(EditParam::fade_out, EditCategory::fade, ValueKind::seconds, 0.0),
     keyed_row(EditParam::fade_shape, EditCategory::fade, ValueKind::fade_shape),

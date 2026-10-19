@@ -5,6 +5,10 @@ anno_add_test(NAME audio_source_test SOURCES audio_source_test.cpp LABELS unit D
 anno_add_test(NAME analysis_types_test SOURCES analysis_types_test.cpp LABELS unit DEPS anno::core_types)
 anno_add_test(NAME edit_types_test SOURCES edit_types_test.cpp LABELS unit DEPS anno::core_types)
 anno_add_test(NAME time_map_test SOURCES time_map_test.cpp LABELS unit DEPS anno::core_types)
+anno_add_test(NAME edit_list_test SOURCES edit_list_test.cpp LABELS unit DEPS anno::core_edits)
+anno_add_test(NAME effective_state_test SOURCES effective_state_test.cpp LABELS unit DEPS anno::core_edits)
+anno_add_test(NAME dirty_regions_test SOURCES dirty_regions_test.cpp LABELS unit DEPS anno::core_edits)
+anno_add_test(NAME remap_test SOURCES remap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME wav_test SOURCES wav_test.cpp LABELS unit DEPS anno::core_io)
 anno_add_test(NAME cli_info_test SOURCES cli_info_test.cpp LABELS unit DEPS anno::cli_commands)
 

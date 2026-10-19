@@ -20,9 +20,12 @@ TEST_CASE("every_param_has_a_consistent_table_row", "[edit_types]") {
         const ParamInfo& info = param_info(param);
         CHECK(info.param == param);
         CHECK_FALSE((info.allows_add && info.allows_scale));
-        if (info.kind == ValueKind::ratio) {
-            CHECK(info.allows_scale);
+        if (info.kind == ValueKind::ratio && info.allows_scale) {
             CHECK(info.neutral == 1.0);
+        }
+        if (param == EditParam::within_note_flatten) {  // an amount: set only, neutral 0
+            CHECK_FALSE(info.allows_scale);
+            CHECK(info.neutral == 0.0);
         }
         if (info.kind == ValueKind::cents || info.kind == ValueKind::decibels ||
             info.kind == ValueKind::seconds) {
@@ -66,6 +69,9 @@ TEST_CASE("spec_rejects_ops_the_parameter_does_not_allow", "[edit_types]") {
                     .has_value());
     CHECK_FALSE(validate(make_spec("a", EditCategory::pitch_mod, EditParam::mod_scale, EditOp::add,
                                    Ratio{0.1}))
+                    .has_value());
+    CHECK_FALSE(validate(make_spec("a", EditCategory::amplitude, EditParam::within_note_flatten,
+                                   EditOp::scale, Ratio{0.5}))
                     .has_value());
     CHECK_FALSE(validate(make_spec("a", EditCategory::fade, EditParam::fade_shape, EditOp::add,
                                    FadeShape::linear))

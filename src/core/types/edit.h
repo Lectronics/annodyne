@@ -84,7 +84,7 @@ struct ParamInfo {
     EditCategory category;
     ValueKind kind;
     bool allows_add;    // offsets (cents, decibels, seconds)
-    bool allows_scale;  // multipliers (ratio)
+    bool allows_scale;  // multipliers (ratio with neutral 1); amounts such as within_note_flatten allow set only
     double neutral;     // 0 for offsets, 1 for multipliers; unused for fade_shape/time_handle
     double set_min;     // legal range of a `set` value (inclusive)
     double set_max;
