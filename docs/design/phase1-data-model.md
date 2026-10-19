@@ -1,7 +1,7 @@
 # Design note: Phase 1 — data model and edit contracts
 
 - **Phase:** 1
-- **Status:** draft
+- **Status:** implemented (see "Implementation notes" for the differences from the text above)
 - **Spec sections:** architecture spec §3 (types), §4.4 (edits), §5.1–5.4, §5.7; ROADMAP Phase 1;
   ADR-0002, ADR-0003, ADR-0005 (proposed with this note)
 - **Folder / CMake target:**
@@ -546,3 +546,25 @@ Answered by a safe default now; a human decides at audit #1. Each is cheap to ch
   `TimePair`; S8: `TimeMapBuild`; S9: batching in tool, `reset` origin, `center_offset` dropped,
   track precondition, grid equality, extra tests.
 - N1: ambiguity degrades to orphan reports; N2/N3 recorded in ADR-0005.
+
+## Implementation notes (differences found while building)
+- `within_note_flatten` is an *amount*: set only (plus reset), neutral 0, range 0..1. The table in
+  "Edit types" lists multipliers as `set`/`scale`; flatten is the exception (`ParamInfo` with
+  `allows_scale == false`). Scaling a neutral 0 means nothing.
+- `EditList::add` keeps `discarded()` **sorted by seq**. Appending the redo tail is not enough: when
+  undo goes past an older branch point the tail holds older seqs than earlier discarded edits.
+  Found by the history property test; regression test in `edit_list_test`.
+- `EditListParts` and `EditList::to_parts()` (the inverse of `from_parts`) are public.
+- `match_notes` takes `std::span<const Note>` for old and new notes (not `AnalysisResult`) so it is
+  testable with plain notes; `remap_after_reanalysis` still takes the analyses.
+- `NoteMatching` holds `RemapEntry`s (there is no separate `RemapReport`).
+- The snap constants (`k_neutral_snap_offset`, `k_neutral_snap_ratio`) and `k_min_time_scale`,
+  `k_handle_key` are production constants (in `effective_note.h` / `edit.h`), not test tolerances.
+  `tests/tolerances.h` got `k_fold_commute_abs` and `k_fold_commute_rel`.
+- A nested track grid in a `Note` may be empty (`n_frames == 0`) or equal to `Note::grid`
+  (Phase 1 notes have no harmonic/noise/envelope data yet).
+- `build_time_map` counts a note as repaired when it was shifted, when a coincident boundary was
+  stretched to meet a later start, or when an internal handle/segment was clamped. A cascade counts
+  every pushed note.
+- Test counts at implementation: 159 unit + 44 contract tests (203 total in the Phase 1 slice; 83
+  from Phase 0 included in those counts). The contract tests run 300 seeded cases per property.
