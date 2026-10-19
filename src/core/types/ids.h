@@ -19,6 +19,14 @@ struct NoteId {
     friend auto operator<=>(const NoteId&, const NoteId&) = default;
 };
 
+/// Stable identity of a recording's content. Compare for equality only; the text format is not
+/// part of the contract.
+struct SourceId {
+    std::string value;
+
+    friend auto operator<=>(const SourceId&, const SourceId&) = default;
+};
+
 /// Identity of a track. One EditList and one TimeMap exist per track.
 struct TrackId {
     std::string value;

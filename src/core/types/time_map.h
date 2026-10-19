@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/types/edit.h"
 #include "core/types/result.h"
+#include "core/types/time_pair.h"
 #include "core/types/units.h"
 
 #include <span>
@@ -26,7 +26,8 @@ public:
     /// strictly increasing in both source and output. Not real-time safe (allocates).
     [[nodiscard]] static Result<TimeMap> from_anchors(std::vector<TimePair> anchors);
 
-    /// M(s). Pre: s finite. Identity maps return their input exactly. Real-time safe.
+    /// M(s). Pre: s finite (not enforced; garbage in, garbage out). Identity maps return their
+    /// input exactly. Real-time safe.
     [[nodiscard]] OutputTime to_output(SourceTime s) const noexcept;
 
     /// M^-1(tau). Pre: tau finite. M^-1(M(s)) == s within 1e-9 s. Real-time safe.

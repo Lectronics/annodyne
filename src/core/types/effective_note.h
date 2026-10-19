@@ -54,7 +54,8 @@ struct EffectiveNote {
     friend bool operator==(const EffectiveNote&, const EffectiveNote&) = default;
 };
 
-/// |offset| at or below this is snapped to 0 by the fold (floating-point dust from +a +b -(a+b)).
+/// |offset| at or below this (in the offset's own unit: cents, dB or seconds) is snapped to 0 by
+/// the fold (floating-point dust from +a +b -(a+b)).
 inline constexpr double k_neutral_snap_offset = 1e-9;
 /// A multiplier within this of 1 is snapped to 1 by the fold.
 inline constexpr double k_neutral_snap_ratio = 1e-12;

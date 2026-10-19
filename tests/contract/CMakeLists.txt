@@ -3,17 +3,17 @@ anno_add_test(NAME result_contract_test SOURCES result_contract_test.cpp LABELS 
 
 anno_add_test(NAME edit_model_contract_test SOURCES edit_model_contract_test.cpp LABELS contract DEPS anno::core_edits)
 anno_add_test(NAME time_map_contract_test SOURCES time_map_contract_test.cpp LABELS contract DEPS anno::core_timemap)
-anno_add_test(NAME dirty_regions_contract_test SOURCES dirty_regions_contract_test.cpp LABELS contract DEPS anno::core_edits)
+anno_add_test(NAME dirty_regions_contract_test SOURCES dirty_regions_contract_test.cpp LABELS contract DEPS anno::core_timemap)
 anno_add_test(NAME remap_contract_test SOURCES remap_contract_test.cpp LABELS contract DEPS anno::core_edits)
 
 # ---- Precondition aborts (ANNO_EXPECTS) -------------------------------------------------------
 add_executable(contract_violation_cases contract_violation_cases.cpp)
-target_link_libraries(contract_violation_cases PRIVATE anno::core_types anno_warnings)
+target_link_libraries(contract_violation_cases PRIVATE anno::core_edits anno_warnings)
 
 set(violation_cases
     to_samples_nan to_samples_zero_rate to_samples_too_large to_cents_zero_hz to_hz_nan
     to_decibels_inf result_value_on_error result_error_on_value time_range_negative_duration
-    audio_buffer_bad_channel)
+    audio_buffer_bad_channel effective_state_track_mismatch)
 foreach(case IN LISTS violation_cases)
     add_test(NAME contract_violation.${case}
         COMMAND ${CMAKE_COMMAND} -DHELPER=$<TARGET_FILE:contract_violation_cases> -DCASE=${case}

@@ -74,7 +74,8 @@ public:
 
     /// Rewrites target note ids through `mapping` in every edit (active, tail, discarded). An id
     /// mapped to a non-empty vector is replaced by those ids; an id absent from the map, or mapped
-    /// to nothing, moves to orphaned_note_ids and never comes back. Duplicates are removed; seqs,
+    /// to nothing, moves to orphaned_note_ids; if a later mapping makes that id live again it
+    /// leaves orphaned_note_ids (a target is never in both lists). Duplicates are removed; seqs,
     /// groups, cursor and next_seq are unchanged. A pure bookkeeping step: nothing is dropped.
     [[nodiscard]] EditList retargeted(const NoteIdMap& mapping) const;
 

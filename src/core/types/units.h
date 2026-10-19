@@ -193,7 +193,7 @@ template <class Axis>
 }
 
 /// Absolute pitch in cents (A4 = 6900) to frequency: a4 * 2^((pitch - 6900) / 1200).
-/// The reference is explicit so a detected tuning (AnalysisResult::tuning_ref_hz) can't be
+/// The reference is explicit so a detected tuning (AnalysisResult::tuning_ref) can't be
 /// ignored silently; pass k_a4_standard_hz for 440 Hz. Pre: pitch finite; a4_reference finite > 0.
 [[nodiscard]] Hz to_hz(Cents pitch, Hz a4_reference) noexcept;
 

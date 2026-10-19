@@ -242,3 +242,28 @@ TEST_CASE("from_parts_rejects_broken_invariants", "[edit_list]") {
     parts.edits[0].spec.origin.clear();  // invalid spec
     CHECK_FALSE(EditList::from_parts(parts).has_value());
 }
+
+TEST_CASE("an_orphaned_id_that_becomes_live_again_leaves_the_orphan_list", "[edit_list]") {
+    // Regression (audit #1 B2): two re-analyses, the second reuses an id the first orphaned.
+    auto spec = pitch_add("a", 1);
+    spec.target.note_ids.push_back(NoteId{"b"});
+    EditList list = added(empty_list(), {spec});
+    NoteIdMap first;
+    first[NoteId{"b"}] = {NoteId{"b"}};  // "a" has no continuation
+    list = list.retargeted(first);
+    REQUIRE(list.active()[0].spec.target.orphaned_note_ids == std::vector<NoteId>{NoteId{"a"}});
+    NoteIdMap second;
+    second[NoteId{"b"}] = {NoteId{"a"}};  // the new analysis reuses the id "a"
+    list = list.retargeted(second);
+    CHECK(list.active()[0].spec.target.note_ids == std::vector<NoteId>{NoteId{"a"}});
+    CHECK(list.active()[0].spec.target.orphaned_note_ids.empty());
+    CHECK(EditList::from_parts(list.to_parts()).has_value());
+}
+
+TEST_CASE("from_parts_rejects_a_group_with_non_consecutive_seqs", "[edit_list]") {
+    EditList list = added(empty_list(), {pitch_add("a", 1), pitch_add("a", 2)});
+    auto parts = list.to_parts();
+    parts.edits[1].seq = EditSeq{5};
+    parts.next_seq = EditSeq{6};
+    CHECK_FALSE(EditList::from_parts(parts).has_value());
+}

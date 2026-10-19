@@ -55,8 +55,9 @@ struct RemapResult {
 };
 
 /// match_notes + EditList::retargeted + a report. Ids that edits target but old_analysis does not
-/// contain are reported as orphaned. Errors: invalid_argument if the analyses have different
-/// source_ids. Pure; thread-safe; not real-time safe.
+/// contain, or contains only as an inactive note, are reported as orphaned. Errors:
+/// invalid_argument if the analyses have different source_ids or the old notes are on another
+/// track than the edit list. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<RemapResult> remap_after_reanalysis(const EditList& edits,
                                                          const AnalysisResult& old_analysis,
                                                          const AnalysisResult& new_analysis,

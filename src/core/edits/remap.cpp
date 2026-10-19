@@ -161,6 +161,12 @@ Result<RemapResult> remap_after_reanalysis(const EditList& edits,
     if (!(old_analysis.source_id == new_analysis.source_id)) {
         return fail(ErrorCode::invalid_argument, "re-analysis must be of the same source");
     }
+    for (const Note& n : old_analysis.notes) {
+        if (!(n.track_id == edits.track_id())) {
+            return fail(ErrorCode::invalid_argument,
+                        "remap_after_reanalysis: the edit list belongs to another track");
+        }
+    }
     const NoteMatching matching = match_notes(old_analysis.notes, new_analysis.notes, params);
     const NoteIdMap map = matching.id_map();
 

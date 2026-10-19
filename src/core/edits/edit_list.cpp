@@ -28,6 +28,9 @@ Result<void> check_partition(const std::vector<Edit>& edits, std::set<std::uint6
         if (!starts_group && !continues) {
             return corrupt("group id must equal the seq of its first edit");
         }
+        if (continues && e.seq.value != edits[i - 1].seq.value + 1) {
+            return corrupt("edits of one group must have consecutive seqs");
+        }
         if (auto r = validate(e.spec); !r) {
             return corrupt("invalid edit: " + r.error().message);
         }
@@ -68,6 +71,11 @@ void retarget_all(std::vector<Edit>& edits, const NoteIdMap& mapping) {
     for (Edit& e : edits) {
         std::vector<NoteId> orphaned = e.spec.target.orphaned_note_ids;
         e.spec.target.note_ids = remapped_ids(e.spec.target.note_ids, mapping, orphaned);
+        // An id that is live again (a later re-analysis reused it) is no longer orphaned: the id is
+        // the identity, and a target must not sit in both lists.
+        std::erase_if(orphaned, [&](const NoteId& id) {
+            return std::ranges::find(e.spec.target.note_ids, id) != e.spec.target.note_ids.end();
+        });
         e.spec.target.orphaned_note_ids = std::move(orphaned);
     }
 }

@@ -26,9 +26,8 @@ struct TimeMapBuild {
 
 /// Builds the track's TimeMap from `notes` (active ones only) and the timing edits in `edits`
 /// (onset_shift, length_scale, attack_time_scale, time_handle).
-///  - The attack segment [source_start, attack_end] is scaled only by attack_time_scale, the rest
-///  of
-///    the note absorbs length_scale (consonant/attack protection); handles inside the body are
+///  - The attack segment [source_start, attack_end] is scaled only by attack_time_scale; the rest
+///    of the note absorbs length_scale (consonant/attack protection); handles inside the body are
 ///    absolute output anchors.
 ///  - Gaps between notes are stretched by interpolation (no silence, no double audio).
 ///  - Collisions are repaired deterministically (the later note is shifted rigidly, a coincident

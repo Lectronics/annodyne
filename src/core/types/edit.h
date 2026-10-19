@@ -2,6 +2,7 @@
 
 #include "core/types/ids.h"
 #include "core/types/result.h"
+#include "core/types/time_pair.h"
 #include "core/types/tracks.h"
 #include "core/types/units.h"
 
@@ -16,15 +17,6 @@
 // Design: docs/design/phase1-data-model.md.
 
 namespace anno {
-
-/// A source instant and where it lands in the output. One anchor of a TimeMap, and one time handle
-/// of a `time_handle` edit.
-struct TimePair {
-    SourceTime source;
-    OutputTime output;
-
-    friend bool operator==(const TimePair&, const TimePair&) = default;
-};
 
 /// Shape of a fade (and of crossfades in core/dsp later).
 enum class FadeShape { equal_power, linear, log };
@@ -78,7 +70,8 @@ enum class ValueKind { cents, ratio, decibels, seconds, fade_shape, time_pair };
 using EditValue =
     std::variant<std::monostate, Cents, Ratio, Decibels, Seconds, FadeShape, TimePair>;
 
-/// Static facts about one parameter. The value type of every op is `kind`.
+/// Static facts about one parameter. The value type of every op is `kind`; the raw numbers
+/// (neutral, ranges) are in the unit of `kind` (cents, decibels, seconds or a plain ratio).
 struct ParamInfo {
     EditParam param;
     EditCategory category;

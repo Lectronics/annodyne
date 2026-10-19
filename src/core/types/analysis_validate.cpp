@@ -17,6 +17,10 @@ Unexpected invalid(std::string message) {
     return fail(ErrorCode::invalid_argument, std::move(message));
 }
 
+bool is_finite_time(SourceTime t) {
+    return std::isfinite(t.unchecked_since_origin().value());
+}
+
 bool is_prob(double p) {
     return p >= 0.0 && p <= 1.0;
 }  // false for NaN
@@ -158,6 +162,15 @@ Result<void> validate(const Note& note) {
     if (note.voice < 0) {
         return invalid("note voice must be >= 0");
     }
+    if (!is_finite_time(note.source_start) || !is_finite_time(note.attack_end) ||
+        !is_finite_time(note.release_start) || !is_finite_time(note.source_end) ||
+        note.source_start < SourceTime{}) {
+        return invalid("note times must be finite and not before the source origin");
+    }
+    if (!std::isfinite(note.perceived_pitch.value()) || !std::isfinite(note.pitch_center.value()) ||
+        !std::isfinite(note.loudness.value())) {
+        return invalid("note pitch and loudness must be finite");
+    }
     if (!(note.source_start <= note.attack_end && note.attack_end <= note.release_start &&
           note.release_start <= note.source_end)) {
         return invalid("note times must satisfy start <= attack_end <= release_start <= end");
@@ -167,6 +180,12 @@ Result<void> validate(const Note& note) {
     }
     if (auto r = validate(note.grid); !r) {
         return r;
+    }
+    const auto finite_cents = [](Cents c) { return std::isfinite(c.value()); };
+    if (!std::ranges::all_of(note.pitch_drift, finite_cents) ||
+        !std::ranges::all_of(note.pitch_mod, finite_cents) ||
+        !std::ranges::all_of(note.amp, [](Decibels d) { return std::isfinite(d.value()); })) {
+        return invalid("note curves must be finite");
     }
     if (!matches(note.grid, note.pitch_drift.size()) ||
         !matches(note.grid, note.pitch_mod.size()) || !matches(note.grid, note.amp.size())) {

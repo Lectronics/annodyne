@@ -254,3 +254,89 @@ TEST_CASE("creation_time_never_influences_the_fold", "[effective_state]") {
     const EditList two = EditList{TrackId{"t1"}}.add(g, WallTime{} + std::chrono::hours(5)).value();
     CHECK(effective_state(note, one) == effective_state(note, two));
 }
+
+namespace {
+
+/// The EffectiveNote field a scalar parameter maps to (center_offset as center - analysed centre).
+double field_of(const EffectiveNote& e, const Note& note, EditParam p) {
+    switch (p) {
+    case EditParam::center_offset: return (e.center - note.pitch_center).value();
+    case EditParam::mod_scale: return e.mod_scale.value();
+    case EditParam::drift_scale: return e.drift_scale.value();
+    case EditParam::transition_in_scale: return e.transition_in_scale.value();
+    case EditParam::transition_out_scale: return e.transition_out_scale.value();
+    case EditParam::formant_offset: return e.formant_offset.value();
+    case EditParam::gain: return e.gain.value();
+    case EditParam::within_note_flatten: return e.within_note_flatten.value();
+    case EditParam::fade_in: return e.fade_in.value();
+    case EditParam::fade_out: return e.fade_out.value();
+    case EditParam::noise_gain_voiced: return e.noise_gain.voiced.value();
+    case EditParam::noise_gain_sibilant: return e.noise_gain.sibilant.value();
+    case EditParam::noise_gain_breath: return e.noise_gain.breath.value();
+    case EditParam::noise_gain_plosive: return e.noise_gain.plosive.value();
+    case EditParam::onset_shift: return e.onset_shift.value();
+    case EditParam::length_scale: return e.length_scale.value();
+    case EditParam::attack_time_scale: return e.attack_time_scale.value();
+    case EditParam::fade_shape:
+    case EditParam::time_handle: break;
+    }
+    return 0.0;
+}
+
+EditValue value_of_kind(ValueKind kind, double v) {
+    switch (kind) {
+    case ValueKind::cents: return Cents{v};
+    case ValueKind::decibels: return Decibels{v};
+    case ValueKind::seconds: return Seconds{v};
+    default: return Ratio{v};
+    }
+}
+
+bool is_scalar(EditParam p) {
+    return p != EditParam::fade_shape && p != EditParam::time_handle;
+}
+
+}  // namespace
+
+TEST_CASE("every_scalar_parameter_maps_to_its_own_field_through_set_add_scale_and_reset",
+          "[effective_state]") {
+    const Note note = make_note("a", 1.0, 2.0, 7000.0);
+    for (int i = 0; i < k_edit_param_count; ++i) {
+        const auto p = static_cast<EditParam>(i);
+        if (!is_scalar(p)) {
+            continue;
+        }
+        INFO("param " << i);
+        const ParamInfo& info = param_info(p);
+        const double v = info.kind == ValueKind::ratio ? 0.5 : 0.25;
+        auto make = [&](EditOp op, const EditValue& value) {
+            return spec(info.category, p, op, value);
+        };
+        const auto fold = [&](const std::vector<std::vector<EditSpec>>& groups) {
+            return effective_state(note, list_with(groups));
+        };
+
+        auto eff = fold({{make(EditOp::set, value_of_kind(info.kind, v))}});
+        CHECK(field_of(eff, note, p) == v);
+        for (int j = 0; j < k_edit_param_count; ++j) {  // no other field moved
+            const auto q = static_cast<EditParam>(j);
+            if (q != p && is_scalar(q)) {
+                CHECK(field_of(eff, note, q) == param_info(q).neutral);
+            }
+        }
+        if (info.allows_add) {
+            eff = fold({{make(EditOp::set, value_of_kind(info.kind, v))},
+                        {make(EditOp::add, value_of_kind(info.kind, v))}});
+            CHECK(field_of(eff, note, p) == 2 * v);
+        }
+        if (info.allows_scale) {
+            eff = fold({{make(EditOp::set, value_of_kind(info.kind, v))},
+                        {make(EditOp::scale, value_of_kind(info.kind, 0.5))}});
+            CHECK(field_of(eff, note, p) == v * 0.5);
+        }
+        eff = fold({{make(EditOp::set, value_of_kind(info.kind, v))},
+                    {make(EditOp::reset, std::monostate{})}});
+        CHECK(field_of(eff, note, p) == info.neutral);
+        CHECK_FALSE(eff.is_edited);
+    }
+}

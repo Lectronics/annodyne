@@ -27,7 +27,7 @@ struct PitchTrack {
 /// Detected onsets, parallel arrays of equal length.
 struct OnsetList {
     std::vector<SourceTime> times;
-    std::vector<double> strength;  // detector units, >= 0
+    std::vector<double> strength;  // dimensionless detector output, >= 0; scale set by the detector
     std::vector<OnsetKind> kind;
 };
 
@@ -54,7 +54,8 @@ struct EnvelopeTrack {
 };
 
 /// Each validate checks the grid and that every array/matrix has grid.n_frames rows/entries (an
-/// empty track, n_frames == 0 with empty arrays, is valid), and probabilities lie in 0..1.
+/// empty track, n_frames == 0 with empty arrays, is valid; NoiseTrack::frame_class may also be
+/// empty when the band matrix has rows), and probabilities lie in 0..1.
 /// Errors: invalid_argument. Pure; thread-safe.
 [[nodiscard]] Result<void> validate(const PitchTrack& track);
 [[nodiscard]] Result<void> validate(const OnsetList& onsets);

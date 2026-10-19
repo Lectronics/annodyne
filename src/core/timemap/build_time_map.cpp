@@ -120,6 +120,10 @@ Result<void> check_notes(std::span<const Note> notes, const EditList& edits) {
         if (!n.is_active) {
             continue;
         }
+        if (auto r = validate(n); !r) {
+            return fail(ErrorCode::invalid_argument,
+                        "build_time_map: invalid note: " + r.error().message);
+        }
         if (!(n.track_id == edits.track_id())) {
             return fail(ErrorCode::invalid_argument, "build_time_map: note is on another track");
         }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/types/audio_source.h"
 #include "core/types/ids.h"
 #include "core/types/note.h"
 #include "core/types/result.h"

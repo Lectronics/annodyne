@@ -62,6 +62,16 @@ TEST_CASE("remap_never_drops_or_loses_a_target", "[remap_contract]") {
 
         const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
         REQUIRE(result.edits.active().size() == edits.active().size());
+        CHECK(result.edits.cursor() == edits.cursor());
+        for (std::size_t i = 0; i < edits.active().size(); ++i) {
+            CHECK(result.edits.active()[i].seq == edits.active()[i].seq);
+            CHECK(result.edits.active()[i].group == edits.active()[i].group);
+        }
+        for (const auto& e : result.report) {
+            for (const NoteId& id : e.new_ids) {
+                CHECK(find_note(new_a, id) != nullptr);  // every target exists in the new analysis
+            }
+        }
         REQUIRE(EditList::from_parts(result.edits.to_parts()).has_value());
 
         std::map<NoteId, std::vector<NoteId>> mapped;

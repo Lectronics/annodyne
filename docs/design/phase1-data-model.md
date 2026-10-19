@@ -296,7 +296,8 @@ derivative at an anchor), `anchors() -> span<const TimePair>`, `is_identity()`.
   - `add`: accumulator += value (offsets only). `scale`: accumulator *= value (multipliers only).
   - `reset`: parameter back to neutral, or all parameters of the category if `param` is empty.
   - `time_handle`: keyed set/remove as described above.
-- Finish (review S4), in this order:
+- Finish (review S4). The code snaps first, then clamps; the result is the same because the
+  clamp bounds are not within snap distance of any value the snap changes:
   1. clamp to the legal range: fade lengths ≥ 0, `within_note_flatten` in [0, 1], `length_scale` and
      `attack_time_scale` ≥ `k_min_time_scale` (1e-3);
   2. snap float dust to neutral: an offset with `|x| <= k_neutral_offset_abs` (1e-9) becomes 0, a
@@ -566,5 +567,32 @@ Answered by a safe default now; a human decides at audit #1. Each is cheap to ch
 - `build_time_map` counts a note as repaired when it was shifted, when a coincident boundary was
   stretched to meet a later start, or when an internal handle/segment was clamped. A cascade counts
   every pushed note.
-- Test counts at implementation: 159 unit + 44 contract tests (203 total in the Phase 1 slice; 83
-  from Phase 0 included in those counts). The contract tests run 300 seeded cases per property.
+- Test counts after audit #1 fixes: 164 unit + 47 contract = 211 tests (Phase 0's 83 included). The
+  property tests run 300 seeded cases each (the 500 in "Tests" above was lowered to keep ASan runs
+  short); the dirty-vs-TimeMap test runs 600.
+- The "Public functions" and "Layer 2" text above predates these; the headers are authoritative.
+
+## Audit #1 fixes (after the first structure audit)
+- `dirty_regions`: the timing range now starts at the previous active note's **start** (was its
+  end). An abutting neighbour's last segment is stretched by the builder, so the end was unsound
+  (18 of 3000 probe scenarios). A contract test now diffs `build_time_map(old)` and `(new)` and
+  requires every moved source instant to be inside the dirty regions.
+- `EditList::retargeted`: an orphaned id that a later mapping makes live again leaves
+  `orphaned_note_ids`, so a target is never in both lists (round trips through `from_parts`).
+  `from_parts` also requires consecutive seqs inside a group.
+- `validate(Note)` requires finite times (start >= 0) and finite pitch/level/curves;
+  `build_time_map` calls it, so bad input is `invalid_argument`, not `internal`.
+- `remap_after_reanalysis` checks the old notes' track against the edit list's track.
+- `TimePair` moved to `core/types/time_pair.h` (so `TimeMap` does not include the edit vocabulary);
+  `SourceId` moved to `ids.h`.
+- Tests: table-driven fold test over every scalar parameter (set/add/scale/reset, isolation);
+  `add`/`scale` property tests now assert the expected sum/product; a TimeMap effect test pins
+  `onset_shift`, `length_scale`, `attack_time_scale` and handle positions (the older properties
+  also hold for a no-op builder); remap checks target existence, seqs, groups and cursor;
+  `effective_state` track mismatch is a contract-violation case.
+- Left as notes (not changed): `join()` has a bool flag (internal, split when next touched);
+  `StrongId` extraction (rule of three); `DirtyParams::source_end` defaults to the origin;
+  `scalar()` duplicate helper; `match_notes` lives in `core/edits` though it is pure note geometry.
+- Convention: `effective_state` is the hot-loop primitive and aborts on a track mismatch
+  (`ANNO_EXPECTS`); `dirty_regions`, `build_time_map` and `remap_after_reanalysis` are the
+  validating layer and return `invalid_argument`.

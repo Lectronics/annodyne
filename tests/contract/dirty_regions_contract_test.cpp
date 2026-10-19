@@ -3,6 +3,7 @@
 
 #include "core/edits/dirty_regions.h"
 #include "core/edits/effective_state.h"
+#include "core/timemap/build_time_map.h"
 #include "support/random_scenarios.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -102,6 +103,32 @@ TEST_CASE("without_timing_changes_nothing_else_is_dirty_beyond_the_margin", "[di
             }
             if (!near_changed) {
                 CHECK_FALSE(inside(regions, s));
+            }
+        }
+    }
+}
+
+TEST_CASE("every_source_instant_whose_output_position_changes_is_dirty", "[dirty_contract]") {
+    // The renderer trusts dirty_regions; a source instant that the TimeMap moves must be inside it
+    // (audit #1 B1: an abutting neighbour's last segment is stretched).
+    for (int seed = 0; seed < 600; ++seed) {
+        INFO("seed " << seed);
+        Rng rng{static_cast<std::uint64_t>(seed)};
+        const auto notes = random_notes(rng, 6);
+        const EditList old_list = random_list(rng, notes, true);
+        const EditList new_list = old_list.add(random_group(rng, notes, true), k_t0).value();
+        const double end = raw(notes.back().source_end) + 1.0;
+        const DirtyParams params{.crossfade_margin = Seconds{0.05}, .source_end = src(end)};
+        const auto regions = dirty_regions(notes, old_list, new_list, params).value();
+        const auto old_map = build_time_map(notes, old_list, TimeMapParams{}).value().map;
+        const auto new_map = build_time_map(notes, new_list, TimeMapParams{}).value().map;
+        for (int i = 0; i <= 2000; ++i) {
+            const double s = end * i / 2000.0;
+            const double moved =
+                std::abs(old_map.to_output(src(s)).unchecked_since_origin().value() -
+                         new_map.to_output(src(s)).unchecked_since_origin().value());
+            if (moved > 1e-9) {
+                CHECK(inside(regions, s));
             }
         }
     }

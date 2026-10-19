@@ -136,3 +136,50 @@ TEST_CASE("find_note_returns_null_when_absent", "[analysis_types]") {
     CHECK(find_note(analysis, NoteId{"a"})->id == NoteId{"a"});
     CHECK(find_note(analysis, NoteId{"zzz"}) == nullptr);
 }
+
+TEST_CASE("note_rejects_non_finite_or_negative_times_and_values", "[analysis_types]") {
+    Note note = note_with_grid(0);
+    note.source_start = src(-1.0);
+    CHECK_FALSE(validate(note).has_value());
+    note = note_with_grid(0);
+    note.source_end = src(std::numeric_limits<double>::infinity());
+    CHECK_FALSE(validate(note).has_value());
+    note = note_with_grid(0);
+    note.pitch_center = Cents{std::numeric_limits<double>::quiet_NaN()};
+    CHECK_FALSE(validate(note).has_value());
+    note = note_with_grid(2);
+    note.amp[0] = Decibels{std::numeric_limits<double>::quiet_NaN()};
+    CHECK_FALSE(validate(note).has_value());
+}
+
+TEST_CASE("harmonic_noise_and_envelope_tracks_check_their_shapes", "[analysis_types]") {
+    const FrameGrid grid{.hop = Seconds{0.01}, .start = src(0), .n_frames = 2};
+    HarmonicTrack h;
+    h.grid = grid;
+    h.freq_hz = FrameMatrix{.rows = 2, .cols = 3, .data = std::vector<float>(6)};
+    h.amp_linear = FrameMatrix{.rows = 2, .cols = 3, .data = std::vector<float>(6)};
+    h.phase_rad = FrameMatrix{.rows = 2, .cols = 3, .data = std::vector<float>(6)};
+    CHECK(validate(h).has_value());
+    h.amp_linear = FrameMatrix{
+        .rows = 2, .cols = 4, .data = std::vector<float>(8)};  // different harmonic count
+    CHECK_FALSE(validate(h).has_value());
+    h.amp_linear =
+        FrameMatrix{.rows = 3, .cols = 3, .data = std::vector<float>(9)};  // wrong frame count
+    CHECK_FALSE(validate(h).has_value());
+
+    NoiseTrack n;
+    n.grid = grid;
+    n.band_energy_linear = FrameMatrix{.rows = 2, .cols = 4, .data = std::vector<float>(8)};
+    n.frame_class.assign(2, FrameClass::breath);
+    CHECK(validate(n).has_value());
+    n.frame_class.assign(3, FrameClass::breath);
+    CHECK_FALSE(validate(n).has_value());
+
+    EnvelopeTrack e;
+    e.grid = grid;
+    e.log_mag_db = FrameMatrix{.rows = 2, .cols = 3, .data = std::vector<float>(6)};
+    e.freqs.assign(3, Hz{100});
+    CHECK(validate(e).has_value());
+    e.freqs.pop_back();
+    CHECK_FALSE(validate(e).has_value());
+}

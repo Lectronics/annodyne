@@ -55,6 +55,8 @@ TEST_CASE("add_edits_commute", "[edit_contract]") {
         Rng rng{static_cast<std::uint64_t>(seed)};
         const auto notes = random_notes(rng, 1);
         std::vector<EditSpec> specs;
+        double expected_center = notes[0].pitch_center.value();
+        double expected_gain = 0.0;
         for (int i = 0, n = uniform_int(rng, 2, 30); i < n; ++i) {
             // Offsets that are not clamped by the fold.
             static constexpr std::array<EditParam, 5> k_params{
@@ -68,6 +70,11 @@ TEST_CASE("add_edits_commute", "[edit_contract]") {
             } else if (info.kind == ValueKind::seconds) {
                 v = Seconds{uniform(rng, -1, 1)};
             }
+            if (p == EditParam::center_offset) {
+                expected_center += std::get<Cents>(v).value();
+            } else if (p == EditParam::gain) {
+                expected_gain += std::get<Decibels>(v).value();
+            }
             specs.push_back(make_spec("n0", info.category, p, EditOp::add, v));
         }
         auto fold = [&](const std::vector<EditSpec>& order) {
@@ -78,6 +85,10 @@ TEST_CASE("add_edits_commute", "[edit_contract]") {
             return effective_state(notes[0], list);
         };
         const EffectiveNote a = fold(specs);
+        // Not just order-independent: the value is pitch_center + sum (a fold that ignored `add`
+        // would be order-independent too).
+        CHECK(near(a.center.value(), expected_center));
+        CHECK(near(a.gain.value(), expected_gain));
         auto shuffled = specs;
         std::ranges::shuffle(shuffled, rng);
         const EffectiveNote b = fold(shuffled);
@@ -96,9 +107,12 @@ TEST_CASE("scale_edits_commute", "[edit_contract]") {
         Rng rng{static_cast<std::uint64_t>(seed)};
         const auto notes = random_notes(rng, 1);
         std::vector<EditSpec> specs;
+        double expected = 1.0;
         for (int i = 0, n = uniform_int(rng, 2, 12); i < n; ++i) {
+            const double f = uniform(rng, 0.25, 4.0);
+            expected *= f;
             specs.push_back(make_spec("n0", EditCategory::pitch_mod, EditParam::mod_scale,
-                                      EditOp::scale, Ratio{uniform(rng, 0.25, 4.0)}));
+                                      EditOp::scale, Ratio{f}));
         }
         auto fold = [&](const std::vector<EditSpec>& order) {
             EditList list{TrackId{"t1"}};
@@ -110,6 +124,7 @@ TEST_CASE("scale_edits_commute", "[edit_contract]") {
         auto shuffled = specs;
         std::ranges::shuffle(shuffled, rng);
         CHECK(near_rel(fold(specs).mod_scale.value(), fold(shuffled).mod_scale.value()));
+        CHECK(near_rel(fold(specs).mod_scale.value(), expected));
     }
 }
 

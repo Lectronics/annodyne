@@ -65,7 +65,7 @@ Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
         return Unexpected{r.error()};
     }
     std::vector<Span> spans;
-    SourceTime previous_end;  // end of the previous active note; the origin for the first
+    SourceTime previous_start;  // start of the previous active note; the origin for the first
     for (const Note& note : notes) {
         if (!note.is_active) {
             continue;
@@ -77,10 +77,10 @@ Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
                              .end = note.source_end + params.crossfade_margin});
         }
         if (timing_differs(before, after)) {
-            spans.push_back({.start = clamp_at_origin(previous_end - params.crossfade_margin),
+            spans.push_back({.start = clamp_at_origin(previous_start - params.crossfade_margin),
                              .end = std::max(params.source_end, note.source_end)});
         }
-        previous_end = note.source_end;
+        previous_start = note.source_start;
     }
     return merged(std::move(spans));
 }

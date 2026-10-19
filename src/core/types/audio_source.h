@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types/audio_buffer.h"
+#include "core/types/ids.h"
 #include "core/types/result.h"
 #include "core/types/units.h"
 
@@ -12,14 +13,6 @@
 // Design: docs/design/phase0-foundations.md §6.
 
 namespace anno {
-
-/// Stable identity of a recording's content. Compare for equality only; the text format is not
-/// part of the contract.
-struct SourceId {
-    std::string value;
-
-    friend auto operator<=>(const SourceId&, const SourceId&) = default;
-};
 
 /// Read-only handle to an original recording (CLAUDE.md rule 1: the source is never modified).
 /// Cheap to copy: all copies share one immutable backend. Phase 9 adds an ARA backend behind the

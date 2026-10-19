@@ -138,3 +138,52 @@ TEST_CASE("an_unedited_note_keeps_its_length_unless_pushed", "[time_map_contract
         }
     }
 }
+
+// The properties above also hold for a builder that ignores every edit, so these pin the effect.
+TEST_CASE("a_single_note_edit_moves_the_anchors_by_exactly_the_requested_amounts",
+          "[time_map_contract]") {
+    constexpr double k_eps = 1e-9;
+    for (int seed = 0; seed < k_property_cases; ++seed) {
+        INFO("seed " << seed);
+        Rng rng{static_cast<std::uint64_t>(seed)};
+        const double start = uniform(rng, 1.0, 3.0);
+        const double length = uniform(rng, 0.2, 1.5);
+        const std::vector<Note> notes{make_note("n0", start, start + length)};
+        const double attack_end = raw(notes[0].attack_end);
+        const double end = start + length;
+        const auto build_with = [&](std::vector<EditSpec> group) {
+            return build_time_map(notes, EditList{TrackId{"t1"}}.add(group, k_t0).value(),
+                                  TimeMapParams{})
+                .value();
+        };
+
+        const double shift = uniform(rng, -0.5, 1.5);
+        const auto shifted = build_with({make_spec("n0", EditCategory::time, EditParam::onset_shift,
+                                                   EditOp::set, Seconds{shift})});
+        CHECK(std::abs(raw(shifted.map.to_output(src(start))) - (start + shift)) < k_eps);
+        CHECK(std::abs(raw(shifted.map.to_output(src(end))) - (end + shift)) < k_eps);
+        CHECK(shifted.repaired_notes == 0);
+
+        const double scale = uniform(rng, 0.5, 3.0);
+        const auto scaled = build_with({make_spec("n0", EditCategory::time, EditParam::length_scale,
+                                                  EditOp::set, Ratio{scale})});
+        CHECK(std::abs(raw(scaled.map.to_output(src(attack_end))) - attack_end) < k_eps);
+        CHECK(std::abs(raw(scaled.map.to_output(src(end))) -
+                       (attack_end + (end - attack_end) * scale)) < k_eps);
+
+        const double attack_scale = uniform(rng, 0.5, 3.0);
+        const auto attack =
+            build_with({make_spec("n0", EditCategory::attack, EditParam::attack_time_scale,
+                                  EditOp::set, Ratio{attack_scale})});
+        CHECK(std::abs(raw(attack.map.to_output(src(attack_end))) -
+                       (start + (attack_end - start) * attack_scale)) < k_eps);
+
+        const double h_s = uniform(rng, attack_end + 0.02, end - 0.02);
+        const double h_t = h_s + uniform(rng, -0.01, 0.01);
+        const auto handled =
+            build_with({make_spec("n0", EditCategory::time, EditParam::time_handle, EditOp::set,
+                                  TimePair{.source = src(h_s), .output = out(h_t)})});
+        CHECK(std::abs(raw(handled.map.to_output(src(h_s))) - h_t) < k_eps);
+        CHECK(std::abs(raw(handled.map.to_output(src(end))) - end) < k_eps);
+    }
+}
