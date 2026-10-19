@@ -15,7 +15,8 @@ struct MelodyNote {
     double start_s = 0.0;
     double end_s = 0.0;
     double midi = 69.0;  // pitch (A4 = 69)
-    std::function<double(double)> bend_cents{};  // optional deviation (cents) at time t since the note start
+    std::function<double(double)>
+        bend_cents{};  // optional deviation (cents) at time t since the note start
 };
 
 inline PitchTrack make_track(const std::vector<MelodyNote>& notes, double duration_s,
