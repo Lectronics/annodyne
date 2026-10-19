@@ -84,7 +84,8 @@ inline constexpr Ratio k_resample_freq_rel{1e-3};
 /// Resampled sine level within 0.1 dB (kernel ripple at cutoff 0.97 is far below this mid-band).
 inline constexpr Decibels k_resample_level{0.1};
 /// K-weighted 1 kHz sine: the BS.1770 filter has +0.691 dB gain at 1 kHz (the -0.691 in the LUFS
-/// formula compensates it); 0.1 dB covers the analytic-coefficient differences at other sample rates.
+/// formula compensates it); 0.1 dB covers the analytic-coefficient differences at other sample
+/// rates.
 inline constexpr Decibels k_k_weight_1khz{0.1};
 /// Exactness of interpolation on data that the interpolator reproduces exactly (linear on lines,
 /// cubic on cubics): double rounding only.
