@@ -1,6 +1,7 @@
 #include "cli/plot/plot.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <fstream>
