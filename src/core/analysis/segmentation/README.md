@@ -29,6 +29,10 @@ Memory: frames x (2 bins + 1) ints for the back pointers. Compiled with `-ffp-co
 ## Transient-driven boundaries (ADR-0010a)
 Runs from the note HMM are merged (`detail/merge_runs`) unless a strong attack/consonant onset, a non-trill `pitch_change` onset, an unvoiced gap of 30 ms or a median-pitch difference above `merge_max_cents` (80) separates them, so a pitch that wanders around its target is one note. The HMM's new-note prior only reacts to onsets of strength >= `merge_onset_strength`. Limits: slow legato steps without a `pitch_change` onset and notes whose pitch differs by less than 80 cents can be merged; held-out under-segmentation is 8 %.
 
+`voiced_floor_prob` (0.55): the HMM sees tracker-voiced frames at least this voiced, because the c4dm tracker gives weakly periodic voiced frames exactly 0.5 and a rolling pitch then decoded as silence (ADR-0010a amendment 4).
+
+**Fuzzy later (owner):** these thresholds are meant to become graded and context-dependent (local from waveform tags such as consonant, roll, legato; global per performance) once more analysis tools exist; see the ROADMAP.
+
 **Provisional:** the transient decisions (`merge_onset_strength`, the ramp rule in `merge_runs`, the level-step
 onsets in `core/analysis/onsets`) are threshold heuristics. Owner direction 2026-10-20: consonants are grouped with
 the pitch for now, `attack_end` is the logical consonant | vowel boundary, and transient/consonant analysis will be

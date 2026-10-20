@@ -25,6 +25,9 @@ struct SegmentParams {
     double new_note_prob = 1e-3;          // P(a new note starts) per frame without an onset
     double onset_new_note_prob =
         0.98;  // ... at the frames of an onset (+-10 ms): onsets are strong evidence
+    // The HMM sees a tracker-voiced frame at least this voiced (the tracker gives weakly periodic
+    // voiced frames exactly 0.5, which makes silence as likely as a note).
+    double voiced_floor_prob = 0.55;  // ADR-0010a amendment 4
     Seconds preroll_max{
         0.030};               // how far before the voiced part a consonant onset may pull the start
     Cents stable_band{40.0};  // attack/release: within this of the note pitch counts as stable

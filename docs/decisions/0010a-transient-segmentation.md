@@ -56,3 +56,19 @@ held within 40 cents of the note's pitch, which put the end of a roll into the p
 Loudness integrates from `attack_end`, so it now includes the roll. The thresholds behind the
 transients (merge strength, ramp, level steps) are provisional; a better transient and consonant
 analysis is planned and will replace them.
+
+## Amendment 2026-10-20 (4): weakly voiced frames are not silence
+
+Owner review of track 28 (the pitch rolls up from 11.958 s and settles at 12.083 s: a note of its
+own). The c4dm tracker (ADR-0014) calls frames voiced but only weakly periodic voicing 0.500, and
+at 0.5 the note HMM's emission makes silence as likely as a note, so the pitch-fit term decided and
+a rolling pitch lost: 11.935-12.155 s was decoded as silence. `SegmentParams::voiced_floor_prob`
+(default 0.55, valid in [0.5, 1)) raises the voicing the HMM sees for frames the tracker calls
+voiced. Measured (35 tuning / 5 held-out), 0.5 -> 0.55: notes 1544 -> 1671 (reference 1923);
+onset F20 A1 0.541 / 0.519 -> 0.582 / 0.552; F50 A1 0.729 / 0.694 -> 0.770 / 0.727; matched-note
+pitch 0.878 / 0.818 -> 0.853 / 0.803; target within -10/+15 cents 0.694 / 0.578 -> 0.655 / 0.552.
+The pitch measures fall because the recovered notes are the rolling ones, which are matched now and
+were unmatched before. Larger floors recover more notes and cost more pitch accuracy (0.6: held-out
+-10/+15 share 0.543, under the 0.55 guard, so not taken). Track 28 now has the note 11.952-12.155 s,
+target 4901 cents. Regression: `track_28_rolls_up_into_a_note_of_its_own_near_12_s`.
+

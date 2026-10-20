@@ -411,6 +411,15 @@ TEST_CASE("a_fast_roll_up_into_the_pitch_is_one_note_with_it", "[segmentation][t
     CHECK(sec(notes[0].attack_end) <= 0.26);
 }
 
+TEST_CASE("the_voiced_floor_must_be_at_least_half_and_below_one", "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.2, .end_s = 0.6, .midi = 60.0}}, 1.0);
+    SegmentParams p;
+    p.voiced_floor_prob = 0.4;
+    CHECK(segment_notes(track, OnsetList{}, p).error().code == ErrorCode::invalid_argument);
+    p.voiced_floor_prob = 1.0;
+    CHECK(segment_notes(track, OnsetList{}, p).error().code == ErrorCode::invalid_argument);
+}
+
 TEST_CASE("attack_end_is_where_voicing_starts_after_a_consonant", "[segmentation][transient]") {
     // 80 ms of unvoiced consonant (voicing 0.1) before a steady vowel at 64.
     PitchTrack track = make_track({{.start_s = 0.45, .end_s = 1.0, .midi = 64.0}}, 1.4);

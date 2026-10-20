@@ -33,9 +33,10 @@ Result<void> validate_params(const SegmentParams& p) {
                      !positive(p.note_bin_cents) || !positive(p.pitch_sigma_cents) ||
                      !prob(p.stay_stable) || !prob(p.stable_to_silence) || !prob(p.new_note_prob) ||
                      p.stay_stable + p.stable_to_silence > 1.0 || !prob(p.onset_new_note_prob) ||
-                     !positive(p.preroll_max.value()) || !positive(p.stable_band.value()) ||
-                     !positive(p.stable_min.value()) || !positive(p.merge_onset_strength) ||
-                     !positive(p.merge_max_cents.value()) ||
+                     p.voiced_floor_prob < 0.5 || p.voiced_floor_prob >= 1.0 ||
+                     std::isnan(p.voiced_floor_prob) || !positive(p.preroll_max.value()) ||
+                     !positive(p.stable_band.value()) || !positive(p.stable_min.value()) ||
+                     !positive(p.merge_onset_strength) || !positive(p.merge_max_cents.value()) ||
                      !positive(p.merge_onset_zone.value()) ||
                      !positive(p.min_gap_for_split.value()) ||
                      !positive(p.trill_max_plateau.value()) || p.trill_min_steps < 1 ||
@@ -333,6 +334,11 @@ std::optional<NoteHmmInput> build_hmm_input(const PitchTrack& pitch, const Onset
     NoteHmmInput input;
     input.smoothed_cents = smoothed;
     input.voicing_prob = pitch.voicing_prob;
+    for (std::size_t t = 0; t < input.voicing_prob.size(); ++t) {
+        if (is_voiced(pitch, t)) {
+            input.voicing_prob[t] = std::max(input.voicing_prob[t], params.voiced_floor_prob);
+        }
+    }
     input.new_note_prob =
         new_note_probability(pitch, onsets, params.new_note_prob, params.onset_new_note_prob,
                              params.merge_onset_strength);

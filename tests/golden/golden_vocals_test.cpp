@@ -12,6 +12,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -112,4 +113,27 @@ TEST_CASE("the_committed_vocals_meet_the_regression_guard", "[golden]") {
     CHECK(total.best_f50() >= tolerance::k_golden_onset_f50_min);
     CHECK(total.note_pitch_ok() >= tolerance::k_golden_note_pitch_ok_min);
     CHECK(total.apc_rate(0) >= tolerance::k_golden_apc_min);
+}
+
+TEST_CASE("track_28_rolls_up_into_a_note_of_its_own_near_12_s", "[golden]") {
+    // Owner reading of the plot (2026-10-20): the pitch rolls up from 11.958 s and settles at
+    // 12.083 s, a note of its own. The tracker calls those frames voiced but weakly (0.5).
+    const auto track = load_vocadito(fs::path{ANNO_GOLDEN_DIR}, 28);
+    if (!track) {
+        return;  // not committed here: the inventory test warns
+    }
+    auto audio = io::read_wav(track->wav);
+    REQUIRE(audio);
+    const auto result = analyse(AudioSource::from_buffer(std::move(audio).value()), {});
+    REQUIRE(result);
+    bool found = false;
+    for (const Note& n : (*result)->notes) {
+        const double start = (n.source_start - SourceTime{}).value();
+        const double end = (n.source_end - SourceTime{}).value();
+        if (std::abs(start - 11.958) <= 0.040 && end >= 12.083) {
+            found = true;
+            CHECK(std::abs(n.pitch_target.target.value() - 4900.0) <= 40.0);
+        }
+    }
+    CHECK(found);
 }

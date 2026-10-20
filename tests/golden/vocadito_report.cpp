@@ -85,6 +85,7 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     sec("preroll", p.segmentation.preroll_max);
     sec("stab_min", p.segmentation.stable_min);
     get("mstr", p.segmentation.merge_onset_strength);
+    get("vfloor", p.segmentation.voiced_floor_prob);
     sec("mzone", p.segmentation.merge_onset_zone);
     sec("msplit", p.segmentation.min_gap_for_split);
     sec("snapb", p.segmentation.snap_before);
