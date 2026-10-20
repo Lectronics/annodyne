@@ -47,6 +47,27 @@ double median_of(const MergeInput& in, const NoteRun& r) {
     return v[v.size() / 2];
 }
 
+constexpr double k_ramp_max_s = 0.120;  // only a run this short can be a ramp (transient zone)
+constexpr double k_ramp_min_cents =
+    150.0;  // a ramp travels at least this far, to the start of the next run
+
+/// True if the run is an approach: shorter than k_ramp_max_s and moving by at least
+/// k_ramp_min_cents from its start to the first voiced frame of `next`, toward `next_median`. Such
+/// a run is the start of the next pitch (a roll into it), not a pitch of its own, so the distance
+/// between the medians does not split.
+bool is_ramp_toward(const MergeInput& in, const NoteRun& r, const NoteRun& next,
+                    double next_median) {
+    const auto first = first_voiced(*in.pitch, r);
+    const auto last = first_voiced(*in.pitch, next);
+    if (!first || !last ||
+        static_cast<double>(r.last - r.first + 1) * in.pitch->grid.hop.value() > k_ramp_max_s) {
+        return false;
+    }
+    const double travel = in.pitch->f0[*last].value() - in.pitch->f0[*first].value();
+    return std::abs(travel) >= k_ramp_min_cents &&
+           travel * (next_median - in.pitch->f0[*first].value()) > 0.0;
+}
+
 /// A step of the raw f0: where it moves by at least `k_step_cents` within `k_step_frames`.
 struct Step {
     double time_s = 0.0;
@@ -105,8 +126,8 @@ bool inside_any(const std::vector<std::pair<double, double>>& regions, double t,
         regions, [&](const auto& r) { return t >= r.first - slack && t <= r.second + slack; });
 }
 
-/// An onset that separates the voiced end `from_s` of one run from the voiced start `to_s` of the
-/// next. Onsets inside a trill do not.
+/// An onset that separates the voiced end `from_s` of one run from the voiced start `to_s` of
+/// the next. Onsets inside a trill do not.
 bool onset_between(const MergeInput& in, const std::vector<std::pair<double, double>>& trills,
                    double from_s, double to_s) {
     const OnsetList& on = *in.onsets;
@@ -145,6 +166,7 @@ std::vector<NoteRun> merge_runs(std::vector<NoteRun> runs, const MergeInput& in)
         bool apart =
             !end_voiced || !start_voiced ||
             (std::abs(next_median - previous_median) > in.params->merge_max_cents.value() &&
+             !is_ramp_toward(in, runs[i - 1], next, next_median) &&
              !inside_any(trills, time_of(*in.pitch, first_voiced(*in.pitch, next).value_or(0)),
                          in.params->merge_onset_zone.value()));
         if (!apart) {

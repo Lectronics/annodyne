@@ -392,6 +392,23 @@ TEST_CASE("a_scoop_into_a_note_stays_in_that_note", "[segmentation][transient]")
     CHECK(std::abs(notes[0].rough_pitch.value() - 6200.0) <= tolerance::k_segment_pitch_cents);
 }
 
+TEST_CASE("a_fast_roll_up_into_the_pitch_is_one_note_with_it", "[segmentation][transient]") {
+    // Track 28 at 0.66 s: about 380 cents up in 100 ms, an overshoot, then a settle. One transient
+    // at the start; the ramp has no level part, so it is an approach and not a note of its own.
+    const auto roll = [](double t) {
+        if (t < 0.1) {
+            return -250.0 + 350.0 * t / 0.1;
+        }
+        return t < 0.3 ? 100.0 * (1.0 - (t - 0.1) / 0.2) : 0.0;
+    };
+    const auto track =
+        make_track({{.start_s = 0.2, .end_s = 1.2, .midi = 62.0, .bend_cents = roll}}, 1.6);
+    const auto notes = segment(track, make_onsets({0.2}));
+    REQUIRE(notes.size() == 1);
+    CHECK(sec(notes[0].source_start) <= 0.25);
+    CHECK(sec(notes[0].source_end) >= 1.15);
+}
+
 TEST_CASE("a_strong_transient_inside_the_same_pitch_splits_the_note", "[segmentation][transient]") {
     const auto scoop = [](double t) { return t < 0.1 ? -100.0 * (1.0 - t / 0.1) : 0.0; };
     const auto track =

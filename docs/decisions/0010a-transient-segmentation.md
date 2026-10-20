@@ -19,3 +19,15 @@ Over-segmentation 18.6 % / 18.8 % -> 10.2 % / 8.9 %; under-segmentation 1.2 % / 
 
 ## Consequences
 Golden guards raised (`tests/tolerances.h`). Track 28 n001330/n001450 (84 cents apart) still end as two notes; the level/moving target stage and, if needed, a higher guard handle it later. Re-analysis changes note ids; stored edits re-map through `remap_after_reanalysis`.
+
+## Amendment 2026-10-20: a ramp is not a note
+
+Owner review of Vocadito track 28 (0.66 s): a roll of about 380 cents in 100 ms into a note was
+split from it, because the medians of the two runs differ by more than `merge_max_cents` (80).
+`merge_runs` now skips that median rule when the earlier run is a ramp: at most 120 ms long and
+travelling at least 150 cents (raw f0) from its start to the start of the next run, toward it.
+Transients, gaps and `pitch_change` onsets still separate runs. Measured on the 35 tuning tracks:
+onset F20 0.556 -> 0.554, matched-note pitch 0.824 -> 0.811, under-segmentation 3.5 -> 4.4 %; held-out
+onset F20 0.476 -> 0.469, under-segmentation 8.5 -> 9.4 %. Accepted as the cost of the owner's rule;
+thresholds are constants in merge_runs.cpp. Variants that merged more (no travel requirement, 100
+cents) cost more onset F and were rejected.
