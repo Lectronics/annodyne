@@ -3,6 +3,7 @@
 #include "core/dsp/filter.h"
 #include "support/synth_signals.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -158,9 +159,15 @@ inline std::vector<double> at_rms_db(std::vector<double> x, double level_db) {
     return scaled(std::move(x), gain);
 }
 
+inline std::vector<float> to_float(const std::vector<double>& x) {
+    std::vector<float> out(x.size());
+    std::ranges::transform(x, out.begin(), [](double v) { return static_cast<float>(v); });
+    return out;
+}
+
 inline Probe finish(const std::vector<double>& buf, std::vector<ProbeRegion> regions) {
     Probe p;
-    p.samples.assign(buf.begin(), buf.end());
+    p.samples = to_float(buf);
     p.regions = std::move(regions);
     return p;
 }
@@ -308,7 +315,7 @@ inline std::vector<float> breathy_tone(double hnr_db) {
     std::vector<double> buf(count_of(2.0), 0.0);
     place(buf, 0.25, tone);
     place(buf, 0.25, noise);
-    return {buf.begin(), buf.end()};
+    return probe_detail::to_float(buf);
 }
 
 /// Sweep (b): 50 Hz hum (5 harmonics) at `level_db` RMS over -75 dBFS pink noise, 2 s.
@@ -316,7 +323,7 @@ inline std::vector<float> hum_alone(double level_db) {
     using namespace probe_detail;
     std::vector<double> buf = at_rms_db(harmonic(50.0, 2.0, {1, 0.6, 0.4, 0.3, 0.2}), level_db);
     add_scaled(buf, pink(2.0, 11), db(-75));
-    return {buf.begin(), buf.end()};
+    return probe_detail::to_float(buf);
 }
 
 /// Sweep (c): an A3 tone alone at `level_db` RMS, 0.25-1.25 s of 1.5 s.
@@ -324,7 +331,7 @@ inline std::vector<float> lone_tone(double level_db) {
     using namespace probe_detail;
     std::vector<double> buf(count_of(1.5), 0.0);
     place(buf, 0.25, at_rms_db(harmonic(220.0, 1.0), level_db));
-    return {buf.begin(), buf.end()};
+    return probe_detail::to_float(buf);
 }
 
 }  // namespace anno::test
