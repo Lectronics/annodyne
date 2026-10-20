@@ -87,7 +87,9 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     if (!mono) {
         return stage_error("read", mono.error());
     }
-    auto pitch = PYinEstimator{params.pyin}.estimate(src, params.pitch);
+    auto pitch = params.engine == PitchEngine::c4dm_pyin
+                     ? C4dmPYinEstimator{params.c4dm_pyin}.estimate(src, params.pitch)
+                     : PYinEstimator{params.pyin}.estimate(src, params.pitch);
     if (!pitch) {
         return stage_error("pitch", pitch.error());
     }

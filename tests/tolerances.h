@@ -84,21 +84,22 @@ inline constexpr double k_rpa_min = 0.95;
 inline constexpr Seconds k_onset_synthetic{0.005};
 /// Golden recordings (Vocadito subset, 5 held-out tracks; tests/golden/vocals/README.md). These are
 /// a REGRESSION GUARD: each threshold is the measured value of the held-out set rounded down with
-/// a margin, not a quality target. Measured: voicing recall 0.967, RPA(50 c) 0.948, octave/harmonic
-/// error rate 0.013 (octave, or a third harmonic: +-1200, +-1902, +-2400 cents), onset F-measure at
-/// +-20 / +-50 ms 0.472 / 0.758 (better annotator of the two, who agree with each other at only
-/// ~0.75), matched-note pitch within 50 cents 0.784. The owner's goal stays onset F >= 0.9 and no
-/// octave errors (docs/decisions/0012); the guard rises as the analysis improves.
-inline constexpr double k_golden_voicing_recall_min = 0.92;
-inline constexpr double k_golden_rpa_min = 0.90;
-inline constexpr double k_golden_octave_rate_max = 0.03;
+/// a margin, not a quality target. Measured with the vendored c4dm/pyin tracker (ADR-0014): voicing
+/// recall 0.997, RPA(50 c) 0.995, octave/harmonic error rate 0.000 (octave, or a third harmonic:
+/// +-1200, +-1902, +-2400 cents), onset F-measure at +-20 / +-50 ms 0.519 / 0.749 (better annotator
+/// of the two, who agree with each other at only ~0.75), matched-note pitch within 50 cents 0.818
+/// (annodyne pYIN: 0.967, 0.948, 0.013, 0.515 / 0.751, 0.803). The owner's goal stays onset F >=
+/// 0.9 and no octave errors (docs/decisions/0012); the guard rises as the analysis improves.
+inline constexpr double k_golden_voicing_recall_min = 0.95;
+inline constexpr double k_golden_rpa_min = 0.95;
+inline constexpr double k_golden_octave_rate_max = 0.01;
 inline constexpr double k_golden_onset_f20_min = 0.43;
 inline constexpr double k_golden_onset_f50_min = 0.69;
-inline constexpr double k_golden_note_pitch_ok_min = 0.75;
+inline constexpr double k_golden_note_pitch_ok_min = 0.78;
 /// Share of matched notes whose pitch target lies within -10/+15 cents of the annotation (held-out
-/// 0.568; the plain median of the note's frames gives 0.630 because the annotators' pitch is such a
+/// 0.578; the plain median of the note's frames gives 0.630 because the annotators' pitch is such a
 /// median, which includes the scoops this target excludes by design).
-inline constexpr double k_golden_apc_min = 0.52;
+inline constexpr double k_golden_apc_min = 0.55;
 
 /// Rough pitch of a segmented note whose f0 hunts or scoops: the median of the smoothed f0 lies
 /// within this of the centre (a +-45 cent wander shifts a median by a few cents, a 100 cent scoop
@@ -159,5 +160,24 @@ inline constexpr double k_k_weight_reference_energy = 7045.4655434886545;
 /// Exactness of interpolation on data that the interpolator reproduces exactly (linear on lines,
 /// cubic on cubics): double rounding only.
 inline constexpr double k_interp_exact_abs = 1e-9;
+
+// ---- Voicing probes (docs/design/phase3-voicing-review.md section 4;
+// tests/unit/voicing_probes_test.cpp) Synthetic scenes with known answers. Targets are the
+// review's; none was fitted to the code.
+
+/// A region that must be voiced: at least this share of its frames. 0.9 leaves room for the
+/// 25 ms of onset/offset smear at the region edges that the regions already exclude.
+inline constexpr double k_probe_voiced_share_min = 0.9;
+/// A region that must be unvoiced (hum, tail, bleed, inhale, sibilant): at most this share voiced.
+/// 0.1 is one frame in ten: a stray periodic blip is tolerated, a pitch is not.
+inline constexpr double k_probe_unvoiced_share_max = 0.1;
+/// Breath-noise sweep (review P3.3): share of the note body voiced at HNR >= 10 dB, and at 6 dB.
+inline constexpr double k_probe_breath_share_10db_min = 0.95;
+inline constexpr double k_probe_breath_share_6db_min = 0.80;
+/// A quiet or non-vocal note must not read as confident: at most this confidence (review P1.4;
+/// 0.5 is the middle of 0..1, the level at which a UI would no longer present it as certain).
+inline constexpr double k_probe_unconfident_max = 0.5;
+/// The A3 target after a 250-cent scoop: within this of 5700 (the review measured -4 cents).
+inline constexpr Cents k_probe_scoop_target{10.0};
 
 }  // namespace anno::tolerance

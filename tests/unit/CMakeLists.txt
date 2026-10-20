@@ -128,5 +128,7 @@ anno_add_test(NAME pitch_target_test SOURCES pitch_target_test.cpp LABELS unit D
 anno_add_test(NAME take_annotation_test SOURCES take_annotation_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
 anno_add_test(NAME activity_test SOURCES activity_test.cpp LABELS unit DEPS anno::core_analysis_activity)
 anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)
+anno_add_test(NAME voicing_probes_test SOURCES voicing_probes_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator anno::core_dsp)
+anno_add_test(NAME c4dm_pyin_test SOURCES c4dm_pyin_test.cpp LABELS unit DEPS anno::core_analysis_pitch anno_c4dm_pyin)
 anno_add_test(NAME analyse_test SOURCES analyse_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator)
 anno_add_test(NAME analysis_metrics_test SOURCES analysis_metrics_test.cpp LABELS unit DEPS anno::core_types)

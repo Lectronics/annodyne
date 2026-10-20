@@ -44,7 +44,8 @@ public:
                                                       const PitchParams& params) const = 0;
 };
 
-/// Spec entry point: runs the default (pYIN) estimator with its default parameters.
+/// Spec entry point: runs the default estimator (the vendored c4dm/pyin, ADR-0014) with its default
+/// parameters.
 [[nodiscard]] Result<PitchTrack> detect_pitch(const AudioSource& src, const PitchParams& params);
 
 }  // namespace anno

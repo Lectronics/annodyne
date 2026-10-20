@@ -123,6 +123,20 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     db("estep", p.onsets.energy_step_db);
     db("estrength", p.onsets.energy_step_strength_db);
     sec("ewin", p.onsets.energy_step_window);
+    {
+        auto e = static_cast<double>(static_cast<int>(p.engine));
+        get("engine", e);  // 0 c4dm_pyin, 1 annodyne_pyin
+        p.engine = e > 0.5 ? PitchEngine::annodyne_pyin : PitchEngine::c4dm_pyin;
+        double thr = p.c4dm_pyin.threshold_distribution;
+        get("thr", thr);
+        p.c4dm_pyin.threshold_distribution = static_cast<int>(thr);
+        double lag = p.c4dm_pyin.fixed_lag_frames;
+        get("lag", lag);
+        p.c4dm_pyin.fixed_lag_frames = static_cast<int>(lag);
+        get("lowamp", p.c4dm_pyin.low_amp_rms);
+        get("cdown3", p.c4dm_pyin.down_margin3);
+        get("cdown2", p.c4dm_pyin.down_margin2);
+    }
     get("delta", p.onsets.delta);
     get("mact", p.onsets.min_activation);
     sec("mingap", p.onsets.min_gap);

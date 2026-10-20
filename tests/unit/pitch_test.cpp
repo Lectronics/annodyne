@@ -9,6 +9,8 @@
 #include <cmath>
 #include <functional>
 
+// These cases test the annodyne pYIN (PYinEstimator, ADR-0012). The default detect_pitch is the
+// vendored c4dm tracker (c4dm_pyin_test.cpp).
 using namespace anno;
 using namespace anno::test;
 
@@ -30,7 +32,7 @@ AudioSource source_of(const std::vector<float>& mono, double rate, int channels 
 }
 
 PitchTrack estimate(const std::vector<float>& mono, double rate, int channels = 1) {
-    return detect_pitch(source_of(mono, rate, channels), PitchParams{}).value();
+    return PYinEstimator{}.estimate(source_of(mono, rate, channels), PitchParams{}).value();
 }
 
 /// Frames at least `margin` seconds from both ends.
@@ -225,21 +227,23 @@ TEST_CASE("a_note_surrounded_by_silence_is_voiced_only_inside", "[pitch]") {
 TEST_CASE("parameters_and_sources_are_validated", "[pitch]") {
     const auto x = make_sine(220.0, 0.2, 44100.0);
     const AudioSource src = source_of(x, 44100.0);
-    CHECK(detect_pitch(src, PitchParams{.min_f0 = Hz{0.0}}).error().code ==
+    CHECK(PYinEstimator{}.estimate(src, PitchParams{.min_f0 = Hz{0.0}}).error().code ==
           ErrorCode::invalid_argument);
-    CHECK(detect_pitch(src, PitchParams{.min_f0 = Hz{500.0}, .max_f0 = Hz{100.0}}).error().code ==
-          ErrorCode::invalid_argument);
-    CHECK(detect_pitch(src, PitchParams{.hop = Seconds{0.0}}).error().code ==
+    CHECK(PYinEstimator{}
+              .estimate(src, PitchParams{.min_f0 = Hz{500.0}, .max_f0 = Hz{100.0}})
+              .error()
+              .code == ErrorCode::invalid_argument);
+    CHECK(PYinEstimator{}.estimate(src, PitchParams{.hop = Seconds{0.0}}).error().code ==
           ErrorCode::invalid_argument);
     // a window shorter than two periods of min_f0 (0.04 s < 2 / 20 Hz)
-    CHECK(detect_pitch(src, PitchParams{.min_f0 = Hz{20.0}}).error().code ==
+    CHECK(PYinEstimator{}.estimate(src, PitchParams{.min_f0 = Hz{20.0}}).error().code ==
           ErrorCode::invalid_argument);
     // the source rate cannot represent max_f0
     const auto low_rate = make_sine(100.0, 0.5, 2000.0);
-    CHECK(detect_pitch(source_of(low_rate, 2000.0), PitchParams{}).error().code ==
+    CHECK(PYinEstimator{}.estimate(source_of(low_rate, 2000.0), PitchParams{}).error().code ==
           ErrorCode::invalid_argument);
     // empty source: an empty valid track
-    const auto empty = detect_pitch(source_of({}, 44100.0), PitchParams{}).value();
+    const auto empty = PYinEstimator{}.estimate(source_of({}, 44100.0), PitchParams{}).value();
     CHECK(empty.grid.n_frames == 0);
     CHECK(validate(empty).has_value());
     // shorter than the window: still valid

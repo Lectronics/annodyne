@@ -38,3 +38,7 @@ the high-pass alone changed nothing. `beta_mean` is 0.3 (was 0.1, tuned on synth
 octave errors (1.9 % of voiced frames on the tuning tracks, 5.4 % on the held-out set, concentrated in
 high voices: octave errors are accepted for now, the alternates hold the other octave). `version()` is 2.
 Memory: the filter works on one `double` copy of the analysis-rate signal.
+
+## c4dm/pyin (default since ADR-0014)
+
+`C4dmPYinEstimator` (`c4dm_pyin.{h,cpp}`) runs the vendored c4dm/pyin tracker (`third_party/c4dm_pyin`, GPL-2.0-or-later) behind `PitchEstimator`: 2048-sample blocks at 44.1 kHz (scaled with the rate), YIN with the Beta (mean 0.15) threshold prior, the plugin's low-amplitude rule and pitch HMM (per-bin voiced/unvoiced states, 5 bins per semitone), plus an off-switchable sub-octave guard. Design: `docs/design/c4dm-pyin-integration.md`. `analyse()` uses it by default (`AnalyseParams::engine`); `PYinEstimator` (annodyne pYIN, ADR-0012) stays for comparison.

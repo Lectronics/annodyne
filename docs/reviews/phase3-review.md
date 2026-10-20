@@ -90,3 +90,19 @@ Held-out 5 (annotator 1): onset F +-20 ms 0.472, +-50 ms 0.715; over-segmentatio
 3. Citations in the pitch-target note are the owner's research and unverified.
 
 **Carried from the audit (not done)**: direct tests of the detail kernels (`frame_reliability`, `find_ornament`, `split_curve`, `label_segments`); named constants for remaining magic numbers (confidence caps, 100 cents per semitone, the step threshold shared between `merge_runs` and `SegmentingParams`); splitting `estimate_pitch_target` (about 85 lines) and computing the vibrato period once per note; `perceived_pitch(Note)` has no production caller (decide at close); `weighted_median` returns a bare double with NaN for "no weight"; the trill `analyse` test allows up to 2 notes; a slow-legato-pair integration test; tuning reference single source at Phase 8.
+
+
+## Addendum 2026-10-20 (2): segmentation fixes, voicing review, vendored c4dm/pyin
+
+**Segmentation (owner review of track 28)**: a short ramp into the next pitch stays in that note; legato level steps (about 4 dB) are onsets (`core/analysis/onsets/detail/energy_step`); `Note::attack_end` is the consonant | vowel boundary (start of voicing); ADR-0010a amendments 1-3. Consonants stay grouped with the pitch for now (owner).
+
+**Voicing review** (`docs/design/phase3-voicing-review.md`, outside review of commit `1a0882c`): its probes were ported to C++ (`tests/support/voicing_probes.h`, `tests/unit/voicing_probes_test.cpp`, tolerances justified in `tests/tolerances.h`). On the annodyne pYIN four rows failed (tail below -52 dB, lone hum, lone -80 dBFS tone, voiced 'z'); several claims did not reproduce (`beta_mean` was already 0.3; the activity gate removes hum between notes; breathy singing was voiced to 0 dB HNR). A narrower design (`voicing.md`: drop gate, level weight, hum classifier) was drafted and reviewed, then parked.
+
+**Pitch tracker switched to the vendored c4dm/pyin** (owner decision; ADR-0014, `docs/design/c4dm-pyin-integration.md`; GPL-2.0-or-later, owner-approved). All 17 probe rows pass. Vocadito (35 tuning / 5 held-out), annodyne pYIN -> c4dm: voicing recall 0.959 / 0.967 -> 0.989 / 0.997; pitch within 50 cents 0.943 / 0.948 -> 0.982 / 0.995; octave and harmonic errors 0.010 / 0.013 -> 0.002 / 0.000; matched-note pitch 0.820 / 0.803 -> 0.878 / 0.818; target within -10/+15 cents 0.615 / 0.530 -> 0.694 / 0.578; onset F +-20 ms (annotator 1) 0.570 / 0.515 -> 0.541 / 0.519, +-50 ms 0.775 / 0.710 -> 0.729 / 0.694 (the segmentation was tuned on the old tracker and is not re-tuned). A sub-octave guard (not in the plugin, off-switchable) removes the plugin's f0 / 3 errors on track 34 (51.8 % -> 3 %). Golden guards raised: recall 0.95, RPA 0.95, octave rate 0.01, matched-note pitch 0.78, -10/+15 share 0.55.
+
+Verification: release 544+ tests, debug-asan green (it caught an out-of-range read in the probe generator, fixed), layer fixtures for the new allowlist entry, clang-format and clang-tidy clean on the changed files; structure review of the integration (CHANGES REQUIRED, 2 blocking, resolved: design note review log). No audio is rendered; no audio-verifier run.
+
+**Still open**
+- Owner: the project licence decision that follows from ADR-0014 (and JUCE / ARA SDK compatibility); the plot check of tracks 13 and 28 and a trill/glide example; whether the target-vs-median -10/+15 result is accepted (now 0.578 vs 0.667 held-out); non-pop style presets; unverified citations.
+- Residual octave errors (0.2 % tuning, tracks 34 and 40); onset F far from 0.9 (annotators agree at 0.75); the plugin's absolute low-amplitude rule (take-relative reference); the 61.7 Hz floor; segmentation not re-tuned for the new tracker.
+- Carried audit items of the previous addendum; transient/consonant analysis to be replaced by a more accurate method (owner).

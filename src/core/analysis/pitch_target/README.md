@@ -6,7 +6,7 @@
 
 **Per-note flags** set here: `short_note`, `creak`, `ambiguous_intent` (40-60 cents from a semitone), `register_break` (multi with an abrupt step >= 300 cents).
 
-**Not in this target:** which semitone was intended (needs key/context), tuning drift, ensemble tuning, large-shift artifacts (design note section 9; follow-up notes), the `pitch_target_mode` edit (Phase 4, ADR-0014).
+**Not in this target:** which semitone was intended (needs key/context), tuning drift, ensemble tuning, large-shift artifacts (design note section 9; follow-up notes), the `pitch_target_mode` edit (Phase 4, ADR-0015).
 
 **Tuning parameters** (`PitchTargetParams`, all with units): `ReliabilityParams`, `SegmentingParams` (including `glissando_g`), `TargetParams` (weights; stability factor and end bias are off, see the design note section 15), `OrnamentParams`, `TakeParams`; `pitch_target_params_for(StylePreset)`. Style presets live in `core/tuning` (pop validated, the rest provisional).
 

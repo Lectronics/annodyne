@@ -62,8 +62,13 @@ function(anno_external_allowed folder dep out_var)
     if(folder STREQUAL "core/render" AND dep STREQUAL "Threads::Threads")
         set(allowed TRUE)
     endif()
-    # pocketfft (ADR-0009): the FFT library, core/dsp only.
+    # pocketfft (ADR-0009, amended by ADR-0014): the FFT library, core/dsp; the vendored c4dm/pyin
+    # target (anno_c4dm_pyin) also links it, but it is not an anno_add_library target.
     if(folder STREQUAL "core/dsp" AND dep STREQUAL "anno_pocketfft")
+        set(allowed TRUE)
+    endif()
+    # c4dm/pyin (ADR-0014): the vendored pYIN core, core/analysis/pitch only.
+    if(folder STREQUAL "core/analysis/pitch" AND dep STREQUAL "anno_c4dm_pyin")
         set(allowed TRUE)
     endif()
     # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).
