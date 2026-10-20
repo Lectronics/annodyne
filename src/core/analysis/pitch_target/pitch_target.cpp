@@ -1,5 +1,6 @@
 #include "core/analysis/pitch_target/pitch_target.h"
 
+#include "core/analysis/pitch_target/detail/ornament.h"
 #include "core/analysis/pitch_target/detail/reliability.h"
 #include "core/analysis/pitch_target/detail/tonal_segments.h"
 
@@ -57,7 +58,10 @@ Result<void> validate_params(const PitchTargetParams& p) {
         !positive(s.glissando_g) || !positive(s.transient_window.value()) ||
         !positive(s.glissando_max_duration.value()) || !positive(s.zone_max_share) ||
         !positive(s.step_min_extent.value()) || !positive(t.min_core.value()) ||
-        !positive(t.core_floor.value()) || !positive(t.short_note.value()) ||
+        !positive(t.core_floor.value()) || !positive(p.ornament.min_extent.value()) ||
+        !positive(p.ornament.still_cents_per_s) || !positive(p.ornament.min_plateau.value()) ||
+        p.ornament.min_transitions < 1 || !positive(p.ornament.flat_top_share) ||
+        p.ornament.flat_top_share > 1.0 || !positive(t.short_note.value()) ||
         !positive(t.glide_min_duration.value()) || !positive(t.multi_min_separation.value()) ||
         !positive(t.overshoot_min.value()) || !positive(t.preparation_max.value()) ||
         !positive(t.preparation_min.value()) || !positive(t.preparation_window.value()) ||
@@ -426,6 +430,18 @@ Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& 
         return out;
     }
 
+    if (const auto orn =
+            find_ornament(w.curve, w.rel.weight, min_rel, note.grid.hop, params.ornament)) {
+        out.kind = PitchTargetKind::ornament;  // never averaged: both levels are the targets
+        out.target = Cents{orn->main_cents};
+        out.secondary = Cents{orn->secondary_cents};
+        out.core = range_of(note, w.all());
+        out.target_whole = Cents{w.pitch_of(w.all())};
+        out.confidence_prob = std::clamp(orn->flat_share * static_cast<double>(w.reliable_frames) /
+                                             static_cast<double>(n),
+                                         0.0, 1.0);
+        return out;
+    }
     build_segments(w, out);
     FrameRange core = classify(w, out);
     if (out.kind == PitchTargetKind::glide) {

@@ -113,7 +113,8 @@ TEST_CASE("a_three_note_melody_is_analysed_into_complete_notes", "[analyse]") {
     for (std::size_t i = 0; i < 3; ++i) {
         const Note& n = result->notes[i];
         CHECK(std::abs(sec(n.source_start) - starts[i]) <= 0.02);
-        CHECK(std::abs(n.pitch_target.target.value() - to_cents(Hz{hz[i]}, Hz{440.0}).value()) <= 10.0);
+        CHECK(std::abs(n.pitch_target.target.value() - to_cents(Hz{hz[i]}, Hz{440.0}).value()) <=
+              10.0);
         CHECK(std::abs(n.pitch_center.value() - n.pitch_target.target.value()) <= 5.0);
         CHECK(n.confidence_prob > 0.5);
     }
@@ -230,4 +231,22 @@ TEST_CASE("notes_appear_only_where_the_recording_is_active", "[analyse]") {
             CHECK(!is_voiced(*r->pitch, i));
         }
     }
+}
+
+TEST_CASE("a_sung_trill_stays_one_note_and_is_an_ornament", "[analyse][pitch_target]") {
+    constexpr double k_rate = 44100.0;
+    // 6 Hz trill between A3 and B3 (about 200 cents), flat plateaus, 1.2 s, after 0.3 s of silence.
+    const auto f0 = [](double t) { return std::fmod(t, 0.1667) < 0.0833 ? 220.0 : 246.94; };
+    const auto tone = make_harmonic(f0, 1.2, k_rate, harmonic_amps(6, 0.3));
+    std::vector<float> x(static_cast<std::size_t>(std::llround(2.0 * k_rate)), 0.0F);
+    std::ranges::copy(tone, x.begin() + static_cast<std::ptrdiff_t>(0.3 * k_rate));
+    const auto result = analyse(source_of(x, k_rate), {}).value();
+    REQUIRE(!result->notes.empty());
+    int ornaments = 0;
+    for (const Note& n : result->notes) {
+        ornaments += n.pitch_target.kind == PitchTargetKind::ornament ? 1 : 0;
+    }
+    INFO("notes " << result->notes.size());
+    CHECK(result->notes.size() <= 2);
+    CHECK(ornaments >= 1);
 }

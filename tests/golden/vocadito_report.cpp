@@ -109,6 +109,12 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
         get("turn", tt);
         p.pitch_target.segmenting.turn_threshold = Cents{tt};
     }
+    {
+        double ts = p.segmentation.trill_min_steps;
+        get("trillsteps", ts);
+        p.segmentation.trill_min_steps = static_cast<int>(ts);
+    }
+    sec("trillplateau", p.segmentation.trill_max_plateau);
     get("sigma", p.segmentation.pitch_sigma_cents);
     get("stay", p.segmentation.stay_stable);
     get("s2s", p.segmentation.stable_to_silence);

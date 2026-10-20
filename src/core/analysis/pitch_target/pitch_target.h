@@ -42,6 +42,14 @@ struct SegmentingParams {
     double zone_max_share = 0.2;  // a transient zone covers at most this share of a short note
 };
 
+struct OrnamentParams {
+    Cents min_extent{80.0};            // distance between the two levels of a trill / mordent
+    double flat_top_share = 0.35;       // share of each plateau's frames that are stationary
+    double still_cents_per_s = 400.0;  // |slope| below this is stationary (a vibrato never is)
+    Seconds min_plateau{0.040};        // a stretch on one level counts from this long
+    int min_transitions = 2;           // A-B-A is a mordent, A-B-A-B a trill
+};
+
 struct TargetParams {
     // gamma 0: the stability factor is off (on the Vocadito notes it lowered the share of targets
     // within -10/+15 cents from 0.60 to 0.51); the loudness term of the weights stays.
@@ -66,6 +74,7 @@ struct PitchTargetParams {
     ReliabilityParams reliability;
     SegmentingParams segmenting;
     TargetParams target;
+    OrnamentParams ornament;
 };
 
 /// What the target is computed from besides the note's own curves.

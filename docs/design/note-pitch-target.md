@@ -410,3 +410,7 @@ Changes made while measuring (on the 35 tuning tracks; the held-out 5 were check
 | plain mean / median of the note's voiced frames | 0.573 / 0.630 | same |
 
 The target **does not beat the plain median** on the APC metric (the §8 golden goal). Reason, to be decided by the owner: the annotators' pitch is itself close to a median over the whole note, scoops included, while the target excludes approach and release by design (owner principle: rolls are not averaged). The APC guard is therefore 0.52 (regression), and the 50-cent figure improved. Remaining stages: ornaments (4), take pass (5), presets and spec of the mode edit (6), close (7).
+
+## 16. Stage 4 result (2026-10-20): ornaments
+
+`find_ornament` (detail/ornament): two flat levels >= 80 cents apart, every plateau (>= 40 ms) stationary for at least 35 % of its frames (slope under 400 cents/s; the tracker smooths a clean step over ~50 ms, so a stricter test missed a real trill, while a 6 Hz vibrato is never stationary), at least 2 level changes. Kind `ornament`: `target` is the level the note starts on, `secondary` the other; never averaged. Gamaka handling stays style-gated and arrives with the style table (stage 6). Segmentation keeps a trill whole (ADR-0010a, 5 alternating steps): an `analyse()` test on a synthetic 6 Hz trill gives one note of kind `ornament`. No change on the Vocadito subsets (no false ornaments); 5 steps was chosen because 3 merged real fast melodic alternations.

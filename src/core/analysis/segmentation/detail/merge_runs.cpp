@@ -3,13 +3,13 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <utility>
 
 namespace anno {
 
 namespace {
 
 constexpr double k_transition_s = 0.060;  // longest transition between two plateaus of a trill
-constexpr double k_side_s = 0.040;        // pitch is read this far before / after a pitch_change
 
 double time_of(const PitchTrack& p, std::size_t i) {
     return (p.grid.start - SourceTime{}).value() + static_cast<double>(i) * p.grid.hop.value();
@@ -47,80 +47,79 @@ double median_of(const MergeInput& in, const NoteRun& r) {
     return v[v.size() / 2];
 }
 
-/// Mean raw f0 of the voiced frames in [from_s, to_s]; NaN if none.
-double mean_f0(const PitchTrack& p, double from_s, double to_s) {
-    double sum = 0.0;
-    int n = 0;
-    for (std::size_t i = 0; i < p.f0.size(); ++i) {
-        const double t = time_of(p, i);
-        if (t >= from_s && t <= to_s && is_voiced(p, i)) {
-            sum += p.f0[i].value();
-            ++n;
+/// A step of the raw f0: where it moves by at least `k_step_cents` within `k_step_frames`.
+struct Step {
+    double time_s = 0.0;
+    int direction = 0;  // +1 up, -1 down
+};
+
+constexpr double k_step_cents = 60.0;
+constexpr std::size_t k_step_frames = 3;
+
+std::vector<Step> find_steps(const PitchTrack& p) {
+    std::vector<Step> steps;
+    for (std::size_t i = 0; i + k_step_frames < p.f0.size(); ++i) {
+        if (!is_voiced(p, i) || !is_voiced(p, i + k_step_frames)) {
+            continue;
         }
+        const double d = p.f0[i + k_step_frames].value() - p.f0[i].value();
+        if (std::abs(d) < k_step_cents) {
+            continue;
+        }
+        const double t =
+            time_of(p, i) + 0.5 * static_cast<double>(k_step_frames) * p.grid.hop.value();
+        const int dir = d > 0.0 ? 1 : -1;
+        if (!steps.empty() && dir == steps.back().direction &&
+            t - steps.back().time_s <=
+                2.0 * static_cast<double>(k_step_frames) * p.grid.hop.value()) {
+            continue;  // the same step seen again
+        }
+        steps.push_back({.time_s = t, .direction = dir});
     }
-    return n == 0 ? std::nan("") : sum / n;
+    return steps;
 }
 
-/// Indices (into onsets) of the pitch_change onsets that belong to a trill cluster.
-std::vector<bool> trill_members(const MergeInput& in) {
-    const OnsetList& on = *in.onsets;
-    std::vector<bool> member(on.times.size(), false);
-    std::vector<std::size_t> steps;  // pitch_change onsets, in time order
-    for (std::size_t i = 0; i < on.times.size(); ++i) {
-        if (on.kind[i] == OnsetKind::pitch_change) {
-            steps.push_back(i);
-        }
-    }
+/// Time spans [from, to] of trills: >= trill_min_steps alternating-direction steps, consecutive
+/// steps no further apart than a plateau (trill_max_plateau) plus a transition.
+std::vector<std::pair<double, double>> trill_regions(const MergeInput& in) {
+    const std::vector<Step> steps = find_steps(*in.pitch);
     const double max_spacing = in.params->trill_max_plateau.value() + k_transition_s;
-    const auto direction = [&](std::size_t onset) {
-        const double t = (on.times[onset] - SourceTime{}).value();
-        const double before = mean_f0(*in.pitch, t - k_side_s - 0.02, t - 0.02);
-        const double after = mean_f0(*in.pitch, t + 0.02, t + k_side_s + 0.02);
-        if (std::isnan(before) || std::isnan(after)) {
-            return 0;
-        }
-        return after > before ? 1 : -1;
-    };
+    std::vector<std::pair<double, double>> regions;
     std::size_t begin = 0;
     while (begin < steps.size()) {
         std::size_t end = begin + 1;
-        int last_direction = direction(steps[begin]);
-        while (end < steps.size() &&
-               (on.times[steps[end]] - on.times[steps[end - 1]]).value() <= max_spacing) {
-            const int d = direction(steps[end]);
-            if (d == 0 || d == last_direction || last_direction == 0) {
-                break;
-            }
-            last_direction = d;
+        while (end < steps.size() && steps[end].direction != steps[end - 1].direction &&
+               steps[end].time_s - steps[end - 1].time_s <= max_spacing) {
             ++end;
         }
         if (end - begin >= static_cast<std::size_t>(in.params->trill_min_steps)) {
-            for (std::size_t k = begin; k < end; ++k) {
-                member[steps[k]] = true;
-            }
+            regions.emplace_back(steps[begin].time_s, steps[end - 1].time_s);
         }
-        begin = std::max(end, begin + 1);
+        begin = end;
     }
-    return member;
+    return regions;
+}
+
+bool inside_any(const std::vector<std::pair<double, double>>& regions, double t, double slack) {
+    return std::ranges::any_of(
+        regions, [&](const auto& r) { return t >= r.first - slack && t <= r.second + slack; });
 }
 
 /// An onset that separates the voiced end `from_s` of one run from the voiced start `to_s` of the
-/// next.
-bool onset_between(const MergeInput& in, const std::vector<bool>& trill, double from_s,
-                   double to_s) {
+/// next. Onsets inside a trill do not.
+bool onset_between(const MergeInput& in, const std::vector<std::pair<double, double>>& trills,
+                   double from_s, double to_s) {
     const OnsetList& on = *in.onsets;
     const double zone = in.params->merge_onset_zone.value();
     for (std::size_t i = 0; i < on.times.size(); ++i) {
         const double t = (on.times[i] - SourceTime{}).value();
-        if (t < from_s - zone || t > to_s + zone) {
+        if (t < from_s - zone || t > to_s + zone || inside_any(trills, t, zone)) {
             continue;
         }
-        if (on.kind[i] == OnsetKind::pitch_change) {
-            if (!trill[i]) {
-                return true;
-            }
-        } else if ((on.kind[i] == OnsetKind::attack || on.kind[i] == OnsetKind::consonant) &&
-                   on.strength[i] >= in.params->merge_onset_strength) {
+        const bool transient =
+            on.kind[i] == OnsetKind::attack || on.kind[i] == OnsetKind::consonant;
+        if (on.kind[i] == OnsetKind::pitch_change ||
+            (transient && on.strength[i] >= in.params->merge_onset_strength)) {
             return true;
         }
     }
@@ -133,7 +132,7 @@ std::vector<NoteRun> merge_runs(std::vector<NoteRun> runs, const MergeInput& in)
     if (runs.size() < 2) {
         return runs;
     }
-    const std::vector<bool> trill = trill_members(in);
+    const std::vector<std::pair<double, double>> trills = trill_regions(in);
     const double hop = in.pitch->grid.hop.value();
     std::vector<NoteRun> out{runs.front()};
     double previous_median = median_of(in, runs.front());
@@ -143,14 +142,17 @@ std::vector<NoteRun> merge_runs(std::vector<NoteRun> runs, const MergeInput& in)
         const auto end_voiced = last_voiced(*in.pitch, current);
         const auto start_voiced = first_voiced(*in.pitch, next);
         const double next_median = median_of(in, next);
-        bool apart = !end_voiced || !start_voiced ||
-                     std::abs(next_median - previous_median) > in.params->merge_max_cents.value();
+        bool apart =
+            !end_voiced || !start_voiced ||
+            (std::abs(next_median - previous_median) > in.params->merge_max_cents.value() &&
+             !inside_any(trills, time_of(*in.pitch, first_voiced(*in.pitch, next).value_or(0)),
+                         in.params->merge_onset_zone.value()));
         if (!apart) {
             const double from = time_of(*in.pitch, *end_voiced);
             const double to = time_of(*in.pitch, *start_voiced);
             const double gap = to - from - hop;  // unvoiced time between the two voiced parts
             apart = gap >= in.params->min_gap_for_split.value() - 1e-9 ||
-                    onset_between(in, trill, from + hop, to);
+                    onset_between(in, trills, from + hop, to);
         }
         if (apart) {
             out.push_back(next);

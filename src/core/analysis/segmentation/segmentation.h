@@ -37,7 +37,7 @@ struct SegmentParams {
     Seconds merge_onset_zone{0.040};   // an onset this close to a run boundary separates the runs
     Seconds min_gap_for_split{0.030};  // an unvoiced gap this long always separates two notes
     Seconds trill_max_plateau{0.150};  // pitch_change onsets of a trill cluster (>= trill_min_steps
-    int trill_min_steps = 3;           // alternating steps, plateaus up to this long) do not split
+    int trill_min_steps = 5;           // alternating steps, plateaus up to this long) do not split
     Seconds snap_before{0.030};        // a start snaps to an onset up to this much before it ...
     Seconds snap_after{0.040};         // ... or this much after the voiced start
 };

@@ -368,3 +368,38 @@ TEST_CASE("invalid_inputs_are_errors_and_thin_evidence_is_not", "[pitch_target]"
     REQUIRE(r.has_value());
     CHECK(r->confidence_prob < 0.5);
 }
+
+TEST_CASE("a_flat_topped_trill_is_an_ornament_with_both_pitches", "[pitch_target][ornament]") {
+    // 6 Hz, A4 and +100 cents, ~83 ms plateaus.
+    const auto trill = [](double t) {
+        return k_a4 + (std::fmod(t, 0.1667) < 0.0833 ? 0.0 : 100.0);
+    };
+    const auto sc = make_scene(trill, 1.0);
+    const auto t = estimate(sc);
+    INFO(describe(t));
+    CHECK(t.kind == PitchTargetKind::ornament);
+    CHECK(std::abs(t.target.value() - k_a4) <= tolerance::k_target_tight_cents);
+    REQUIRE(t.secondary.has_value());
+    CHECK(std::abs(t.secondary->value() - (k_a4 + 100.0)) <= tolerance::k_target_tight_cents);
+}
+
+TEST_CASE("a_mordent_returns_to_the_main_note", "[pitch_target][ornament]") {
+    const auto mordent = [](double t) { return k_a4 + ((t > 0.5 && t < 0.6) ? 100.0 : 0.0); };
+    const auto sc = make_scene(mordent, 1.2);
+    const auto t = estimate(sc);
+    CHECK(t.kind == PitchTargetKind::ornament);
+    CHECK(std::abs(t.target.value() - k_a4) <= tolerance::k_target_tight_cents);
+}
+
+TEST_CASE("neither_vibrato_nor_a_single_step_is_an_ornament", "[pitch_target][ornament]") {
+    const auto vibrato = [](double t) {
+        return k_a4 + 60.0 * std::sin(2.0 * std::numbers::pi * 6.0 * t);
+    };
+    CHECK(estimate(make_scene(vibrato, 1.0)).kind != PitchTargetKind::ornament);
+    const auto step = [](double t) { return k_a4 + (t > 0.5 ? 100.0 : 0.0); };
+    CHECK(estimate(make_scene(step, 1.0)).kind != PitchTargetKind::ornament);
+    const auto hunt = [](double t) {
+        return k_a4 + 45.0 * std::sin(2.0 * std::numbers::pi * 2.0 * t);
+    };
+    CHECK(estimate(make_scene(hunt, 1.5)).kind != PitchTargetKind::ornament);
+}

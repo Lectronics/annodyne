@@ -1,5 +1,6 @@
 anno_add_library(core/analysis/pitch_target
     SOURCES
+        detail/ornament.cpp
         detail/reliability.cpp
         detail/tonal_segments.cpp
         pitch_target.cpp
