@@ -14,8 +14,8 @@ namespace anno {
 namespace {
 
 constexpr std::size_t k_edge_frames = 3;                // frames averaged at a segment end
-constexpr double k_vibrato_min_crossings_per_s = 5.0;   // zero crossings of a 3-9 Hz oscillation:
-constexpr double k_vibrato_max_crossings_per_s = 20.0;  // 6-18 per second
+constexpr double k_vibrato_min_crossings_per_s = 5.0;   // zero crossings per second of a
+constexpr double k_vibrato_max_crossings_per_s = 20.0;  // 3-9 Hz oscillation: 6-18, with margin
 
 /// The vibrato period of a modulation curve, only if it really oscillates: the autocorrelation
 /// test of vibrato_period() also accepts a step or a slow wander, so the curve must cross its mean
@@ -45,36 +45,51 @@ bool positive(double v) {
     return std::isfinite(v) && v > 0.0;
 }
 
-Result<void> validate_params(const PitchTargetParams& p) {
-    const auto& r = p.reliability;
-    const auto& s = p.segmenting;
-    const auto& t = p.target;
-    const bool bad =
-        !positive(r.consonant_zone.value()) || !std::isfinite(r.min_reliability) ||
-        r.min_reliability < 0.0 || r.min_reliability >= 1.0 ||
-        !positive(r.creak_min_stretch.value()) || !positive(r.creak_tolerance.value()) ||
-        !std::isfinite(r.unpitched_voicing) || !positive(s.segment_smoothing.value()) ||
-        !positive(s.turn_threshold.value()) || !positive(s.slope_merge_cents_per_s) ||
-        !positive(s.plateau_merge.value()) || !positive(s.min_glide_extent.value()) ||
-        !positive(s.glissando_g) || !positive(s.transient_window.value()) ||
-        !positive(s.glissando_max_duration.value()) || !positive(s.zone_max_share) ||
-        !positive(s.step_min_extent.value()) || !positive(t.min_core.value()) ||
-        !positive(t.core_floor.value()) || !positive(p.ornament.min_extent.value()) ||
-        !positive(p.ornament.still_cents_per_s) || !positive(p.ornament.min_plateau.value()) ||
-        p.ornament.min_transitions < 1 || !positive(p.ornament.flat_top_share) ||
-        p.ornament.flat_top_share > 1.0 || !positive(t.short_note.value()) ||
-        !positive(t.glide_min_duration.value()) || !positive(t.multi_min_separation.value()) ||
-        !positive(t.overshoot_min.value()) || !positive(t.preparation_max.value()) ||
-        !positive(t.preparation_min.value()) || !positive(t.preparation_window.value()) ||
-        !positive(t.legato_gap.value()) || !positive(t.legato_match.value()) ||
-        !positive(t.ambiguous_low.value()) ||
-        !(t.ambiguous_high.value() > t.ambiguous_low.value()) ||
-        !positive(t.register_break_min.value()) || !positive(t.register_break_max_step.value()) ||
-        !std::isfinite(p.tuning_offset.value()) || !std::isfinite(t.end_bias) || t.end_bias < 0.0;
-    if (bad) {
-        return fail(ErrorCode::invalid_argument, "estimate_pitch_target: invalid parameters");
-    }
-    return {};
+bool unit_interval(double v) {
+    return std::isfinite(v) && v >= 0.0 && v <= 1.0;
+}
+
+bool reliability_ok(const ReliabilityParams& r) {
+    return positive(r.consonant_zone.value()) && unit_interval(r.min_reliability) &&
+           r.min_reliability < 1.0 && positive(r.creak_min_stretch.value()) &&
+           positive(r.creak_tolerance.value()) && unit_interval(r.unpitched_voicing);
+}
+
+bool segmenting_ok(const SegmentingParams& s) {
+    return positive(s.segment_smoothing.value()) && positive(s.turn_threshold.value()) &&
+           positive(s.slope_merge_cents_per_s) && positive(s.plateau_merge.value()) &&
+           positive(s.min_glide_extent.value()) && positive(s.glissando_g) &&
+           positive(s.transient_window.value()) && positive(s.glissando_max_duration.value()) &&
+           positive(s.step_min_extent.value()) && positive(s.zone_max_share) &&
+           s.zone_max_share <= 0.5;
+}
+
+bool target_ok(const TargetParams& t) {
+    return positive(t.weights.rate_scale_cents_per_s) && std::isfinite(t.weights.gamma) &&
+           t.weights.gamma >= 0.0 && positive(t.weights.amp_range.value()) &&
+           std::isfinite(t.end_bias) && t.end_bias >= 0.0 && positive(t.min_core.value()) &&
+           positive(t.core_floor.value()) && positive(t.short_note.value()) &&
+           positive(t.glide_min_duration.value()) && positive(t.multi_min_separation.value()) &&
+           positive(t.overshoot_min.value()) && positive(t.preparation_min.value()) &&
+           t.preparation_max.value() > t.preparation_min.value() &&
+           positive(t.preparation_window.value()) && positive(t.legato_gap.value()) &&
+           positive(t.legato_match.value()) && positive(t.ambiguous_low.value()) &&
+           t.ambiguous_high.value() > t.ambiguous_low.value() &&
+           positive(t.register_break_min.value()) && positive(t.register_break_max_step.value());
+}
+
+bool ornament_ok(const OrnamentParams& o) {
+    return positive(o.min_extent.value()) && unit_interval(o.flat_top_share) &&
+           o.flat_top_share > 0.0 && positive(o.still_cents_per_s) &&
+           positive(o.min_plateau.value()) && o.min_transitions >= 1 && o.gamaka_min_segments >= 1;
+}
+
+bool take_ok(const TakeParams& k) {
+    return positive(k.phrase_gap.value()) && positive(k.run_max_note.value()) &&
+           k.run_min_notes >= 1 && positive(k.run_max_gap.value()) && k.off_grid_min_count >= 1 &&
+           positive(k.off_grid_spread.value()) && positive(k.off_grid_min_offset.value()) &&
+           positive(k.peak_tolerance.value()) && positive(k.peak_min_offset.value()) &&
+           k.peak_tolerance.value() > k.peak_min_offset.value() && k.peak_min_phrase_notes >= 1;
 }
 
 struct FrameRange {
@@ -433,7 +448,7 @@ bool evidence_matches(const Note& note, const NoteEvidence& evidence, std::size_
 Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& evidence,
                                           const NoteContext& context,
                                           const PitchTargetParams& params) {
-    if (auto r = validate_params(params); !r) {
+    if (auto r = validate(params); !r) {
         return Unexpected{r.error()};
     }
     const auto n = static_cast<std::size_t>(std::max<std::int64_t>(note.grid.n_frames, 0));
@@ -490,6 +505,7 @@ Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& 
         out.secondary = Cents{orn->secondary_cents};
         out.core = range_of(note, w.all());
         out.target_whole = Cents{w.pitch_of(w.all())};
+        set_note_flags(w, out);
         out.confidence_prob = std::clamp(orn->flat_share * static_cast<double>(w.reliable_frames) /
                                              static_cast<double>(n),
                                          0.0, 1.0);
@@ -513,6 +529,14 @@ Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& 
     out.confidence_prob = confidence_of(w, core, short_note);
     set_note_flags(w, out);
     return out;
+}
+
+Result<void> validate(const PitchTargetParams& p) {
+    if (!reliability_ok(p.reliability) || !segmenting_ok(p.segmenting) || !target_ok(p.target) ||
+        !ornament_ok(p.ornament) || !take_ok(p.take) || !std::isfinite(p.tuning_offset.value())) {
+        return fail(ErrorCode::invalid_argument, "pitch target: invalid parameters");
+    }
+    return {};
 }
 
 PitchTargetParams pitch_target_params_for(StylePreset preset) {

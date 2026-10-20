@@ -187,7 +187,7 @@ TEST_CASE("harmonic_noise_and_envelope_tracks_check_their_shapes", "[analysis_ty
 TEST_CASE("a_default_pitch_target_is_valid_and_unpitched", "[analysis_types][pitch_target]") {
     Note note = note_with_grid(10);
     note.pitch_target = PitchTarget{};
-    note.pitch_center = Cents{};
+    note.pitch_center = Cents{6900.0};  // any centre: `target` means nothing for an unpitched note
     CHECK(note.pitch_target.kind == PitchTargetKind::unpitched);
     CHECK(validate(note).has_value());
 }
@@ -204,11 +204,8 @@ TEST_CASE("pitch_target_rules_are_validated", "[analysis_types][pitch_target]") 
     CHECK(invalid([](Note& n) { n.pitch_target.kind = PitchTargetKind::glide; }));  // no secondary
     CHECK(
         invalid([](Note& n) { n.pitch_target.kind = PitchTargetKind::ornament; }));  // no secondary
-    CHECK(invalid([](Note& n) {  // unpitched must equal pitch_center
-        n.pitch_target.kind = PitchTargetKind::unpitched;
-        n.pitch_center = Cents{6900.0};
-        n.pitch_target.target = Cents{6800.0};
-    }));
+    CHECK(invalid([](Note& n) { n.pitch_target.target_whole = Cents{std::nan("")}; }));
+    CHECK(invalid([](Note& n) { n.pitch_target.target_end = Cents{std::nan("")}; }));
     CHECK(invalid([](Note& n) {  // core outside the note
         n.pitch_target = make_whole_target(n.pitch_center);
         n.pitch_target.core = SourceRange::from_start(n.source_end, Seconds{1.0});

@@ -259,9 +259,9 @@ TEST_CASE("a_bend_without_a_level_part_is_a_glide", "[pitch_target]") {
     const auto sc = make_scene(bend, 0.4);
     const auto t = estimate(sc);
     CHECK(t.kind == PitchTargetKind::glide);
-    CHECK(std::abs(t.target.value() - (k_a4 + 100.0)) <= tolerance::k_target_loose_cents + 5.0);
+    CHECK(std::abs(t.target.value() - (k_a4 + 100.0)) <= tolerance::k_target_glide_end_cents);
     REQUIRE(t.secondary.has_value());
-    CHECK(std::abs(t.secondary->value() - k_a4) <= tolerance::k_target_loose_cents + 5.0);
+    CHECK(std::abs(t.secondary->value() - k_a4) <= tolerance::k_target_glide_end_cents);
 }
 
 TEST_CASE("two_plateaus_far_apart_are_multi", "[pitch_target]") {
@@ -322,7 +322,7 @@ TEST_CASE("a_quiet_sharp_ending_does_not_pull_the_target", "[pitch_target]") {
     const auto sc = make_scene(sharp, 1.0, 1.0, quiet);
     const auto t = estimate(sc);
     INFO(describe(t));
-    CHECK(std::abs(t.target.value() - k_a4) <= tolerance::k_target_loose_cents + 3.0);
+    CHECK(std::abs(t.target.value() - k_a4) <= tolerance::k_target_quiet_end_cents);
 }
 
 TEST_CASE("the_target_is_deterministic_and_finite", "[pitch_target]") {
@@ -451,5 +451,23 @@ TEST_CASE("a_gamaka_style_note_is_an_ornament_only_with_the_gamaka_preset",
     const auto gamaka = estimate(sc, {}, pitch_target_params_for(StylePreset::gamaka));
     CHECK(gamaka.kind == PitchTargetKind::ornament);
     REQUIRE(gamaka.secondary.has_value());
-    CHECK(std::abs(gamaka.target.value() - k_a4) <= tolerance::k_target_hunt_cents + 20.0);
+    CHECK(std::abs(gamaka.target.value() - k_a4) <= tolerance::k_target_gamaka_median_cents);
+}
+
+TEST_CASE("every_parameter_group_is_validated", "[pitch_target]") {
+    const auto bad = [](const auto& edit) {
+        PitchTargetParams p;
+        edit(p);
+        return !validate(p).has_value();
+    };
+    CHECK(validate(PitchTargetParams{}).has_value());
+    CHECK(bad([](PitchTargetParams& p) { p.target.weights.rate_scale_cents_per_s = 0.0; }));
+    CHECK(bad([](PitchTargetParams& p) { p.target.weights.amp_range = Decibels{0.0}; }));
+    CHECK(bad([](PitchTargetParams& p) { p.target.weights.gamma = -1.0; }));
+    CHECK(bad([](PitchTargetParams& p) { p.reliability.unpitched_voicing = 1.5; }));
+    CHECK(bad([](PitchTargetParams& p) { p.segmenting.zone_max_share = 0.9; }));
+    CHECK(bad([](PitchTargetParams& p) { p.target.preparation_min = Cents{80.0}; }));
+    CHECK(bad([](PitchTargetParams& p) { p.ornament.gamaka_min_segments = 0; }));
+    CHECK(bad([](PitchTargetParams& p) { p.take.peak_tolerance = Cents{1.0}; }));
+    CHECK(bad([](PitchTargetParams& p) { p.tuning_offset = Cents{std::nan("")}; }));
 }

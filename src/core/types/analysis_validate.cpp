@@ -170,8 +170,12 @@ Result<void> validate_pitch_target(const Note& note) {
         !pt.secondary) {
         return invalid("a glide or ornament target needs a secondary pitch");
     }
-    if (pt.kind == PitchTargetKind::unpitched && pt.target != note.pitch_center) {
-        return invalid("an unpitched target must equal the note's pitch_center");
+    const auto finite_optional = [](const std::optional<Cents>& c) {
+        return !c || std::isfinite(c->value());
+    };
+    if (!finite_optional(pt.target_whole) || !finite_optional(pt.target_settled) ||
+        !finite_optional(pt.target_end)) {
+        return invalid("the candidate pitch targets must be finite");
     }
     if (pt.core.duration() > Seconds{0.0} &&
         (!inside_note(note, pt.core.start()) || !inside_note(note, pt.core.end()))) {

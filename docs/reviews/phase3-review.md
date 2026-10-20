@@ -74,3 +74,19 @@ the observed voiced mass forced to the path's side of 0.5; onsets are modelled a
 After the implementation review: `NoteSpan`/`note_grid` moved to `core/types`; one `is_voiced`; internal headers in
 `detail/`; `PYinEstimator::estimate`, `segment_notes` and `onsets` split into named steps; `YinFrame::analyse`
 returns a struct; `-ffp-contract=off` also on `core/types`.
+
+
+## Addendum 2026-10-20: transient segmentation and pitch target
+
+Built (design: `phase3-segmentation-transient.md`, `note-pitch-target.md` sections 11-18; ADR-0010a, ADR-0012, ADR-0013): transient-driven note boundaries; `PitchTarget` replacing `Note::perceived_pitch` (kinds whole/settled/glide/multi/ornament/unpitched, approach/release labels, flags short_note/creak/ambiguous_intent/register_break/run/consistent_off_grid/expressive_peak); `core/tuning` style presets (pop validated, others provisional); plot and JSON export of the target.
+
+Verification: debug-asan 509/509 (with `ANNO_REQUIRE_GOLDEN=3`), debug-tsan 503/503 before the audit fixes, release green; clang-format and clang-tidy clean on the changed files. Structure audit (CHANGES REQUIRED): B1-B4 fixed (default target validates for any centre; `annotate_take` returns `Result` and parameters are validated per group; missing segmentation tests added), S1, S2, S3, S9, S10 handled in the ADR/design text. No audio is rendered; no audio-verifier run.
+
+Held-out 5 (annotator 1): onset F +-20 ms 0.472, +-50 ms 0.715; over-segmentation 18.8 % -> 8.9 %, under-segmentation 4.3 % -> 8.5 %; matched-note pitch within 50 cents 0.740 -> 0.787; within -10/+15 cents 0.520 -> 0.569 (plain median of the note: 0.631, see below).
+
+**Owner decisions needed**
+1. The pitch target does not beat the plain median against the annotators (0.569 vs 0.631) because it excludes scoops and falls by design while the annotators' pitch includes them. Accept (the guard stays a regression guard at 0.52), or change what "correct" means for the metric?
+2. `glissando_g` 0.32 (accepted 2026-10-20), default correction tolerance -10/+15 (Phase 4 gate), style table values other than pop (provisional).
+3. Citations in the pitch-target note are the owner's research and unverified.
+
+**Carried from the audit (not done)**: direct tests of the detail kernels (`frame_reliability`, `find_ornament`, `split_curve`, `label_segments`); named constants for remaining magic numbers (confidence caps, 100 cents per semitone, the step threshold shared between `merge_runs` and `SegmentingParams`); splitting `estimate_pitch_target` (about 85 lines) and computing the vibrato period once per note; `perceived_pitch(Note)` has no production caller (decide at close); `weighted_median` returns a bare double with NaN for "no weight"; the trill `analyse` test allows up to 2 notes; a slow-legato-pair integration test; tuning reference single source at Phase 8.

@@ -126,8 +126,17 @@ void flag_peaks(std::span<const Note> notes, const PitchTargetParams& params, do
 
 }  // namespace
 
-std::vector<PitchFlags> annotate_take(std::span<const Note> notes,
-                                      const PitchTargetParams& params) {
+Result<std::vector<PitchFlags>> annotate_take(std::span<const Note> notes,
+                                              const PitchTargetParams& params) {
+    if (auto r = validate(params); !r) {
+        return Unexpected{r.error()};
+    }
+    for (std::size_t i = 1; i < notes.size(); ++i) {
+        if (notes[i].source_start < notes[i - 1].source_start) {
+            return fail(ErrorCode::invalid_argument,
+                        "annotate_take: notes must be sorted by start");
+        }
+    }
     std::vector<PitchFlags> out(notes.size());
     if (notes.empty()) {
         return out;

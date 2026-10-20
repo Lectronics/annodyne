@@ -23,9 +23,10 @@ namespace anno {
 ///  - `expressive_peak`: in a phrase of at least `peak_min_phrase_notes` notes, the note with the
 ///    highest target, if it is sharp of the grid by `peak_min_offset`..`peak_tolerance` after the
 ///    take's offset is removed.
-/// Notes of kind unpitched / multi / glide are ignored by the last two. Pure; thread-safe; not
+/// Notes of kind unpitched / multi / glide / ornament are ignored by the last two. Errors:
+/// invalid_argument (invalid params, notes not sorted by source_start). Pure; thread-safe; not
 /// real-time safe (allocates).
-[[nodiscard]] std::vector<PitchFlags> annotate_take(std::span<const Note> notes,
-                                                    const PitchTargetParams& params);
+[[nodiscard]] Result<std::vector<PitchFlags>> annotate_take(std::span<const Note> notes,
+                                                            const PitchTargetParams& params);
 
 }  // namespace anno

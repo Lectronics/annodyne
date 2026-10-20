@@ -18,9 +18,10 @@ struct Ornament {
 
 /// Looks for two flat levels at least `min_extent` apart that the curve alternates between at
 /// least `min_transitions` times, each stretch on a level lasting `min_plateau` or more, with a
-/// share of at least `flat_top_share` of the frames in every plateau stationary (slope under `still_cents_per_s`). A vibrato
-/// (continuously moving, rounded extremes) fails the flat-top test, a single step is `multi`, not
-/// an ornament. Only frames with weight >= `min_weight` count. Pure; thread-safe.
+/// share of at least `flat_top_share` of the frames in every plateau stationary (slope under
+/// `still_cents_per_s`). A vibrato (continuously moving, rounded extremes) fails the flat-top test,
+/// a single step is `multi`, not an ornament. Only frames with weight >= `min_weight` count. Pure;
+/// thread-safe.
 [[nodiscard]] std::optional<Ornament> find_ornament(const std::vector<double>& curve_cents,
                                                     const std::vector<double>& weight,
                                                     double min_weight, Seconds hop,

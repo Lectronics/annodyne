@@ -1,9 +1,11 @@
 #include "core/analysis/onsets/onsets.h"
 #include "core/analysis/perceived_pitch/perceived_pitch.h"
 #include "core/analysis/pitch/pitch_estimator.h"
+#include "core/analysis/segmentation/detail/merge_runs.h"
 #include "core/analysis/segmentation/segmentation.h"
 #include "support/synth_melody.h"
 #include "support/synth_signals.h"
+#include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -295,7 +297,7 @@ TEST_CASE("a_note_that_hunts_around_its_pitch_is_one_note", "[segmentation][tran
     append(onsets, onset_at(1.45, 1.2, OnsetKind::attack));
     const auto notes = segment(track, onsets);
     REQUIRE(notes.size() == 1);
-    CHECK(std::abs(notes[0].rough_pitch.value() - 6200.0) <= 15.0);
+    CHECK(std::abs(notes[0].rough_pitch.value() - 6200.0) <= tolerance::k_segment_pitch_cents);
 }
 
 TEST_CASE("an_onset_at_the_merge_strength_keeps_two_runs_apart", "[segmentation][transient]") {
@@ -379,4 +381,71 @@ TEST_CASE("the_transient_parameters_are_validated", "[segmentation][transient]")
     p = {};
     p.snap_after = Seconds{0.0};
     CHECK(!segment_notes(track, onsets, p).has_value());
+}
+
+TEST_CASE("a_scoop_into_a_note_stays_in_that_note", "[segmentation][transient]") {
+    const auto scoop = [](double t) { return t < 0.1 ? -100.0 * (1.0 - t / 0.1) : 0.0; };
+    const auto track =
+        make_track({{.start_s = 0.2, .end_s = 1.2, .midi = 62.0, .bend_cents = scoop}}, 1.6);
+    const auto notes = segment(track, make_onsets({0.2}));
+    REQUIRE(notes.size() == 1);
+    CHECK(std::abs(notes[0].rough_pitch.value() - 6200.0) <= tolerance::k_segment_pitch_cents);
+}
+
+TEST_CASE("a_strong_transient_inside_the_same_pitch_splits_the_note", "[segmentation][transient]") {
+    const auto scoop = [](double t) { return t < 0.1 ? -100.0 * (1.0 - t / 0.1) : 0.0; };
+    const auto track =
+        make_track({{.start_s = 0.2, .end_s = 1.2, .midi = 62.0, .bend_cents = scoop}}, 1.6);
+    OnsetList onsets = make_onsets({0.2});
+    append(onsets, onset_at(0.7, 3.0, OnsetKind::attack));
+    CHECK(segment(track, onsets).size() == 2);
+}
+
+TEST_CASE("merge_runs_handles_empty_single_and_chained_runs", "[segmentation][transient]") {
+    // Three adjacent runs 70 cents apart: each neighbouring pair is within the guard, so the
+    // whole chain merges although its ends are 140 cents apart (stated behaviour).
+    const auto track = make_track({{.start_s = 0.1, .end_s = 0.6, .midi = 62.0},
+                                   {.start_s = 0.6, .end_s = 1.1, .midi = 62.7},
+                                   {.start_s = 1.1, .end_s = 1.6, .midi = 63.4}},
+                                  2.0);
+    std::vector<double> smoothed(track.f0.size(), std::nan(""));
+    for (std::size_t i = 0; i < smoothed.size(); ++i) {
+        smoothed[i] = track.f0[i].value();
+    }
+    const SegmentParams params;
+    const OnsetList none;
+    const MergeInput in{
+        .pitch = &track, .smoothed_cents = &smoothed, .onsets = &none, .params = &params};
+    CHECK(merge_runs({}, in).empty());
+    const NoteRun only{.first = 20, .last = 119, .bin = 3};
+    REQUIRE(merge_runs({only}, in).size() == 1);
+    CHECK(merge_runs({only}, in)[0].last == 119);
+    const std::vector<NoteRun> chain{{.first = 20, .last = 119, .bin = 1},
+                                     {.first = 120, .last = 219, .bin = 2},
+                                     {.first = 220, .last = 319, .bin = 3}};
+    const auto merged = merge_runs(chain, in);
+    REQUIRE(merged.size() == 1);
+    CHECK(merged[0].first == 20);
+    CHECK(merged[0].last == 319);
+}
+
+TEST_CASE("a_hunting_sung_note_is_one_note_with_real_pitch_and_onset_detection",
+          "[segmentation][transient]") {
+    constexpr double k_rate = 44100.0;
+    const auto hunt = [](double t) {
+        return 330.0 * std::pow(2.0, triangle(t, 45.0, 0.5) / 1200.0);
+    };
+    const auto tone = make_harmonic(hunt, 1.6, k_rate, harmonic_amps(6, 0.4));
+    std::vector<float> x(static_cast<std::size_t>(2.4 * k_rate), 0.0F);
+    const auto first = static_cast<std::size_t>(0.3 * k_rate);
+    for (std::size_t i = 0; i < tone.size(); ++i) {
+        const double g = std::min(
+            {1.0, static_cast<double>(i) / 44.0, static_cast<double>(tone.size() - i) / 220.0});
+        x[first + i] += static_cast<float>(g * tone[i]);
+    }
+    const AudioSource src = AudioSource::from_buffer(to_buffer(x, k_rate));
+    const auto pitch = detect_pitch(src, PitchParams{}).value();
+    const auto onsets = detect_onsets(src, pitch, OnsetParams{}).value();
+    const auto notes = segment_notes(pitch, onsets, SegmentParams{}).value();
+    CHECK(notes.size() == 1);
 }

@@ -61,7 +61,6 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
     note.separation_in = span.separation_in;
     note.confidence_prob = span.confidence_prob;
     note.is_active = true;
-    note.pitch_target.target = decomposed->center;  // placeholder; replaced below
     auto target =
         estimate_pitch_target(note, {.pitch = &pitch, .onsets = &onsets, .disagreement = {}},
                               context, params.pitch_target);
@@ -128,10 +127,13 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
         result->notes.push_back(std::move(*note));
     }
     // Flags that need the whole take (blue notes, phrase peaks, runs), added once all notes exist.
-    const std::vector<PitchFlags> take_flags = annotate_take(result->notes, params.pitch_target);
-    for (std::size_t i = 0; i < take_flags.size(); ++i) {
+    auto take_flags = annotate_take(result->notes, params.pitch_target);
+    if (!take_flags) {
+        return stage_error("take flags", take_flags.error());
+    }
+    for (std::size_t i = 0; i < take_flags->size(); ++i) {
         result->notes[i].pitch_target.flags.bits = static_cast<std::uint16_t>(
-            result->notes[i].pitch_target.flags.bits | take_flags[i].bits);
+            result->notes[i].pitch_target.flags.bits | (*take_flags)[i].bits);
     }
     result->onsets = std::move(*onsets);
     result->pitch = std::move(*pitch);

@@ -100,6 +100,12 @@ struct PitchTargetParams {
     Cents tuning_offset{0.0};  // grid offset from A4 = 440 Hz (cents); 0 until Phase 8 estimates it
 };
 
+/// Errors: invalid_argument if any parameter of any group is not finite or out of its range
+/// (durations and thresholds positive, probabilities in 0..1, counts >= 1, weights.gamma >= 0,
+/// preparation_min < preparation_max, zone_max_share <= 0.5, peak_min_offset < peak_tolerance).
+/// Pure; thread-safe.
+[[nodiscard]] Result<void> validate(const PitchTargetParams& params);
+
 /// Parameters for a style preset: the glissando constant and gamaka detection come from
 /// style_defaults(); everything else keeps its default. Pure.
 [[nodiscard]] PitchTargetParams pitch_target_params_for(StylePreset preset);

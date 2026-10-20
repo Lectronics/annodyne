@@ -79,3 +79,6 @@ Existing segmentation tests pass unchanged. Golden: no drop in onset F20/F50 or 
 
 ## Review log
 Structure review 2026-10-19: B7 (transient look-ahead duplicated `snap_start`) -> removed, parameters exposed instead; B8 (S vs `multi`, trills, test 3 and 7 wording) -> trill clusters, tests fixed, `multi` is the target note's fallback; S8 (two onset policies) -> one threshold in the HMM prior; S9 (bin, order, bundle, chain, phoneme) -> stated above; S10 (ADR-0010a, validate_params, README/CMake, golden re-baseline by the implementer with owner sign-off) -> done at implementation; S11 tests added. Re-analysis changes note ids: `remap_after_reanalysis` applies to stored edits.
+
+## Implementation deviations (audit 2026-10-20)
+`k_onset_evidence_s` stays in `segmentation.cpp` (the HMM prior); `merge_runs` uses `merge_onset_zone` instead, so no shared header was needed. Trills are found from steps of the raw f0 in the pitch track (not from `pitch_change` onsets, which the onset merge can replace by spectral ones); `trill_min_steps` is 5 and `merge_max_cents` 80 (ADR-0010a). Tests 4, 5, 10 and 11 of the list above are added in `segmentation_test.cpp`.

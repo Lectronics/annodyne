@@ -100,6 +100,11 @@ inline constexpr double k_golden_note_pitch_ok_min = 0.75;
 /// median, which includes the scoops this target excludes by design).
 inline constexpr double k_golden_apc_min = 0.52;
 
+/// Rough pitch of a segmented note whose f0 hunts or scoops: the median of the smoothed f0 lies
+/// within this of the centre (a +-45 cent wander shifts a median by a few cents, a 100 cent scoop
+/// of 0.1 s by a few more).
+inline constexpr double k_segment_pitch_cents = 15.0;
+
 // ---- Pitch target (note-pitch-target.md section 8)
 // -----------------------------------------------
 
@@ -110,6 +115,16 @@ inline constexpr double k_target_loose_cents = 5.0;
 /// A hunting note (+-45 cents triangle) averages to the centre within this (median of a symmetric
 /// wander; the weights shift it by a few cents).
 inline constexpr double k_target_hunt_cents = 8.0;
+
+/// A 100-cent bend over 0.4 s: the smoothed ends of its moving segments are within this of the
+/// truth (the smoothing window and the 3-frame edge average blur a linear ramp by a few cents).
+inline constexpr double k_target_glide_end_cents = 10.0;
+/// A quiet (-18 dB) 40-cent sharp ending over the last 30 % of a note: the loudness weight leaves a
+/// few cents of pull on the median.
+inline constexpr double k_target_quiet_end_cents = 8.0;
+/// Gamaka slides of +-120 cents: the median of a symmetric triangle sits near the centre only to
+/// within this (provisional style, no data).
+inline constexpr double k_target_gamaka_median_cents = 28.0;
 
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 
