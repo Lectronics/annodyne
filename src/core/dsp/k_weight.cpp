@@ -1,5 +1,7 @@
 #include "core/dsp/k_weight.h"
 
+#include "core/dsp/detail/biquad.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -17,9 +19,7 @@ constexpr double k_shelf_vb_exponent = 0.4996667741545416;
 constexpr double k_hp_f0_hz = 38.13547087602444;
 constexpr double k_hp_q = 0.5003270373238773;
 
-struct Biquad {
-    double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;  // a0 normalised to 1
-};
+using detail::Biquad;
 
 Biquad shelf(double rate_hz) {
     const double k = std::tan(std::numbers::pi * k_shelf_f0_hz / rate_hz);
@@ -43,29 +43,13 @@ Biquad high_pass(double rate_hz) {
             .a2 = (1.0 - k / k_hp_q + k * k) / a0};
 }
 
-/// Direct form I in double.
-void run(const Biquad& q, std::vector<double>& x) {
-    double x1 = 0.0;
-    double x2 = 0.0;
-    double y1 = 0.0;
-    double y2 = 0.0;
-    for (double& v : x) {
-        const double y = q.b0 * v + q.b1 * x1 + q.b2 * x2 - q.a1 * y1 - q.a2 * y2;
-        x2 = x1;
-        x1 = v;
-        y2 = y1;
-        y1 = y;
-        v = y;
-    }
-}
-
 }  // namespace
 
 std::vector<float> k_weight(std::span<const float> mono, Hz sample_rate) {
     assert(std::isfinite(sample_rate.value()) && sample_rate.value() >= 4000.0);
     std::vector<double> x(mono.begin(), mono.end());
-    run(shelf(sample_rate.value()), x);
-    run(high_pass(sample_rate.value()), x);
+    detail::run_biquad(shelf(sample_rate.value()), x);
+    detail::run_biquad(high_pass(sample_rate.value()), x);
     std::vector<float> out(x.size());
     std::ranges::transform(x, out.begin(), [](double v) { return static_cast<float>(v); });
     return out;

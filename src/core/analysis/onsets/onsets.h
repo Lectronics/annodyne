@@ -24,8 +24,9 @@ struct OnsetParams {
         0.15;  // absolute floor on the activation (mean positive log difference)
     Seconds min_gap{0.030};
     Cents pitch_change_threshold{80.0};  // f0 step between stable regions counted as an onset
-    Seconds pitch_stable{0.040};         // each side of a step must be stable this long
-    Seconds refine_window{0.025};        // the energy refinement searches +- this around the peak
+    Seconds pitch_stable{
+        0.065};  // each side of a step must be stable this long (> a vibrato turnaround)
+    Seconds refine_window{0.025};  // the energy refinement searches +- this around the peak
 };
 
 /// Spectral onsets (SuperFlux; Bock & Widmer 2013): log-filterbank STFT, frequency max filter over

@@ -26,7 +26,7 @@ struct SegmentParams {
     double onset_new_note_prob =
         0.98;  // ... at the frames of an onset (+-10 ms): onsets are strong evidence
     Seconds preroll_max{
-        0.120};               // how far before the voiced part a consonant onset may pull the start
+        0.030};               // how far before the voiced part a consonant onset may pull the start
     Cents stable_band{40.0};  // attack/release: within this of the note pitch counts as stable
     Seconds stable_min{0.030};  // ... for at least this long
 };

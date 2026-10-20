@@ -23,3 +23,9 @@ Known limitations: `log` crossfade never reaches zero (-60 dB floor); equal-powe
 the midpoint for correlated signals (see ADR-0006); `resample` costs O(n_out x taps) per output sample
 (fine for analysis, not tuned); the truncated kernel is slightly off at the first and last
 `taps_per_side` samples; nothing here is real-time safe.
+
+## filter (zero-phase Butterworth)
+`zero_phase_highpass` / `zero_phase_lowpass`: 2nd-order Butterworth run forward and backward (no group
+delay; magnitude squared: -6 dB at the cutoff, 24.6 dB down one octave outside), odd reflection of three
+cutoff periods at the edges. One shared `Biquad` (`detail/biquad.h`) serves these and `k_weight`
+(bit-exact test). Works on a `double` copy of the signal (about 64 MB per 3 minutes at 44.1 kHz).

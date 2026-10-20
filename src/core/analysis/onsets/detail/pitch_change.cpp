@@ -33,17 +33,6 @@ Side measure(const std::vector<Cents>& f0, std::size_t first, std::size_t last, 
     return {.stable = stable, .median = median};
 }
 
-/// The next voiced frame after `a` with only unvoiced frames in between, within `max_gap` frames;
-/// or n.
-std::size_t next_voiced(const std::vector<Cents>& f0, std::size_t a, std::size_t max_gap) {
-    for (std::size_t b = a + 1; b < f0.size() && b - a <= max_gap; ++b) {
-        if (!std::isnan(f0[b].value())) {
-            return b;
-        }
-    }
-    return f0.size();
-}
-
 }  // namespace
 
 std::vector<PitchChange> find_pitch_changes(const PitchTrack& pitch, Cents threshold,
@@ -55,23 +44,42 @@ std::vector<PitchChange> find_pitch_changes(const PitchTrack& pitch, Cents thres
         std::max(2L, std::lround(stable.value() / pitch.grid.hop.value())));
     const auto max_gap =
         static_cast<std::size_t>(std::max(1L, std::lround(k_max_gap_s / pitch.grid.hop.value())));
-    const double band = threshold.value() / 4.0;
-    // Pairs (a, b) of voiced frames with only unvoiced frames between them, where f0 jumps.
+    const double band =
+        threshold.value() /
+        8.0;  // spread <= 2 x band; a vibrato turnaround stays within 20 cents for ~50 ms
+    // A change is a stable left stretch ending at frame a and a stable right stretch starting at
+    // frame b <= a + max_gap + 1 at least `threshold` away, whatever lies between (unvoiced
+    // frames, or the blended ramp a tracker with a loose voicing threshold draws across a step).
     for (std::size_t a = side - 1; a + 1 < n; ++a) {
-        if (std::isnan(f0[a].value())) {
-            continue;
-        }
-        const std::size_t b = next_voiced(f0, a, max_gap);
-        if (b >= n || b + side > n || std::abs(f0[b].value() - f0[a].value()) < threshold.value()) {
-            continue;
-        }
         const Side left = measure(f0, a + 1 - side, a + 1, band);
-        const Side right = measure(f0, b, b + side, band);
-        const double step = std::abs(right.median - left.median);
-        if (left.stable && right.stable && step >= threshold.value()) {
-            const SourceTime t0 = frame_time(pitch.grid, static_cast<std::int64_t>(a));
-            const SourceTime t1 = frame_time(pitch.grid, static_cast<std::int64_t>(b));
+        if (!left.stable) {
+            continue;
+        }
+        for (std::size_t b = a + 1; b + side <= n && b <= a + max_gap + 1; ++b) {
+            const Side right = measure(f0, b, b + side, band);
+            if (!right.stable) {
+                continue;
+            }
+            const double step = std::abs(right.median - left.median);
+            if (step < threshold.value()) {
+                break;  // the pitch came back to the left note (or never left it): no change
+            }
+            // Tighten to the transition: last frame of the left note, first of the right note.
+            std::size_t last_left = a;
+            while (last_left + 1 < b && !std::isnan(f0[last_left + 1].value()) &&
+                   std::abs(f0[last_left + 1].value() - left.median) <= band) {
+                ++last_left;
+            }
+            std::size_t first_right = b;
+            while (first_right > last_left + 1 && !std::isnan(f0[first_right - 1].value()) &&
+                   std::abs(f0[first_right - 1].value() - right.median) <= band) {
+                --first_right;
+            }
+            const SourceTime t0 = frame_time(pitch.grid, static_cast<std::int64_t>(last_left));
+            const SourceTime t1 = frame_time(pitch.grid, static_cast<std::int64_t>(first_right));
             out.push_back({.time = t0 + (t1 - t0) * 0.5, .strength = step / threshold.value()});
+            a = b;  // resume inside the right note
+            break;
         }
     }
     return out;

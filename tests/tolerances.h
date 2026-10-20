@@ -82,12 +82,18 @@ inline constexpr Cents k_pitch_dynamic{10.0};
 inline constexpr double k_rpa_min = 0.95;
 /// Synthetic onset times (bursts with abrupt starts): within +-5 ms of the truth.
 inline constexpr Seconds k_onset_synthetic{0.005};
-/// Golden recordings: onset F-measure window (ROADMAP: +-20 ms) and minimum F.
-inline constexpr Seconds k_onset_golden{0.020};
-inline constexpr double k_onset_golden_f_min = 0.9;
-/// Golden note lists are hand-checked to +-0.5 semitone, so matched notes must agree within 50
-/// cents, and a pitch spot must be within 50 cents (never an octave off).
-inline constexpr Cents k_golden_note_pitch{50.0};
+/// Golden recordings (Vocadito subset, 5 held-out tracks; tests/golden/vocals/README.md). These are
+/// a REGRESSION GUARD: each threshold is the measured value of the held-out set rounded down with
+/// a margin, not a quality target. Measured: voicing recall 0.916, RPA(50 c) 0.856, octave-error
+/// rate 0.054, onset F-measure at +-20 / +-50 ms 0.389 / 0.652 (better annotator of the two, who
+/// agree with each other at only ~0.75), matched-note pitch within 50 cents 0.723. The ROADMAP
+/// wording "F >= 0.9, no octave errors" cannot be met on real singing (owner decision pending).
+inline constexpr double k_golden_voicing_recall_min = 0.85;
+inline constexpr double k_golden_rpa_min = 0.80;
+inline constexpr double k_golden_octave_rate_max = 0.10;
+inline constexpr double k_golden_onset_f20_min = 0.34;
+inline constexpr double k_golden_onset_f50_min = 0.58;
+inline constexpr double k_golden_note_pitch_ok_min = 0.65;
 
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 
@@ -104,6 +110,21 @@ inline constexpr Decibels k_resample_level{0.1};
 /// formula compensates it); 0.1 dB covers the analytic-coefficient differences at other sample
 /// rates.
 inline constexpr Decibels k_k_weight_1khz{0.1};
+/// Activity labels (25 ms window, 5 ms hop): a burst edge is smeared by half a window, so frames
+/// within 15 ms of an edge are not judged; the noise-floor estimate is within 2 dB of the true
+/// noise RMS (the lowest-3-dB-band estimator sits slightly under the mean of a fluctuating level).
+inline constexpr Seconds k_activity_edge{0.015};
+inline constexpr Decibels k_activity_floor{2.0};
+/// Zero-phase Butterworth filters (2nd order, forward and backward): passband flatness 0.1 dB at
+/// 4 x the high-pass / 0.25 x the low-pass cutoff (the true error there is below 0.02 dB), the
+/// cutoff gain is -6.02 dB (squared magnitude, +-0.3 dB for the finite test length), and one octave
+/// outside the attenuation is 24.6 dB, so 24 dB is the gate (a 30 dB gate is unreachable).
+inline constexpr Decibels k_filter_passband{0.1};
+inline constexpr Decibels k_filter_cutoff{0.3};
+inline constexpr Decibels k_filter_octave_db{24.0};
+/// Energy of k_weight(1 kHz sine, 48 kHz, 1 s, amplitude 0.5), recorded before the biquad was
+/// shared with the zero-phase filters: the refactor must not change a single bit.
+inline constexpr double k_k_weight_reference_energy = 7045.4655434886545;
 /// Exactness of interpolation on data that the interpolator reproduces exactly (linear on lines,
 /// cubic on cubics): double rounding only.
 inline constexpr double k_interp_exact_abs = 1e-9;

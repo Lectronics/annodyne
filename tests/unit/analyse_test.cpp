@@ -200,3 +200,34 @@ TEST_CASE("low_sample_rates_and_tiny_sources", "[analyse]") {
     REQUIRE_FALSE(too_low.has_value());
     CHECK(too_low.error().code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("notes_appear_only_where_the_recording_is_active", "[analyse]") {
+    // Three tones with 100 ms gaps over a steady noise floor, and a long silent tail and head.
+    std::vector<double> starts;
+    const std::vector<Tone> tones{note(220.0, 0.6, 0.3), note(262.0, 0.6, 0.3),
+                                  note(330.0, 0.6, 0.3)};
+    auto x = melody(tones, 48000.0, starts);
+    x.resize(x.size() + 48000, 0.0F);  // one more second of nothing
+    const auto noise = make_noise(static_cast<double>(x.size()) / 48000.0, 48000.0, 0.003, 11);
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        x[i] += noise[i];
+    }
+    const auto r = analyse(source_of(x, 48000.0), AnalyseParams{}).value();
+    require_complete(*r);
+    REQUIRE(r->notes.size() == 3);
+    for (std::size_t k = 0; k < 3; ++k) {
+        CHECK(std::abs(sec(r->notes[k].source_start) - starts[k]) <= 0.02);
+    }
+    // Nothing is voiced in the silent head, the gaps or the tail.
+    const double tail_start = starts.back() + 0.6 + 0.2;
+    for (std::size_t i = 0; i < r->pitch->f0.size(); ++i) {
+        const double t = static_cast<double>(i) * r->pitch->grid.hop.value();
+        bool in_tone = false;
+        for (std::size_t k = 0; k < 3; ++k) {
+            in_tone = in_tone || (t >= starts[k] - 0.02 && t <= starts[k] + 0.6 + 0.03);
+        }
+        if (!in_tone && (t < 0.25 || t > tail_start)) {
+            CHECK(!is_voiced(*r->pitch, i));
+        }
+    }
+}

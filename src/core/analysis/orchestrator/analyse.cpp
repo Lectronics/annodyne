@@ -75,6 +75,15 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     if (!pitch) {
         return stage_error("pitch", pitch.error());
     }
+    auto activity = detect_activity(*mono, pitch->grid, params.activity);
+    if (!activity) {
+        return stage_error("activity", activity.error());
+    }
+    auto gated = gate_pitch(*pitch, *activity);
+    if (!gated) {
+        return stage_error("activity gate", gated.error());
+    }
+    *pitch = std::move(*gated);
     auto onsets = detect_onsets(src, *pitch, params.onsets);
     if (!onsets) {
         return stage_error("onsets", onsets.error());

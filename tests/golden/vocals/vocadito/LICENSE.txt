@@ -1,0 +1,4 @@
+This is the Vocadito vocal library provided under the CC 4.0 License free for use by anyone.
+
+You can find more about the project and the authors here:
+https://zenodo.org/records/5578259

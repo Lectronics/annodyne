@@ -215,3 +215,111 @@ TEST_CASE("the_estimator_is_deterministic_and_named", "[pitch]") {
     CHECK(estimator.name() == "pyin");
     CHECK(estimator.version() >= 1);
 }
+
+namespace {
+
+/// Estimates with explicit pYIN parameters (the front-end ratios).
+PitchTrack estimate_with(const std::vector<float>& mono, double rate, const PYinParams& pyin,
+                         int channels = 1) {
+    return PYinEstimator{pyin}.estimate(source_of(mono, rate, channels), PitchParams{}).value();
+}
+
+PYinParams no_front_end() {
+    PYinParams p;
+    p.highpass_min_f0_ratio = std::nullopt;
+    p.lowpass_max_f0_ratio = std::nullopt;
+    return p;
+}
+
+void add_sine(std::vector<float>& x, double hz, double amplitude, double rate) {
+    const std::vector<float> s =
+        make_sine(hz, static_cast<double>(x.size()) / rate, rate, amplitude);
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        x[i] += s[i];
+    }
+}
+
+/// Frames of the track inside [a, b) within 3 cents of a constant truth.
+std::size_t frames_within_3_cents(const PitchTrack& t, double f_hz, std::size_t a, std::size_t b) {
+    const double truth = to_cents(Hz{f_hz}, Hz{440.0}).value();
+    std::size_t good = 0;
+    for (std::size_t i = a; i < b; ++i) {
+        if (is_voiced(t, i) && std::abs(t.f0[i].value() - truth) <= 3.0) {
+            ++good;
+        }
+    }
+    return good;
+}
+
+}  // namespace
+
+TEST_CASE("tones_at_the_ends_of_the_range_survive_the_front_end", "[pitch][filter]") {
+    // The zero-phase pair is -6 dB at its cutoff; the default ratios keep min_f0 and max_f0 inside.
+    for (const double rate : {44100.0, 48000.0}) {
+        for (const double f : {55.0, 1500.0}) {
+            INFO("rate " << rate << " f0 " << f);
+            const auto x = make_harmonic([f](double) { return f; }, 0.8, rate, harmonic_amps(4));
+            const auto t = estimate(x, rate);
+            const auto [a, b] = inner(t, 0.1);
+            CHECK(frames_within_3_cents(t, f, a, b) == b - a);
+        }
+    }
+}
+
+TEST_CASE("rumble_and_hiss_outside_the_voice_band_do_not_disturb_the_pitch", "[pitch][filter]") {
+    for (const double rate : {44100.0, 48000.0}) {
+        auto x = make_harmonic([](double) { return 220.0; }, 0.8, rate, harmonic_amps(5, 0.2));
+        add_sine(x, 18.0, 0.5, rate);     // sub-voice rumble, louder than the voice
+        add_sine(x, 7000.0, 0.15, rate);  // hiss-like tone far above the voice
+        const auto t = estimate(x, rate);
+        const auto [a, b] = inner(t, 0.1);
+        INFO("rate " << rate);
+        CHECK(frames_within_3_cents(t, 220.0, a, b) == b - a);
+    }
+}
+
+TEST_CASE("the_front_end_works_for_stereo_and_for_low_source_rates", "[pitch][filter]") {
+    // 22.05 kHz is below the 24 kHz analysis rate: the filter still runs, without resampling.
+    for (const double rate : {22050.0, 32000.0}) {
+        const auto x = make_harmonic([](double) { return 330.0; }, 0.6, rate, harmonic_amps(4));
+        for (const int channels : {1, 2}) {
+            const auto t = estimate(x, rate, channels);
+            const auto [a, b] = inner(t, 0.1);
+            INFO("rate " << rate << " channels " << channels);
+            CHECK(frames_within_3_cents(t, 330.0, a, b) == b - a);
+        }
+    }
+}
+
+TEST_CASE("the_front_end_can_be_switched_off_per_side", "[pitch][filter]") {
+    const auto x = make_harmonic([](double) { return 220.0; }, 0.5, 48000.0, harmonic_amps(5));
+    const auto base = estimate_with(x, 48000.0, no_front_end());
+    PYinParams only_low = no_front_end();
+    only_low.lowpass_max_f0_ratio = 1.5;
+    PYinParams only_high = no_front_end();
+    only_high.highpass_min_f0_ratio = 1.0;
+    for (const PYinParams& p : {only_low, only_high, PYinParams{}}) {
+        const auto t = estimate_with(x, 48000.0, p);
+        REQUIRE(t.f0.size() == base.f0.size());
+        const auto [a, b] = inner(t, 0.06);
+        CHECK(frames_within_3_cents(t, 220.0, a, b) == b - a);
+    }
+}
+
+TEST_CASE("front_end_parameters_are_validated", "[pitch][filter]") {
+    const auto x = make_sine(220.0, 0.3, 48000.0);
+    for (const double bad : {0.0, -1.0, std::nan("")}) {
+        PYinParams p;
+        p.lowpass_max_f0_ratio = bad;
+        CHECK(PYinEstimator{p}.estimate(source_of(x, 48000.0), PitchParams{}).error().code ==
+              ErrorCode::invalid_argument);
+        PYinParams q;
+        q.highpass_min_f0_ratio = bad;
+        CHECK(PYinEstimator{q}.estimate(source_of(x, 48000.0), PitchParams{}).error().code ==
+              ErrorCode::invalid_argument);
+    }
+}
+
+TEST_CASE("the_estimator_version_names_the_front_end", "[pitch]") {
+    CHECK(PYinEstimator{}.version() == 2);  // 2: band-pass front end (ADR-0011)
+}

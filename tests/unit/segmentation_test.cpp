@@ -119,11 +119,25 @@ TEST_CASE("a_consonant_before_the_voiced_part_belongs_to_the_note", "[segmentati
     for (std::size_t i = 76; i < 90; ++i) {  // 0.38 .. 0.45: noisy, unvoiced, but audible
         track.voicing_prob[i] = 0.1;
     }
-    const auto notes = segment(track, make_onsets({0.38}, OnsetKind::consonant));
+    SegmentParams params;
+    params.preroll_max = Seconds{
+        0.120};  // the default is 30 ms (ADR-0011 tuning); this note's consonant is 70 ms long
+    const auto notes = segment(track, make_onsets({0.38}, OnsetKind::consonant), params);
     REQUIRE(notes.size() == 1);
     CHECK(std::abs(sec(notes[0].source_start) - 0.38) <= 0.01);
     CHECK(sec(notes[0].attack_end) >=
           0.45 - 0.01);  // the attack covers the consonant and ends in the voiced part
+}
+
+TEST_CASE("the_default_preroll_pulls_a_start_back_by_at_most_30_ms", "[segmentation]") {
+    PitchTrack track = make_track({{.start_s = 0.45, .end_s = 1.0, .midi = 64.0}}, 1.4);
+    for (std::size_t i = 76; i < 90; ++i) {  // a 70 ms unvoiced consonant before the voiced part
+        track.voicing_prob[i] = 0.1;
+    }
+    const auto notes = segment(track, make_onsets({0.38}, OnsetKind::consonant));
+    REQUIRE(notes.size() == 1);
+    CHECK(sec(notes[0].source_start) >= 0.45 - 0.030 - 0.006);
+    CHECK(sec(notes[0].source_start) <= 0.45);
 }
 
 TEST_CASE("a_preroll_never_reaches_into_the_previous_note", "[segmentation]") {

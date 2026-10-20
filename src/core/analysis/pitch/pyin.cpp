@@ -3,6 +3,7 @@
 #include "core/analysis/pitch/detail/pitch_hmm.h"
 #include "core/analysis/pitch/detail/pyin_observe.h"
 #include "core/analysis/pitch/detail/yin.h"
+#include "core/dsp/filter.h"
 #include "core/dsp/mono.h"
 #include "core/dsp/resample.h"
 
@@ -17,6 +18,7 @@ namespace {
 constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
 constexpr double k_alternate_exclusion_cents = 75.0;
 constexpr double k_a4_hz = 440.0;
+constexpr double k_max_lowpass_over_rate = 0.45;  // keeps the low-pass inside the Nyquist band
 
 Result<void> validate_params(const PitchParams& p, const PYinParams& y, Hz source_rate) {
     const auto positive = [](double v) { return std::isfinite(v) && v > 0.0; };
@@ -26,6 +28,12 @@ Result<void> validate_params(const PitchParams& p, const PYinParams& y, Hz sourc
                      !positive(y.bin_cents) || y.beta_mean <= 0.0 || y.beta_mean >= 1.0;
     if (bad) {
         return fail(ErrorCode::invalid_argument, "pitch: invalid parameters");
+    }
+    for (const std::optional<double>& ratio : {y.highpass_min_f0_ratio, y.lowpass_max_f0_ratio}) {
+        if (ratio && !positive(*ratio)) {
+            return fail(ErrorCode::invalid_argument,
+                        "pitch: front-end cutoff ratios must be positive and finite");
+        }
     }
     if (y.window.value() * p.min_f0.value() < 2.0 - 1e-9) {
         return fail(ErrorCode::invalid_argument,
@@ -44,9 +52,33 @@ struct AnalysisSignal {
     double rate = 0.0;
 };
 
-Result<AnalysisSignal> analysis_signal(const MonoAudio& mono, double analysis_rate) {
+/// The front-end band-pass on the analysis-rate signal (both sides optional, zero phase).
+Result<void> apply_front_end(AnalysisSignal& sig, const PitchParams& params,
+                             const PYinParams& pyin) {
+    if (pyin.highpass_min_f0_ratio) {
+        const double cutoff = *pyin.highpass_min_f0_ratio * params.min_f0.value();
+        auto y = zero_phase_highpass(sig.x, Hz{sig.rate}, Hz{std::min(cutoff, 0.4 * sig.rate)});
+        if (!y) {
+            return Unexpected{y.error()};
+        }
+        sig.x = std::move(*y);
+    }
+    if (pyin.lowpass_max_f0_ratio) {
+        const double cutoff = *pyin.lowpass_max_f0_ratio * params.max_f0.value();
+        auto y = zero_phase_lowpass(sig.x, Hz{sig.rate},
+                                    Hz{std::min(cutoff, k_max_lowpass_over_rate * sig.rate)});
+        if (!y) {
+            return Unexpected{y.error()};
+        }
+        sig.x = std::move(*y);
+    }
+    return {};
+}
+
+Result<AnalysisSignal> analysis_signal(const MonoAudio& mono, const PitchParams& params,
+                                       const PYinParams& pyin) {
     AnalysisSignal out;
-    out.rate = std::min(mono.sample_rate.value(), analysis_rate);
+    out.rate = std::min(mono.sample_rate.value(), pyin.analysis_rate.value());
     if (out.rate < mono.sample_rate.value()) {
         auto low = resample(mono.samples, mono.sample_rate, Hz{out.rate}, {});
         if (!low) {
@@ -55,6 +87,9 @@ Result<AnalysisSignal> analysis_signal(const MonoAudio& mono, double analysis_ra
         out.x.assign(low->begin(), low->end());
     } else {
         out.x.assign(mono.samples.begin(), mono.samples.end());
+    }
+    if (auto r = apply_front_end(out, params, pyin); !r) {
+        return Unexpected{r.error()};
     }
     return out;
 }
@@ -232,7 +267,7 @@ Result<PitchTrack> PYinEstimator::estimate(const AudioSource& src,
     const auto frames = static_cast<std::int64_t>(std::floor(duration / params.hop.value())) + 1;
     track.grid.n_frames = frames;
 
-    auto sig = analysis_signal(*mono, params_.analysis_rate.value());
+    auto sig = analysis_signal(*mono, params, params_);
     if (!sig) {
         return Unexpected{sig.error()};
     }

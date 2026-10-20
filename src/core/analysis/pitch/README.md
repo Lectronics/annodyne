@@ -27,3 +27,14 @@ planned for Phase 13; `PYinEstimator` is the DSP implementation, `detect_pitch` 
 pYIN defaults and are tuned on the synthetic set first and on real vocals at the Phase 3 review.
 Octave alternatives are weak candidates, not a second tracker. Memory: the Viterbi back pointers take
 frames x (bins + 1) ints (about 86 MB for a 3-minute file). Compiled with `-ffp-contract=off`.
+
+## Front-end band-pass (ADR-0011)
+Before the YIN frames the analysis-rate signal passes a zero-phase 2nd-order Butterworth high-pass at
+`highpass_min_f0_ratio` x `min_f0` and low-pass at `lowpass_max_f0_ratio` x `max_f0` (defaults 1.0 and 1.0;
+`nullopt` skips a side; the zero-phase pair is -6 dB at its cutoff, so tones right at the range edges lose 6
+dB, tests pin that they are still tracked). On Vocadito the low-pass raised voicing recall by about 0.08;
+the high-pass alone changed nothing. `beta_mean` is 0.3 (was 0.1, tuned on synthetic tones): on real vocals
+0.1 called 40 % of the annotated-voiced frames unvoiced; 0.3 reaches 0.9 recall at the cost of more
+octave errors (1.9 % of voiced frames on the tuning tracks, 5.4 % on the held-out set, concentrated in
+high voices: octave errors are accepted for now, the alternates hold the other octave). `version()` is 2.
+Memory: the filter works on one `double` copy of the analysis-rate signal.

@@ -2,6 +2,7 @@ anno_add_library(core/dsp
     SOURCES
         crossfade.cpp
         fft.cpp
+        filter.cpp
         interp_curve.cpp
         k_weight.cpp
         mono.cpp
