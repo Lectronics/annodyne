@@ -391,3 +391,22 @@ Matched notes = annotated notes with one of our starts within 50 ms. "APC" = est
 | Plain median of the note's voiced frames | 0.632 | 0.576 |
 
 Segmentation shape: annotated notes held by two or more of our note middles (over-segmented) 18.6 % / 18.8 %; our notes holding two or more annotated onsets (under-segmented) 1.2 % / 4.3 %. Stage targets: over-segmentation falls without under-segmentation rising and without a drop in onset F20/F50; the new target must beat the median (0.632 / 0.576) on APC.
+
+---
+
+## 15. Stage 3 result (2026-10-20): target core implemented
+
+Implemented: `core/analysis/pitch_target` (reliability, tonal segments, kinds `whole/settled/glide/multi/unpitched`, approach/release labels, `short_note` and `creak` flags, confidence, candidate targets), wired into `analyse()`; `Note::perceived_pitch` is gone (ADR-0013). 24 unit tests from §8 plus the review additions, all passing on debug-asan and release.
+
+Changes made while measuring (on the 35 tuning tracks; the held-out 5 were checked, not tuned on):
+- The stability factor and the end bias (research item 4/16) are **off** by default (`gamma = 0`, `end_bias = 0`): with them on, the share of targets within -10/+15 cents fell from 0.60 to 0.51. The loudness term stays.
+- A glide needs a net change of >= 60 cents and a note of >= 250 ms; shorter "moving" notes are judged as a whole (many real 100-200 ms notes are moving everywhere).
+- Transient zones are at most 20 % of a short note each; slow drifts use T capped at 0.4 s in the glissando test; a fast step of >= 60 cents separates cores (`multi`); vibrato is detected by zero-crossing rate as well as autocorrelation (a step passed the autocorrelation test), and a note with vibrato is segmented on centre + drift.
+
+| Held-out 5, annotator 1 | before (perceived_pitch) | pitch target |
+|---|---|---|
+| matched-note pitch within 50 cents | 0.740 | 0.784 |
+| within -10/+15 cents (APC) | 0.520 | 0.568 |
+| plain mean / median of the note's voiced frames | 0.573 / 0.630 | same |
+
+The target **does not beat the plain median** on the APC metric (the §8 golden goal). Reason, to be decided by the owner: the annotators' pitch is itself close to a median over the whole note, scoops included, while the target excludes approach and release by design (owner principle: rolls are not averaged). The APC guard is therefore 0.52 (regression), and the 50-cent figure improved. Remaining stages: ornaments (4), take pass (5), presets and spec of the mode edit (6), close (7).

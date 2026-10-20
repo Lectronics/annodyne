@@ -94,6 +94,21 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
         get("mcents", mc);
         p.segmentation.merge_max_cents = Cents{mc};
     }
+    get("endbias", p.pitch_target.target.end_bias);
+    get("g", p.pitch_target.segmenting.glissando_g);
+    get("zshare", p.pitch_target.segmenting.zone_max_share);
+    get("rate", p.pitch_target.target.weights.rate_scale_cents_per_s);
+    get("gamma", p.pitch_target.target.weights.gamma);
+    {
+        double ar = p.pitch_target.target.weights.amp_range.value();
+        get("amprange", ar);
+        p.pitch_target.target.weights.amp_range = Decibels{ar};
+    }
+    {
+        double tt = p.pitch_target.segmenting.turn_threshold.value();
+        get("turn", tt);
+        p.pitch_target.segmenting.turn_threshold = Cents{tt};
+    }
     get("sigma", p.segmentation.pitch_sigma_cents);
     get("stay", p.segmentation.stay_stable);
     get("s2s", p.segmentation.stable_to_silence);

@@ -6,6 +6,7 @@
 #include "core/types/tracks.h"
 #include "core/types/units.h"
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -82,5 +83,16 @@ struct PerceivedPitchParams {
 /// invalid_argument (fewer than 3 frames, curves of inconsistent length, amp neither empty nor one
 /// per frame). Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<Cents> perceived_pitch(const Note& note, const PerceivedPitchParams& params);
+
+/// The vibrato period found in a modulation curve (cents around the centre, one value per frame
+/// of `hop`): the autocorrelation peak at 3-9 Hz, if the modulation is at least 5 cents rms and
+/// periodic; nullopt otherwise or for fewer than 8 frames. Pure; thread-safe.
+[[nodiscard]] std::optional<Seconds> vibrato_period(std::span<const double> mod_cents, Seconds hop);
+
+/// Weighted median of `values` (lower median at exact balance): the smallest value whose cumulative
+/// weight reaches half the total. Entries with weight <= 0 are ignored. Returns NaN if no weight is
+/// positive. Pre: equal lengths. Pure; thread-safe.
+[[nodiscard]] double weighted_median(std::span<const double> values,
+                                     std::span<const double> weights);
 
 }  // namespace anno

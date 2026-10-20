@@ -249,4 +249,39 @@ Result<Cents> perceived_pitch(const Note& note, const PerceivedPitchParams& para
     return Cents{weighted_mean(f, w, region)};
 }
 
+std::optional<Seconds> vibrato_period(std::span<const double> mod_cents, Seconds hop) {
+    if (mod_cents.size() < 8 || !(hop.value() > 0.0)) {
+        return std::nullopt;
+    }
+    const std::vector<double> mod(mod_cents.begin(), mod_cents.end());
+    const double frames = vibrato_period_frames(mod, {.first = 0, .last = mod.size()}, hop.value());
+    if (frames <= 0.0) {
+        return std::nullopt;
+    }
+    return Seconds{frames * hop.value()};
+}
+
+double weighted_median(std::span<const double> values, std::span<const double> weights) {
+    std::vector<std::size_t> order;
+    double total = 0.0;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (weights[i] > 0.0) {
+            order.push_back(i);
+            total += weights[i];
+        }
+    }
+    if (order.empty()) {
+        return std::nan("");
+    }
+    std::ranges::sort(order, [&](std::size_t a, std::size_t b) { return values[a] < values[b]; });
+    double cumulative = 0.0;
+    for (const std::size_t i : order) {
+        cumulative += weights[i];
+        if (cumulative >= 0.5 * total) {
+            return values[i];
+        }
+    }
+    return values[order.back()];
+}
+
 }  // namespace anno

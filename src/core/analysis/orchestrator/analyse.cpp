@@ -16,8 +16,24 @@ Unexpected stage_error(const char* stage, const Error& e) {
     return Unexpected{Error{.code = e.code, .message = std::string{stage} + ": " + e.message}};
 }
 
-/// One finished Note from a span (without its perceived pitch refined).
-Result<Note> describe_note(const NoteSpan& span, const PitchTrack& pitch, const MonoAudio& plain,
+/// What the pitch target needs from the neighbouring spans: their rough pitch and the silent time
+/// between the notes.
+NoteContext context_of(const std::vector<NoteSpan>& spans, std::size_t i) {
+    NoteContext ctx;
+    if (i > 0) {
+        ctx.previous_pitch = spans[i - 1].rough_pitch;
+        ctx.gap_before = spans[i].source_start - spans[i - 1].source_end;
+    }
+    if (i + 1 < spans.size()) {
+        ctx.next_pitch = spans[i + 1].rough_pitch;
+        ctx.gap_after = spans[i + 1].source_start - spans[i].source_end;
+    }
+    return ctx;
+}
+
+/// One finished Note from a span, with its pitch target.
+Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
+                           const PitchTrack& pitch, const OnsetList& onsets, const MonoAudio& plain,
                            const MonoAudio& weighted, const AnalyseParams& params) {
     const FrameGrid grid = note_grid(span, pitch.grid);
     auto loud = measure_loudness(plain, weighted, span, grid, params.loudness);
@@ -45,12 +61,14 @@ Result<Note> describe_note(const NoteSpan& span, const PitchTrack& pitch, const 
     note.separation_in = span.separation_in;
     note.confidence_prob = span.confidence_prob;
     note.is_active = true;
-    auto perceived = perceived_pitch(note, params.perceived);
-    if (!perceived) {
-        return stage_error("perceived pitch", perceived.error());
+    note.pitch_target.target = decomposed->center;  // placeholder; replaced below
+    auto target =
+        estimate_pitch_target(note, {.pitch = &pitch, .onsets = &onsets, .disagreement = {}},
+                              context, params.pitch_target);
+    if (!target) {
+        return stage_error("pitch target", target.error());
     }
-    // Provisional until the pitch-target stage (note-pitch-target.md): the whole-note target.
-    note.pitch_target = make_whole_target(*perceived);
+    note.pitch_target = std::move(*target);
     return note;
 }
 
@@ -98,9 +116,10 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     result->version = params.version;
     result->source_id = src.id();
     result->algorithm = params.algorithm;
-    result->onsets = std::move(*onsets);
-    for (const NoteSpan& span : *spans) {
-        auto note = describe_note(span, *pitch, *mono, weighted, params);
+    for (std::size_t i = 0; i < spans->size(); ++i) {
+        const NoteSpan& span = (*spans)[i];
+        auto note =
+            describe_note(span, context_of(*spans, i), *pitch, *onsets, *mono, weighted, params);
         if (!note) {
             return Unexpected{
                 Error{.code = note.error().code,
@@ -108,6 +127,7 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
         }
         result->notes.push_back(std::move(*note));
     }
+    result->onsets = std::move(*onsets);
     result->pitch = std::move(*pitch);
     if (auto r = validate(*result); !r) {
         return stage_error("validation", r.error());

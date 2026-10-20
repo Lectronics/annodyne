@@ -87,14 +87,29 @@ inline constexpr Seconds k_onset_synthetic{0.005};
 /// a margin, not a quality target. Measured: voicing recall 0.967, RPA(50 c) 0.948, octave/harmonic
 /// error rate 0.013 (octave, or a third harmonic: +-1200, +-1902, +-2400 cents), onset F-measure at
 /// +-20 / +-50 ms 0.472 / 0.758 (better annotator of the two, who agree with each other at only
-/// ~0.75), matched-note pitch within 50 cents 0.740. The owner's goal stays onset F >= 0.9 and no
+/// ~0.75), matched-note pitch within 50 cents 0.784. The owner's goal stays onset F >= 0.9 and no
 /// octave errors (docs/decisions/0012); the guard rises as the analysis improves.
 inline constexpr double k_golden_voicing_recall_min = 0.92;
 inline constexpr double k_golden_rpa_min = 0.90;
 inline constexpr double k_golden_octave_rate_max = 0.03;
 inline constexpr double k_golden_onset_f20_min = 0.43;
 inline constexpr double k_golden_onset_f50_min = 0.69;
-inline constexpr double k_golden_note_pitch_ok_min = 0.70;
+inline constexpr double k_golden_note_pitch_ok_min = 0.75;
+/// Share of matched notes whose pitch target lies within -10/+15 cents of the annotation (held-out
+/// 0.568; the plain median of the note's frames gives 0.630 because the annotators' pitch is such a
+/// median, which includes the scoops this target excludes by design).
+inline constexpr double k_golden_apc_min = 0.52;
+
+// ---- Pitch target (note-pitch-target.md section 8)
+// -----------------------------------------------
+
+/// Synthetic curves with a known level core: the target lies within this of the truth.
+inline constexpr double k_target_tight_cents = 3.0;
+/// Where weighting or a drift legitimately moves the target slightly (end drift, quiet ending).
+inline constexpr double k_target_loose_cents = 5.0;
+/// A hunting note (+-45 cents triangle) averages to the centre within this (median of a symmetric
+/// wander; the weights shift it by a few cents).
+inline constexpr double k_target_hunt_cents = 8.0;
 
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 

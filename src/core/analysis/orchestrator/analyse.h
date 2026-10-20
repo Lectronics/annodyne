@@ -5,6 +5,7 @@
 #include "core/analysis/onsets/onsets.h"
 #include "core/analysis/perceived_pitch/perceived_pitch.h"
 #include "core/analysis/pitch/pyin.h"
+#include "core/analysis/pitch_target/pitch_target.h"
 #include "core/analysis/segmentation/segmentation.h"
 #include "core/types/analysis_result.h"
 #include "core/types/audio_source.h"
@@ -29,7 +30,7 @@ struct AnalyseParams {
     OnsetParams onsets;
     SegmentParams segmentation;
     PitchDecompositionParams decomposition;
-    PerceivedPitchParams perceived;
+    PitchTargetParams pitch_target;  // ADR-0013
     LoudnessParams loudness;
 };
 
@@ -37,9 +38,10 @@ struct AnalyseParams {
 /// grid and gate_pitch (silent frames become unvoiced; ADR-0011), detect_onsets (with the gated
 /// pitch track), segment_notes, then per NoteSpan: note_grid, measure_loudness,
 /// decompose_pitch_curve, then builds the Note with centre, drift, mod, amp and loudness filled and
-/// perceived_pitch set to the rough pitch, calls perceived_pitch on that Note and stores its
-/// result; only then is the Note final (harmonics, noise and envelope stay empty until Phase 4; a
-/// Note with empty nested tracks is valid). `source_id = src.id()`; the tuning reference stays 440
+/// calls estimate_pitch_target on it (with the neighbouring spans' rough pitches and gaps, the
+/// gated pitch track and the onsets) and stores the PitchTarget; only then is the Note final
+/// (harmonics, noise and envelope stay empty until Phase 4; a Note with empty nested tracks is
+/// valid). `source_id = src.id()`; the tuning reference stays 440
 /// Hz (estimated in Phase 8). The result passes validate(AnalysisResult) and is returned as a
 /// shared immutable snapshot. Every per-note stage is guaranteed to succeed for a span
 /// segment_notes returned (at least 10 pitch frames, voiced); if one fails anyway the whole

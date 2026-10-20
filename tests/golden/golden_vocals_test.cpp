@@ -111,4 +111,5 @@ TEST_CASE("the_committed_vocals_meet_the_regression_guard", "[golden]") {
     CHECK(total.best_f20() >= tolerance::k_golden_onset_f20_min);
     CHECK(total.best_f50() >= tolerance::k_golden_onset_f50_min);
     CHECK(total.note_pitch_ok() >= tolerance::k_golden_note_pitch_ok_min);
+    CHECK(total.apc_rate(0) >= tolerance::k_golden_apc_min);
 }

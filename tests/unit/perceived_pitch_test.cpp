@@ -171,3 +171,27 @@ TEST_CASE("short_notes_use_scaled_trims_and_degenerate_ones_fail", "[perceived_p
     inconsistent.pitch_mod.pop_back();
     CHECK(perceived_pitch(inconsistent, {}).error().code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("weighted_median_picks_the_value_that_balances_the_weight", "[perceived_pitch]") {
+    const std::vector<double> values{1.0, 2.0, 3.0, 4.0};
+    CHECK(weighted_median(values, std::vector<double>{1.0, 1.0, 1.0, 1.0}) == 2.0);  // lower median
+    CHECK(weighted_median(values, std::vector<double>{1.0, 1.0, 1.0, 10.0}) == 4.0);
+    CHECK(weighted_median(values, std::vector<double>{0.0, 0.0, 5.0, 1.0}) == 3.0);
+    CHECK(weighted_median(std::vector<double>{3.0, 1.0, 2.0}, std::vector<double>{1.0, 1.0, 1.0}) ==
+          2.0);  // unsorted input
+    CHECK(std::isnan(weighted_median(values, std::vector<double>{0.0, 0.0, 0.0, -1.0})));
+}
+
+TEST_CASE("vibrato_period_finds_a_modulation_and_ignores_a_flat_curve", "[perceived_pitch]") {
+    constexpr double k_hop_s = 0.005;
+    std::vector<double> mod(200);
+    for (std::size_t i = 0; i < mod.size(); ++i) {
+        mod[i] = 50.0 * std::sin(2.0 * std::numbers::pi * 5.5 * static_cast<double>(i) * k_hop_s);
+    }
+    const auto period = vibrato_period(mod, Seconds{k_hop_s});
+    REQUIRE(period.has_value());
+    CHECK(std::abs(period->value() - 1.0 / 5.5) <= 0.01);
+    CHECK(!vibrato_period(std::vector<double>(200, 0.0), Seconds{k_hop_s}).has_value());
+    CHECK(
+        !vibrato_period(std::vector<double>(5, 30.0), Seconds{k_hop_s}).has_value());  // too short
+}
