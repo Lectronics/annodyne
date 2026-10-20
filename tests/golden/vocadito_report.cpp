@@ -109,7 +109,9 @@ std::string line(const std::string& label, const VocaditoScores& t, int ref_note
         << t.pitch.false_alarm_rate() << " oct " << t.octave_rate() << " | onset F20 A1 "
         << t.onset20[0].f_measure() << " A2 " << t.onset20[1].f_measure() << " F50 A1 "
         << t.onset50[0].f_measure() << " A2 " << t.onset50[1].f_measure() << " | note pitch ok "
-        << t.note_pitch_ok();
+        << t.note_pitch_ok() << " | APC(-10/+15) target " << t.apc_rate(0) << " mean "
+        << t.apc_rate(1) << " median " << t.apc_rate(2) << " | overseg " << t.overseg_rate()
+        << " underseg " << t.underseg_rate();
     return out.str();
 }
 

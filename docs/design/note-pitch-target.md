@@ -377,3 +377,17 @@ Error cases (`< 3` frames, bad params, size mismatch); NaN-free output; determin
 1. **`Note::perceived_pitch` is replaced by `Note::pitch_target`** (owner: "that concept is more accurate"). The field `perceived_pitch` is removed from `Note`; consumers read `note.pitch_target.target` (render key, JSON `pitch_target.target_cents`, plots, validation, scenario fixtures, tests). `PitchTarget::target` is always a finite `Cents`: for `unpitched` it is the note's `pitch_center`, and `kind` tells consumers it is not a real target (so no `optional`, and section 12 B4's `perceived_pitch == target` invariant becomes: `validate(Note)` requires `target` finite and, for kind `unpitched`, equal to `pitch_center`). The function `perceived_pitch(Note)` stays as the internal kernel for `whole`/`settled` (section 12 B5) but no longer names a Note field; it may be renamed `stable_pitch` in the implementation. A default `PitchTarget` is `unpitched`, target 0, confidence 0 and validates. The ADR is ADR-0013 (accepted 2026-10-20); the architecture spec's `perceived_pitch` is overridden by it.
 2. **`glissando_g` default 0.32** (not 0.16); 0.16 remains an option for isolated tones in the style table. The transient-zone rule (section 12 B9) stands. If listening shows the wrong split, `g` is changed later; it is a parameter, not a structure.
 3. Default correction tolerance (-10/+15 cents) is not yet decided and stays an owner gate for Phase 4.
+
+---
+
+## 14. Baseline measurements (stage 1, 2026-10-20; Vocadito, annotator 1, `vocadito_report`)
+
+Matched notes = annotated notes with one of our starts within 50 ms. "APC" = estimate within -10/+15 cents of the annotated pitch.
+
+| Estimate | 35 tuning tracks | 5 held-out |
+|---|---|---|
+| Current `perceived_pitch` | 0.528 | 0.466 |
+| Plain mean of the note's voiced frames | 0.524 | 0.513 |
+| Plain median of the note's voiced frames | 0.632 | 0.576 |
+
+Segmentation shape: annotated notes held by two or more of our note middles (over-segmented) 18.6 % / 18.8 %; our notes holding two or more annotated onsets (under-segmented) 1.2 % / 4.3 %. Stage targets: over-segmentation falls without under-segmentation rising and without a drop in onset F20/F50; the new target must beat the median (0.632 / 0.576) on APC.
