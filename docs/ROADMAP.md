@@ -104,6 +104,8 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 ---
 
+- Carried from the Phase 3 pitch-target review (2026-10-19): follow-up design notes required before Correct Pitch closes: `intended-note.md`, `reference-tuning-drift.md`, `ensemble-tuning.md`, `style-presets.md`, and large-shift artifacts in the synthesis design (see `docs/design/note-pitch-target.md` §9, §11). Transient segmentation and pitch target: `docs/design/phase3-segmentation-transient.md`, `docs/design/note-pitch-target.md`.
+
 ## Phase 4 — First audible edit: pitch
 
 **Goal:** move a note's pitch and have it come out right. This is the first listening gate.
