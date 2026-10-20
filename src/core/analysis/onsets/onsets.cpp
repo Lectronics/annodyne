@@ -1,5 +1,6 @@
 #include "core/analysis/onsets/onsets.h"
 
+#include "core/analysis/onsets/detail/energy_step.h"
 #include "core/analysis/onsets/detail/peak_picking.h"
 #include "core/analysis/onsets/detail/pitch_change.h"
 #include "core/analysis/onsets/detail/superflux.h"
@@ -174,7 +175,29 @@ Result<std::vector<RawOnset>> read_and_detect(const AudioSource& src, const Onse
     if (!mono) {
         return Unexpected{mono.error()};
     }
-    return spectral_onsets(*mono, params);
+    auto onsets = spectral_onsets(*mono, params);
+    if (!onsets) {
+        return onsets;
+    }
+    for (const EnergyStep& s : find_energy_steps(
+             mono->samples, mono->sample_rate,
+             {.window = params.energy_step_window, .min_rise = params.energy_step_db})) {
+        // Within min_gap merge() keeps the stronger of the two; further out, up to the window of
+        // the step, the rise is already an onset and the step is dropped.
+        const auto near_spectral = std::ranges::any_of(*onsets, [&](const RawOnset& o) {
+            const double d = std::abs((o.time - s.time).value());
+            return d > params.min_gap.value() && d <= params.energy_step_window.value();
+        });
+        if (near_spectral) {
+            continue;
+        }
+        onsets->push_back({.time = s.time,
+                           .strength = s.rise_db / params.energy_step_strength_db.value(),
+                           .kind = OnsetKind::attack,
+                           .spectral = false,
+                           .energy_rise = true});
+    }
+    return onsets;
 }
 
 }  // namespace

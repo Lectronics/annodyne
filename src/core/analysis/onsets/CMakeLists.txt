@@ -1,6 +1,7 @@
 anno_add_library(core/analysis/onsets
     SOURCES
         onsets.cpp
+        detail/energy_step.cpp
         detail/peak_picking.cpp
         detail/pitch_change.cpp
         detail/superflux.cpp

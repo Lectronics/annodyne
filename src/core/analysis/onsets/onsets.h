@@ -27,6 +27,11 @@ struct OnsetParams {
     Seconds pitch_stable{
         0.065};  // each side of a step must be stable this long (> a vibrato turnaround)
     Seconds refine_window{0.025};  // the energy refinement searches +- this around the peak
+    // Legato level steps (no spectral onset): the level averaged over `energy_step_window` rises by
+    // this much; the strength is rise / energy_step_strength_db.
+    Seconds energy_step_window{0.060};
+    Decibels energy_step_db{3.5};
+    Decibels energy_step_strength_db{2.0};
 };
 
 /// Spectral onsets (SuperFlux; Bock & Widmer 2013): log-filterbank STFT, frequency max filter over

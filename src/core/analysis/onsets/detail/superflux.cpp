@@ -72,8 +72,10 @@ Result<void> validate(const OnsetParams& p) {
     const auto positive = [](double v) { return std::isfinite(v) && v > 0.0; };
     if (!positive(p.hop.value()) || !positive(p.window.value()) || !positive(p.lag.value()) ||
         !positive(p.threshold_window.value()) || !positive(p.min_gap.value()) ||
-        !positive(p.refine_window.value()) || !positive(p.log_lambda) || !std::isfinite(p.delta) ||
-        p.delta < 0.0 || p.filterbank_bands_per_octave < 1 || p.max_filter_bins < 1) {
+        !positive(p.refine_window.value()) || !positive(p.energy_step_window.value()) ||
+        !positive(p.energy_step_db.value()) || !positive(p.energy_step_strength_db.value()) ||
+        !positive(p.log_lambda) || !std::isfinite(p.delta) || p.delta < 0.0 ||
+        p.filterbank_bands_per_octave < 1 || p.max_filter_bins < 1) {
         return fail(ErrorCode::invalid_argument, "onsets: invalid parameters");
     }
     return {};

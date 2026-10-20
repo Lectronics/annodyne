@@ -120,6 +120,9 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     get("s2s", p.segmentation.stable_to_silence);
     get("newp", p.segmentation.new_note_prob);
     get("onnew", p.segmentation.onset_new_note_prob);
+    db("estep", p.onsets.energy_step_db);
+    db("estrength", p.onsets.energy_step_strength_db);
+    sec("ewin", p.onsets.energy_step_window);
     get("delta", p.onsets.delta);
     get("mact", p.onsets.min_activation);
     sec("mingap", p.onsets.min_gap);
@@ -212,6 +215,22 @@ int main(int argc, char** argv) {
             if (!result) {
                 std::fprintf(stderr, "track %d: %s\n", tr.id, result.error().message.c_str());
                 return VocaditoScores{};
+            }
+            if (std::getenv("ANNO_DUMP") !=
+                nullptr) {  // notes and onsets, for reading plots against
+                for (const Note& n : (*result)->notes) {
+                    std::fprintf(stderr, "note %s %.3f-%.3f target %.0f %s\n", n.id.value.c_str(),
+                                 (n.source_start - SourceTime{}).value(),
+                                 (n.source_end - SourceTime{}).value(),
+                                 n.pitch_target.target.value(),
+                                 n.separation_in == SeparationIn::soft ? "soft" : "hard");
+                }
+                const OnsetList& o = (*result)->onsets;
+                for (std::size_t i = 0; i < o.times.size(); ++i) {
+                    std::fprintf(stderr, "onset %.3f kind %d strength %.2f\n",
+                                 (o.times[i] - SourceTime{}).value(), static_cast<int>(o.kind[i]),
+                                 o.strength[i]);
+                }
             }
             return evaluate(tr, **result);
         });

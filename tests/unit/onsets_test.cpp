@@ -173,6 +173,48 @@ TEST_CASE("onsets_work_at_other_sample_rates_and_are_deterministic", "[onsets]")
     }
 }
 
+namespace {
+
+/// A steady harmonic tone whose level steps by `step_db` at 0.5 s over 10 ms (same pitch, no
+/// new attack: a singer changing note legato), then optionally a 6 Hz tremolo of +-`tremolo_db`.
+std::vector<float> level_step_tone(double step_db, double tremolo_db = 0.0) {
+    auto x = make_harmonic([](double) { return 220.0; }, 1.0, k_rate, harmonic_amps(6, 0.2));
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double t = static_cast<double>(i) / k_rate;
+        const double ramp = std::clamp((t - 0.5) / 0.010, 0.0, 1.0);
+        const double db = step_db * ramp + tremolo_db * std::sin(2.0 * 3.14159265358979 * 6.0 * t);
+        x[i] = static_cast<float>(x[i] * std::pow(10.0, db / 20.0));
+    }
+    return x;
+}
+
+int onsets_near(const OnsetList& list, double time_s, double radius_s) {
+    int n = 0;
+    for (const SourceTime t : list.times) {
+        n += std::abs(seconds_of(t) - time_s) <= radius_s ? 1 : 0;
+    }
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("a_legato_level_step_is_an_onset_but_a_small_one_or_tremolo_is_not", "[onsets]") {
+    const OnsetParams params;
+    const auto big = detect_onsets(source_of(level_step_tone(6.0)), params).value();
+    REQUIRE(onsets_near(big, 0.5, 0.03) == 1);
+    for (std::size_t i = 0; i < big.times.size(); ++i) {
+        if (std::abs(seconds_of(big.times[i]) - 0.5) <= 0.03) {
+            CHECK(big.kind[i] == OnsetKind::attack);
+            CHECK(big.strength[i] >= 1.5);  // strong enough to separate two notes
+        }
+    }
+    CHECK(onsets_near(detect_onsets(source_of(level_step_tone(2.0)), params).value(), 0.5, 0.05) ==
+          0);
+    // the tone's own start and end are onsets/offsets; the middle must stay clear of them
+    CHECK(onsets_near(detect_onsets(source_of(level_step_tone(0.0, 1.5)), params).value(), 0.5,
+                      0.4) == 0);
+}
+
 TEST_CASE("onset_parameters_are_validated", "[onsets]") {
     const AudioSource src = source_of(make_sine(440.0, 0.3, k_rate));
     OnsetParams p;
@@ -186,5 +228,11 @@ TEST_CASE("onset_parameters_are_validated", "[onsets]") {
     CHECK(detect_onsets(src, p).error().code == ErrorCode::invalid_argument);
     p = OnsetParams{};
     p.max_filter_bins = 0;
+    CHECK(detect_onsets(src, p).error().code == ErrorCode::invalid_argument);
+    p = OnsetParams{};
+    p.energy_step_db = Decibels{0.0};
+    CHECK(detect_onsets(src, p).error().code == ErrorCode::invalid_argument);
+    p = OnsetParams{};
+    p.energy_step_window = Seconds{0.0};
     CHECK(detect_onsets(src, p).error().code == ErrorCode::invalid_argument);
 }
