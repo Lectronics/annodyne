@@ -106,7 +106,7 @@ inline VocaditoScores evaluate(const VocaditoTrack& track, const AnalysisResult&
                 const double error = n.perceived_pitch.value() - note_cents(ref);
                 ++s.matched_notes;
                 s.matched_pitch_ok += std::abs(error) <= 50.0 ? 1 : 0;
-                s.matched_octave += std::abs(std::abs(error) - 1200.0) <= 50.0 ? 1 : 0;
+                s.matched_octave += is_harmonic_error(error) ? 1 : 0;
                 break;
             }
         }

@@ -39,7 +39,9 @@ struct ObserveSetup {
     int tau_max = 2;
     double rate = 0.0;
     Bins bins;
-    std::vector<double> weights;  // Beta threshold weights, see threshold_weights()
+    std::vector<double> weights;       // Beta threshold weights, see threshold_weights()
+    double subharmonic_margin = 0.0;   // 0 = off; see observe()
+    double subharmonic_margin2 = 0.0;  // the same for the 2x lag
 };
 
 /// Beta(2, b) weights (b from the mean) at the 100 thresholds 0.01 .. 1.00, normalised to sum to 1.
@@ -48,7 +50,9 @@ struct ObserveSetup {
 /// Candidates of one frame from its CMND and NCCF (index = lag, see YinFrame): for every threshold
 /// the first lag below it, descended to its local minimum, gets that threshold's weight (the global
 /// minimum gets a small share when none passes); lags are refined to fractions of a sample by the
-/// NCCF peak. Plus weak octave alternatives (one octave above and below the strongest candidate).
+/// NCCF peak. When subharmonic_margin > 0 the strongest candidate moves to a lag 2x or 3x longer
+/// if the CMND there is lower by more than the margin (a weak fundamental under strong harmonics).
+/// Plus weak octave alternatives (one octave above and below the strongest candidate).
 /// Pure; thread-safe.
 [[nodiscard]] FrameObservation observe(const std::vector<double>& cmnd,
                                        const std::vector<double>& nccf, const ObserveSetup& setup);

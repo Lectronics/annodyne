@@ -143,6 +143,52 @@ TEST_CASE("a_weak_fundamental_is_not_an_octave_error", "[pitch]") {
     CHECK(with_octave > 0);
 }
 
+namespace {
+
+PitchTrack estimate_unchecked(const std::vector<float>& mono, double rate,
+                              const PYinParams& params) {
+    return PYinEstimator{params}.estimate(source_of(mono, rate), PitchParams{}).value();
+}
+
+}  // namespace
+
+TEST_CASE("a_dominant_third_harmonic_is_not_taken_for_the_fundamental", "[pitch]") {
+    // 135 Hz with partial 3 (405 Hz) 7 dB above the fundamental: the CMND dips at a third of the
+    // period, but the real period dips deeper. Without the subharmonic check the track sits at 405
+    // Hz.
+    const std::vector<double> amps{0.45, 0.1, 1.0, 0.1, 0.05, 0.03};
+    const auto x = make_harmonic([](double) { return 135.0; }, 0.8, 44100.0, amps);
+    const auto truth = truth_for([](double) { return 135.0; }, 161);
+    const auto t = estimate(x, 44100.0);
+    const auto [a, b] = inner(t, 0.06);
+    const auto s = score_pitch(t, truth, tolerance::k_pitch_dynamic.value(), a, b);
+    CHECK(s.octave_errors == 0);
+    CHECK(s.rpa() >= tolerance::k_rpa_min);
+    PYinParams off;
+    off.subharmonic_margin = 0.0;
+    off.subharmonic_margin2 = 0.0;
+    const auto without = score_pitch(estimate_unchecked(x, 44100.0, off), truth,
+                                     tolerance::k_pitch_dynamic.value(), a, b);
+    CHECK(without.octave_errors > s.octave_errors);  // the check is what fixes it
+}
+
+TEST_CASE("a_short_low_voiced_burst_between_silences_stays_voiced", "[pitch]") {
+    // 90 ms of an 85 Hz harmonic tone (a staccato low note): short voiced stretches must not lose
+    // to the cheaper unvoiced state.
+    std::vector<float> x(22050, 0.0F);
+    const auto tone = make_harmonic([](double) { return 85.0; }, 0.09, 44100.0, harmonic_amps(6));
+    std::ranges::copy(tone, x.begin() + 8820);  // 0.2 s .. 0.29 s
+    const auto t = estimate(x, 44100.0);
+    int voiced = 0;
+    for (std::size_t i = 0; i < t.f0.size(); ++i) {
+        const double time = static_cast<double>(i) * k_hop;
+        if (time > 0.22 && time < 0.27 && !std::isnan(t.f0[i].value())) {
+            ++voiced;
+        }
+    }
+    CHECK(voiced >= 8);  // 10 frames in the window
+}
+
 TEST_CASE("silence_and_noise_are_unvoiced", "[pitch]") {
     const std::vector<float> silence(44100, 0.0F);
     const auto ts = estimate(silence, 44100.0);
@@ -321,5 +367,6 @@ TEST_CASE("front_end_parameters_are_validated", "[pitch][filter]") {
 }
 
 TEST_CASE("the_estimator_version_names_the_front_end", "[pitch]") {
-    CHECK(PYinEstimator{}.version() == 2);  // 2: band-pass front end (ADR-0011)
+    CHECK(PYinEstimator{}.version() == 4);  // 2: band-pass front end (ADR-0011); 3: subharmonic\n
+                                            // // check; 4: stay relief in the voicing HMM
 }

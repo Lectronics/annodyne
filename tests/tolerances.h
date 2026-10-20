@@ -84,16 +84,17 @@ inline constexpr double k_rpa_min = 0.95;
 inline constexpr Seconds k_onset_synthetic{0.005};
 /// Golden recordings (Vocadito subset, 5 held-out tracks; tests/golden/vocals/README.md). These are
 /// a REGRESSION GUARD: each threshold is the measured value of the held-out set rounded down with
-/// a margin, not a quality target. Measured: voicing recall 0.916, RPA(50 c) 0.856, octave-error
-/// rate 0.054, onset F-measure at +-20 / +-50 ms 0.389 / 0.652 (better annotator of the two, who
-/// agree with each other at only ~0.75), matched-note pitch within 50 cents 0.723. The ROADMAP
-/// wording "F >= 0.9, no octave errors" cannot be met on real singing (owner decision pending).
-inline constexpr double k_golden_voicing_recall_min = 0.85;
-inline constexpr double k_golden_rpa_min = 0.80;
-inline constexpr double k_golden_octave_rate_max = 0.10;
-inline constexpr double k_golden_onset_f20_min = 0.34;
-inline constexpr double k_golden_onset_f50_min = 0.58;
-inline constexpr double k_golden_note_pitch_ok_min = 0.65;
+/// a margin, not a quality target. Measured: voicing recall 0.967, RPA(50 c) 0.948, octave/harmonic
+/// error rate 0.013 (octave, or a third harmonic: +-1200, +-1902, +-2400 cents), onset F-measure at
+/// +-20 / +-50 ms 0.439 / 0.700 (better annotator of the two, who agree with each other at only
+/// ~0.75), matched-note pitch within 50 cents 0.731. The owner's goal stays onset F >= 0.9 and no
+/// octave errors (docs/decisions/0012); the guard rises as the analysis improves.
+inline constexpr double k_golden_voicing_recall_min = 0.92;
+inline constexpr double k_golden_rpa_min = 0.90;
+inline constexpr double k_golden_octave_rate_max = 0.03;
+inline constexpr double k_golden_onset_f20_min = 0.40;
+inline constexpr double k_golden_onset_f50_min = 0.65;
+inline constexpr double k_golden_note_pitch_ok_min = 0.69;
 
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 

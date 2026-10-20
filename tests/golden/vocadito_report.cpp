@@ -52,6 +52,11 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
         }
     };
     get("beta", p.pyin.beta_mean);
+    get("sub", p.pyin.subharmonic_margin);
+    get("sub2", p.pyin.subharmonic_margin2);
+    get("maxjump", p.pyin.max_jump_cents);
+    get("jprob", p.pyin.jump_prob);
+    get("relief", p.pyin.stay_relief);
     get("v2u", p.pyin.voiced_to_unvoiced_prob);
     get("u2v", p.pyin.unvoiced_to_voiced_prob);
     set_ratio("hp", p.pyin.highpass_min_f0_ratio);
@@ -68,6 +73,7 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
         d = Decibels{v};
     };
     sec("window", p.activity.window);
+    sec("ywin", p.pyin.window);
     sec("minact", p.activity.min_active);
     sec("dip", p.activity.max_dip);
     db("on", p.activity.on_margin);

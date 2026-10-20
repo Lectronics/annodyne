@@ -120,6 +120,41 @@ void add_octave_candidates(FrameObservation& obs, const std::vector<double>& ncc
     }
 }
 
+/// A weak fundamental under strong harmonics gives a deep CMND dip at 1/2 or 1/3 of the true
+/// period. When the strongest candidate has a clearly deeper dip at 3x or 2x its lag, its mass
+/// moves there. The octave-neighbour candidates are added afterwards from the new top.
+void correct_subharmonic(FrameObservation& obs, const std::vector<double>& cmnd,
+                         const std::vector<double>& nccf, const ObserveSetup& s) {
+    if (s.subharmonic_margin <= 0.0 || obs.candidates.empty()) {
+        return;
+    }
+    const auto top_it = std::ranges::max_element(obs.candidates, {}, &Candidate::mass);
+    const double top_value =
+        cmnd[idx(std::clamp(static_cast<int>(std::lround(top_it->tau)), s.tau_min, s.tau_max))];
+    for (const int factor : {3, 2}) {
+        const double centre = top_it->tau * factor;
+        const int lo = std::max(s.tau_min, static_cast<int>(std::floor(centre * 0.97)));
+        const int hi = std::min(s.tau_max, static_cast<int>(std::ceil(centre * 1.03)));
+        if (lo > hi) {
+            continue;
+        }
+        int best = lo;
+        for (int tau = lo; tau <= hi; ++tau) {
+            if (cmnd[idx(tau)] < cmnd[idx(best)]) {
+                best = tau;
+            }
+        }
+        const double margin = factor == 2 ? s.subharmonic_margin2 : s.subharmonic_margin;
+        if (cmnd[idx(best)] + margin < top_value) {
+            const double mass = top_it->mass;
+            const double lag = refine_lag(nccf, best, s.tau_min, s.tau_max);
+            top_it->mass *= k_octave_candidate_mass;
+            add_candidate(obs, s, lag, mass);
+            return;
+        }
+    }
+}
+
 }  // namespace
 
 int Bins::of(double cents) const {
@@ -154,6 +189,7 @@ FrameObservation observe(const std::vector<double>& cmnd, const std::vector<doub
         }
     }
     obs.unvoiced = std::max(0.0, 1.0 - total);
+    correct_subharmonic(obs, cmnd, nccf, setup);
     add_octave_candidates(obs, nccf, setup);
     return obs;
 }

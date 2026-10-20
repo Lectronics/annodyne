@@ -19,7 +19,11 @@ struct PYinParams {
                               // tones lost 40 % of real voiced frames
     double voiced_to_unvoiced_prob = 0.01;
     double unvoiced_to_voiced_prob = 0.01;
-    double max_jump_cents = 80.0;  // f0 change per hop with the smooth (triangular) transition
+    double subharmonic_margin = 0.1;    // 0 = off: CMND margin for moving to a 2x/3x longer lag
+    double subharmonic_margin2 = 0.05;  // the same for the 2x lag (a smaller margin trades
+                                        // octave-up errors for octave-down ones)
+    double stay_relief = 0.5;           // see HmmParams::stay_relief; 0 lost short voiced stretches
+    double max_jump_cents = 80.0;       // f0 change per hop with the smooth (triangular) transition
     double jump_prob = 1e-4;  // probability of any larger jump, so a legato step is representable
     // Zero-phase band-pass on the analysis-rate signal before the YIN frames (design:
     // docs/design/phase3-activity.md §2). The cutoff is the ratio times PitchParams::min_f0 /
@@ -34,7 +38,7 @@ public:
     explicit PYinEstimator(PYinParams params = {}) : params_{params} {}
 
     [[nodiscard]] std::string_view name() const noexcept override { return "pyin"; }
-    [[nodiscard]] std::uint32_t version() const noexcept override { return 2; }
+    [[nodiscard]] std::uint32_t version() const noexcept override { return 4; }
     [[nodiscard]] Result<PitchTrack> estimate(const AudioSource& src,
                                               const PitchParams& params) const override;
 

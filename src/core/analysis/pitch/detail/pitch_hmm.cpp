@@ -90,6 +90,11 @@ HmmCosts make_hmm_costs(const HmmParams& p, int bin_count) {
         c.smooth[d] = -std::log(smooth_mass * tri[d] / tri_sum);
     }
     c.jump = -std::log(p.jump_prob);
+    const double relief = p.stay_relief * c.smooth[0];  // the same for every voiced-to-voiced step
+    for (double& v : c.smooth) {
+        v -= relief;
+    }
+    c.jump -= relief;
     c.voiced_to_unvoiced = -std::log(p.voiced_to_unvoiced_prob);
     c.unvoiced_to_unvoiced = -std::log(1.0 - p.unvoiced_to_voiced_prob);
     c.unvoiced_to_voiced = -std::log(p.unvoiced_to_voiced_prob / bin_count);

@@ -16,7 +16,8 @@ namespace anno::test {
 struct PitchScores {
     int voiced_reference = 0;  // reference frames that are voiced (within the compared range)
     int correct = 0;           // estimate voiced and within the tolerance
-    int octave_errors = 0;     // estimate voiced and within 50 cents of +-1200 from the reference
+    int octave_errors = 0;     // estimate voiced and within 50 cents of an octave or harmonic off
+                               // the reference (+-1200, +-1902, +-2400)
     int false_alarms = 0;      // estimate voiced where the reference is unvoiced
     int unvoiced_reference = 0;
     [[nodiscard]] double rpa() const {
@@ -27,6 +28,13 @@ struct PitchScores {
                                        : static_cast<double>(false_alarms) / unvoiced_reference;
     }
 };
+
+/// An error of a whole octave, or of the third harmonic (an octave and a fifth), up to 50 cents.
+inline bool is_harmonic_error(double err_cents) {
+    const double a = std::abs(err_cents);
+    return std::abs(a - 1200.0) <= 50.0 || std::abs(a - 1902.0) <= 50.0 ||
+           std::abs(a - 2400.0) <= 50.0;
+}
 
 /// Compares frames [first, last) of the estimate against the reference.
 inline PitchScores score_pitch(const PitchTrack& est, const std::vector<double>& reference_cents,
@@ -47,7 +55,7 @@ inline PitchScores score_pitch(const PitchTrack& est, const std::vector<double>&
         const double err = e - ref;
         if (std::abs(err) <= tolerance_cents) {
             ++s.correct;
-        } else if (std::abs(std::abs(err) - 1200.0) <= 50.0) {
+        } else if (is_harmonic_error(err)) {
             ++s.octave_errors;
         }
     }

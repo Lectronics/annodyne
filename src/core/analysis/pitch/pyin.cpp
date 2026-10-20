@@ -105,7 +105,9 @@ Result<std::vector<FrameObservation>> observe_frames(const AnalysisSignal& sig,
         .tau_max = static_cast<int>(std::ceil(sig.rate / params.min_f0.value())) + 1,
         .rate = sig.rate,
         .bins = bins,
-        .weights = threshold_weights(pyin.beta_mean)};
+        .weights = threshold_weights(pyin.beta_mean),
+        .subharmonic_margin = pyin.subharmonic_margin,
+        .subharmonic_margin2 = pyin.subharmonic_margin2};
     auto yin = YinFrame::create(window, setup.tau_max);
     if (!yin) {
         return Unexpected{yin.error()};
@@ -286,7 +288,8 @@ Result<PitchTrack> PYinEstimator::estimate(const AudioSource& src,
                         .max_jump_cents = params_.max_jump_cents,
                         .jump_prob = params_.jump_prob,
                         .voiced_to_unvoiced_prob = params_.voiced_to_unvoiced_prob,
-                        .unvoiced_to_voiced_prob = params_.unvoiced_to_voiced_prob},
+                        .unvoiced_to_voiced_prob = params_.unvoiced_to_voiced_prob,
+                        .stay_relief = params_.stay_relief},
                        bins.count);
     const auto paths = decode_paths(*obs, bins, costs, params_.bin_cents, params.n_alternates);
 

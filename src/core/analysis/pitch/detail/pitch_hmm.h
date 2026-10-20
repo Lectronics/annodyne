@@ -26,6 +26,11 @@ struct HmmParams {
     double jump_prob = 1e-4;
     double voiced_to_unvoiced_prob = 0.01;
     double unvoiced_to_voiced_prob = 0.01;
+    /// Share (0..1) of the cost of staying on a pitch that is taken off every voiced-to-voiced
+    /// step. The smooth transition spreads its probability over +-max_jump_cents, so staying voiced
+    /// costs about log(width) nats per frame that an unvoiced frame does not pay; at 0 that bias
+    /// makes short voiced stretches (staccato, low notes) lose to unvoiced.
+    double stay_relief = 0.0;
 };
 
 /// Pre: bin_count >= 1; probabilities in (0, 1).
