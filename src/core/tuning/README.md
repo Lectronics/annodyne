@@ -1,0 +1,3 @@
+# core/tuning
+
+Style presets (`StylePreset`, `StyleDefaults`): the defaults that differ between pop, classical, jazz/blues and gamaka-based singing (correction tolerance, glissando constant, blue-note handling, ornament handling). Plain data; layer 1 so tools (layer 5) can read it without linking analysis. Only `pop` is checked against recordings (`provisional = false`); the other rows come from the studies cited in `docs/design/note-pitch-target.md` and are provisional until the style-presets design note and listening sessions. Pitch correction itself (grid, key, tuning reference) is Phase 4 and later.

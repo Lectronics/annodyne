@@ -6,6 +6,7 @@
 #include "core/analysis/perceived_pitch/perceived_pitch.h"
 #include "core/analysis/pitch/pyin.h"
 #include "core/analysis/pitch_target/pitch_target.h"
+#include "core/analysis/pitch_target/take_annotation.h"
 #include "core/analysis/segmentation/segmentation.h"
 #include "core/types/analysis_result.h"
 #include "core/types/audio_source.h"

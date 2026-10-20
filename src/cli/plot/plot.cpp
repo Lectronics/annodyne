@@ -63,6 +63,30 @@ Frame frame_of(const AnalysisResult& a) {
     return f;
 }
 
+const char* target_colour(PitchTargetKind k) {
+    switch (k) {
+    case PitchTargetKind::whole:
+    case PitchTargetKind::settled: return "#3366cc";
+    case PitchTargetKind::glide: return "#dd8800";
+    case PitchTargetKind::multi: return "#8844aa";
+    case PitchTargetKind::ornament: return "#228844";
+    case PitchTargetKind::unpitched: return "#888888";
+    }
+    return "#3366cc";
+}
+
+const char* kind_name(PitchTargetKind k) {
+    switch (k) {
+    case PitchTargetKind::whole: return "whole";
+    case PitchTargetKind::settled: return "settled";
+    case PitchTargetKind::glide: return "glide";
+    case PitchTargetKind::multi: return "multi";
+    case PitchTargetKind::ornament: return "ornament";
+    case PitchTargetKind::unpitched: return "unpitched";
+    }
+    return "";
+}
+
 }  // namespace
 
 std::string pitch_csv(const AnalysisResult& analysis) {
@@ -89,9 +113,9 @@ std::string notes_csv(const AnalysisResult& analysis) {
         out +=
             std::format("{},{:.4f},{:.4f},{:.4f},{:.4f},{:.2f},{:.2f},{:.2f},{:.3f},{}\n",
                         n.id.value, seconds(n.source_start), seconds(n.attack_end),
-                        seconds(n.release_start), seconds(n.source_end), n.pitch_target.target.value(),
-                        n.pitch_center.value(), n.loudness.value(), n.confidence_prob,
-                        n.separation_in == SeparationIn::soft ? "soft" : "hard");
+                        seconds(n.release_start), seconds(n.source_end),
+                        n.pitch_target.target.value(), n.pitch_center.value(), n.loudness.value(),
+                        n.confidence_prob, n.separation_in == SeparationIn::soft ? "soft" : "hard");
     }
     return out;
 }
@@ -125,16 +149,36 @@ std::string plot_svg(const AnalysisResult& analysis) {
         }
     }
     for (const Note& n : analysis.notes) {
-        const double semitone = n.pitch_target.target.value() / 100.0;
+        const PitchTarget& t = n.pitch_target;
+        const double semitone = t.target.value() / 100.0;
+        const char* colour = target_colour(t.kind);
+        // The whole note faintly, then the core (what the target is computed from) on top.
+        const double core_start =
+            t.core.duration() > Seconds{0.0} ? seconds(t.core.start()) : seconds(n.source_start);
+        const double core_end =
+            t.core.duration() > Seconds{0.0} ? seconds(t.core.end()) : seconds(n.source_end);
         svg += std::format(
+            "<rect class=\"note-extent\" x=\"{:.1f}\" y=\"{:.1f}\" width=\"{:.1f}\" "
+            "height=\"{:.1f}\" fill=\"{}\" fill-opacity=\"0.12\" stroke=\"{}\" "
+            "stroke-opacity=\"0.4\"/>\n"
             "<rect class=\"note\" x=\"{:.1f}\" y=\"{:.1f}\" width=\"{:.1f}\" height=\"{:.1f}\" "
-            "fill=\"#3366cc\" fill-opacity=\"0.35\" stroke=\"#3366cc\"/>\n"
-            "<text x=\"{:.1f}\" y=\"{:.1f}\" font-size=\"9\" fill=\"#223a6b\">{}</text>\n",
+            "fill=\"{}\" fill-opacity=\"0.35\" stroke=\"{}\"/>\n"
+            "<text x=\"{:.1f}\" y=\"{:.1f}\" font-size=\"9\" fill=\"#223a6b\">{} {}</text>\n",
             x_of(seconds(n.source_start)), y_of(semitone + k_note_half_height_semitones),
             (seconds(n.source_end) - seconds(n.source_start)) * k_px_per_second,
-            2.0 * k_note_half_height_semitones * k_px_per_semitone,
+            2.0 * k_note_half_height_semitones * k_px_per_semitone, colour, colour,
+            x_of(core_start), y_of(semitone + k_note_half_height_semitones),
+            (core_end - core_start) * k_px_per_second,
+            2.0 * k_note_half_height_semitones * k_px_per_semitone, colour, colour,
             x_of(seconds(n.source_start)) + 2.0,
-            y_of(semitone + k_note_half_height_semitones) - 2.0, n.id.value);
+            y_of(semitone + k_note_half_height_semitones) - 2.0, n.id.value, kind_name(t.kind));
+        if (t.secondary) {  // glide start / ornament's other pitch: a short tick
+            svg += std::format(
+                "<line class=\"secondary\" x1=\"{:.1f}\" y1=\"{:.1f}\" x2=\"{:.1f}\" "
+                "y2=\"{:.1f}\" stroke=\"{}\" stroke-width=\"2\" stroke-dasharray=\"3,2\"/>\n",
+                x_of(core_start), y_of(t.secondary->value() / 100.0), x_of(core_end),
+                y_of(t.secondary->value() / 100.0), colour);
+        }
     }
     if (analysis.pitch) {
         const PitchTrack& p = *analysis.pitch;

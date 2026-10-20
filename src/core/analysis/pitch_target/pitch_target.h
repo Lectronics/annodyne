@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/analysis/perceived_pitch/perceived_pitch.h"
+#include "core/tuning/style_preset.h"
 #include "core/types/note.h"
 #include "core/types/pitch_target.h"
 #include "core/types/result.h"
@@ -42,11 +43,27 @@ struct SegmentingParams {
     double zone_max_share = 0.2;  // a transient zone covers at most this share of a short note
 };
 
+/// Take-level flags (design note §3 step 7, §12 S3/S4).
+struct TakeParams {
+    Seconds phrase_gap{0.35};    // silence this long between notes ends a phrase
+    Seconds run_max_note{0.25};  // a run is notes at most this long ...
+    int run_min_notes = 3;       // ... at least this many in a row
+    Seconds run_max_gap{0.05};   // ... with at most this much between them
+    int off_grid_min_count = 3;  // same pitch class off the grid by a similar amount
+    Cents off_grid_spread{15.0};
+    Cents off_grid_min_offset{15.0};  // after the take's own offset is removed
+    Cents peak_tolerance{20.0};       // the phrase's highest note sharp by up to this
+    Cents peak_min_offset{5.0};
+    int peak_min_phrase_notes = 3;
+};
+
 struct OrnamentParams {
     Cents min_extent{80.0};            // distance between the two levels of a trill / mordent
-    double flat_top_share = 0.35;       // share of each plateau's frames that are stationary
+    double flat_top_share = 0.35;      // share of each plateau's frames that are stationary
     double still_cents_per_s = 400.0;  // |slope| below this is stationary (a vibrato never is)
     Seconds min_plateau{0.040};        // a stretch on one level counts from this long
+    bool detect_gamaka = false;        // style `gamaka`: dense turning points without a level part
+    int gamaka_min_segments = 4;       // ... at least this many segments and no level core
     int min_transitions = 2;           // A-B-A is a mordent, A-B-A-B a trill
 };
 
@@ -66,6 +83,10 @@ struct TargetParams {
     Cents preparation_max{60.0};
     Cents preparation_min{20.0};  // a dip at least this deep, opposite to the next interval
     Seconds preparation_window{0.080};
+    Cents ambiguous_low{40.0};        // a target this far (low..high) from the nearest semitone
+    Cents ambiguous_high{60.0};       // is between two grid lines: `ambiguous_intent`
+    Cents register_break_min{300.0};  // a step this large between two plateaus is a register break
+    Seconds register_break_max_step{0.120};
     Seconds legato_gap{0.020};  // legato/preparation need the neighbour this close
     Cents legato_match{50.0};   // approach starts within this of the previous note = legato
 };
@@ -75,7 +96,13 @@ struct PitchTargetParams {
     SegmentingParams segmenting;
     TargetParams target;
     OrnamentParams ornament;
+    TakeParams take;
+    Cents tuning_offset{0.0};  // grid offset from A4 = 440 Hz (cents); 0 until Phase 8 estimates it
 };
+
+/// Parameters for a style preset: the glissando constant and gamaka detection come from
+/// style_defaults(); everything else keeps its default. Pure.
+[[nodiscard]] PitchTargetParams pitch_target_params_for(StylePreset preset);
 
 /// What the target is computed from besides the note's own curves.
 struct NoteEvidence {

@@ -1,7 +1,7 @@
 # Design note: Note pitch target
 
 - **Phase:** 3 (Monophonic analysis), extends `perceived_pitch`
-- **Status:** draft, research updated 2026-10-19; undefined items resolved in section 11 (2026-10-19), structure review 2026-10-19 answered in section 12
+- **Status:** implemented in Phase 3 (stages 1-6, 2026-10-20) except the items listed in section 17; undefined items resolved in section 11, structure review answered in section 12, owner decisions in section 13
 - **Related:** transient-based segmentation design note; `note-stretching.md` (vibrato model); implementation guide B3–B4
 - **Folder / CMake target:** `src/core/analysis/pitch_target/` (new, layer 1); data types in `src/core/types/pitch_target.h` (see section 11)
 
@@ -414,3 +414,10 @@ The target **does not beat the plain median** on the APC metric (the §8 golden 
 ## 16. Stage 4 result (2026-10-20): ornaments
 
 `find_ornament` (detail/ornament): two flat levels >= 80 cents apart, every plateau (>= 40 ms) stationary for at least 35 % of its frames (slope under 400 cents/s; the tracker smooths a clean step over ~50 ms, so a stricter test missed a real trill, while a 6 Hz vibrato is never stationary), at least 2 level changes. Kind `ornament`: `target` is the level the note starts on, `secondary` the other; never averaged. Gamaka handling stays style-gated and arrives with the style table (stage 6). Segmentation keeps a trill whole (ADR-0010a, 5 alternating steps): an `analyse()` test on a synthetic 6 Hz trill gives one note of kind `ornament`. No change on the Vocadito subsets (no false ornaments); 5 steps was chosen because 3 merged real fast melodic alternations.
+
+## 17. Stages 5-6 result (2026-10-20) and what is left
+
+- `annotate_take` (take_annotation.h): `run`, `consistent_off_grid` (the take's median offset is removed first, so a singer sharp throughout flags nothing), `expressive_peak`; the orchestrator ORs the result into `Note::pitch_target.flags` once all notes exist. Per-note flags added to `estimate_pitch_target`: `ambiguous_intent`, `register_break`. 7 take-level tests and 4 flag tests.
+- `core/tuning` (new layer-1 target): `StylePreset`, `StyleDefaults`, `style_defaults()`; `pitch_target_params_for(preset)` applies `glissando_g` and gamaka detection. Only `pop` is non-provisional. A synthetic gamaka-style note is an ornament only with the gamaka preset.
+- Plots: the SVG draws the whole note faintly and the core (what the target is computed from) in the kind's colour with the kind in the label; glide start / ornament's other pitch as a dashed tick. JSON exports the full `pitch_target` object.
+- **Left for later (not done):** `pitch_target_mode` edit and the tolerance/skip behaviour (Phase 4 Correct Pitch, ADR-0014); the `intended-note`, `reference-tuning-drift`, `ensemble-tuning`, `style-presets` design notes and large-shift artifacts (section 9); two-tracker disagreement (Phase 13; the `disagreement` span is the hook); the tuning reference (`tuning_offset` is 0 until Phase 8); thresholds of `register_break`, `ambiguous_intent`, `expressive_peak` and all non-pop presets need annotated data or listening; the owner's plot check (tracks 13 and 28 again, and a trill/glide example).

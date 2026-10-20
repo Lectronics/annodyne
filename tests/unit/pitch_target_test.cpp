@@ -403,3 +403,53 @@ TEST_CASE("neither_vibrato_nor_a_single_step_is_an_ornament", "[pitch_target][or
     };
     CHECK(estimate(make_scene(hunt, 1.5)).kind != PitchTargetKind::ornament);
 }
+
+TEST_CASE("a_target_between_two_grid_lines_is_ambiguous", "[pitch_target][flags]") {
+    const auto sc = make_scene([](double) { return k_a4 + 50.0; }, 0.8);
+    CHECK(estimate(sc).flags.has(PitchFlag::ambiguous_intent));
+    const auto near = make_scene([](double) { return k_a4 + 20.0; }, 0.8);
+    CHECK(!estimate(near).flags.has(PitchFlag::ambiguous_intent));
+    PitchTargetParams shifted;
+    shifted.tuning_offset = Cents{50.0};  // a grid sitting 50 cents sharp: the pitch is on a line
+    CHECK(!estimate(sc, {}, shifted).flags.has(PitchFlag::ambiguous_intent));
+}
+
+TEST_CASE("a_big_abrupt_step_inside_a_note_is_a_register_break", "[pitch_target][flags]") {
+    const auto jump = [](double t) { return t < 0.5 ? k_a4 : k_a4 + 500.0; };
+    const auto t = estimate(make_scene(jump, 1.0));
+    CHECK(t.kind == PitchTargetKind::multi);
+    CHECK(t.flags.has(PitchFlag::register_break));
+    const auto small = [](double t2) { return t2 < 0.5 ? k_a4 : k_a4 + 100.0; };
+    CHECK(!estimate(make_scene(small, 1.0)).flags.has(PitchFlag::register_break));
+}
+
+TEST_CASE("the_style_table_has_a_validated_pop_row_and_provisional_others",
+          "[pitch_target][style]") {
+    CHECK(!style_defaults(StylePreset::pop).provisional);
+    for (const StylePreset s :
+         {StylePreset::classical, StylePreset::jazz_blues, StylePreset::gamaka}) {
+        CHECK(style_defaults(s).provisional);
+    }
+    CHECK(style_defaults(StylePreset::pop).glissando_g == 0.32);
+    CHECK(style_defaults(StylePreset::classical).glissando_g == 0.16);
+    CHECK(style_defaults(StylePreset::jazz_blues).skip_consistent_off_grid);
+    CHECK(style_defaults(StylePreset::gamaka).ornaments == OrnamentHandling::leave_alone);
+    CHECK(pitch_target_params_for(StylePreset::pop).segmenting.glissando_g == 0.32);
+    CHECK(!pitch_target_params_for(StylePreset::pop).ornament.detect_gamaka);
+    CHECK(pitch_target_params_for(StylePreset::gamaka).ornament.detect_gamaka);
+}
+
+TEST_CASE("a_gamaka_style_note_is_an_ornament_only_with_the_gamaka_preset",
+          "[pitch_target][style]") {
+    // Continuous slides of +-120 cents at 2.5 Hz: no level part anywhere.
+    const auto slides = [](double t) {
+        const double phase = std::fmod(t * 2.5, 1.0);
+        return k_a4 + 120.0 * (phase < 0.5 ? 4.0 * phase - 1.0 : 3.0 - 4.0 * phase);
+    };
+    const auto sc = make_scene(slides, 1.6);
+    CHECK(estimate(sc).kind != PitchTargetKind::ornament);
+    const auto gamaka = estimate(sc, {}, pitch_target_params_for(StylePreset::gamaka));
+    CHECK(gamaka.kind == PitchTargetKind::ornament);
+    REQUIRE(gamaka.secondary.has_value());
+    CHECK(std::abs(gamaka.target.value() - k_a4) <= tolerance::k_target_hunt_cents + 20.0);
+}

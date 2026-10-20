@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <utility>
 
 namespace anno {
 
@@ -66,7 +67,10 @@ Result<void> validate_params(const PitchTargetParams& p) {
         !positive(t.overshoot_min.value()) || !positive(t.preparation_max.value()) ||
         !positive(t.preparation_min.value()) || !positive(t.preparation_window.value()) ||
         !positive(t.legato_gap.value()) || !positive(t.legato_match.value()) ||
-        !std::isfinite(t.end_bias) || t.end_bias < 0.0;
+        !positive(t.ambiguous_low.value()) ||
+        !(t.ambiguous_high.value() > t.ambiguous_low.value()) ||
+        !positive(t.register_break_min.value()) || !positive(t.register_break_max_step.value()) ||
+        !std::isfinite(p.tuning_offset.value()) || !std::isfinite(t.end_bias) || t.end_bias < 0.0;
     if (bad) {
         return fail(ErrorCode::invalid_argument, "estimate_pitch_target: invalid parameters");
     }
@@ -368,6 +372,55 @@ double confidence_of(const Work& w, FrameRange core, bool short_note) {
     return std::clamp(conf, 0.0, 1.0);
 }
 
+/// Distance (cents) from `pitch` to the nearest grid line (semitone, A4 = 6900 shifted by the
+/// tuning offset); in (-50, 50], positive when the pitch is sharp.
+double grid_offset(double pitch_cents, double tuning_offset_cents) {
+    const double rel = pitch_cents - tuning_offset_cents;
+    return rel - 100.0 * std::round(rel / 100.0);
+}
+
+/// Flags decided from the note alone: `ambiguous_intent` (between two grid lines) and
+/// `register_break` (two plateaus a large, abrupt step apart).
+void set_note_flags(const Work& w, PitchTarget& out) {
+    const TargetParams& tp = w.params->target;
+    const bool has_target =
+        out.kind == PitchTargetKind::whole || out.kind == PitchTargetKind::settled ||
+        out.kind == PitchTargetKind::glide || out.kind == PitchTargetKind::ornament;
+    if (has_target) {
+        const double off =
+            std::abs(grid_offset(out.target.value(), w.params->tuning_offset.value()));
+        if (off >= tp.ambiguous_low.value() && off <= tp.ambiguous_high.value()) {
+            out.flags.set(PitchFlag::ambiguous_intent);
+        }
+    }
+    if (out.kind == PitchTargetKind::multi && out.secondary &&
+        std::abs(out.secondary->value() - out.target.value()) >= tp.register_break_min.value()) {
+        const bool abrupt = std::ranges::any_of(w.segs, [&](const Seg& s) {
+            return s.moving &&
+                   w.frames_s(s.frames()) <= tp.register_break_max_step.value() + w.hop_s;
+        });
+        if (abrupt) {
+            out.flags.set(PitchFlag::register_break);
+        }
+    }
+}
+
+/// Many turning points and no level stretch long enough to be a core (style `gamaka`, provisional).
+bool is_gamaka(const Work& w) {
+    if (std::cmp_less(w.segs.size(), w.params->ornament.gamaka_min_segments)) {
+        return false;
+    }
+    const std::vector<FrameRange> runs = level_runs(w.segs);
+    return std::ranges::none_of(runs, [&](const FrameRange& r) {
+        return w.frames_s(r.frames()) >= w.params->target.min_core.value();
+    });
+}
+
+double furthest_from(const std::vector<double>& curve, double centre) {
+    return *std::ranges::max_element(
+        curve, [&](double a, double b) { return std::abs(a - centre) < std::abs(b - centre); });
+}
+
 bool evidence_matches(const Note& note, const NoteEvidence& evidence, std::size_t n) {
     return evidence.pitch != nullptr && n > 0 && note.pitch_drift.size() == n &&
            note.pitch_mod.size() == n &&
@@ -443,6 +496,14 @@ Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& 
         return out;
     }
     build_segments(w, out);
+    if (params.ornament.detect_gamaka && is_gamaka(w)) {
+        out.kind = PitchTargetKind::ornament;  // the movement is the note: the median is the target
+        out.target = Cents{w.pitch_of(w.all())};
+        out.secondary = Cents{furthest_from(w.smoothed, out.target.value())};
+        out.core = range_of(note, w.all());
+        out.confidence_prob = confidence_of(w, w.all(), short_note);
+        return out;
+    }
     FrameRange core = classify(w, out);
     if (out.kind == PitchTargetKind::glide) {
         out.core = range_of(note, core);
@@ -450,7 +511,16 @@ Result<PitchTarget> estimate_pitch_target(const Note& note, const NoteEvidence& 
         core = settle_core(w, core, out);
     }
     out.confidence_prob = confidence_of(w, core, short_note);
+    set_note_flags(w, out);
     return out;
+}
+
+PitchTargetParams pitch_target_params_for(StylePreset preset) {
+    const StyleDefaults style = style_defaults(preset);
+    PitchTargetParams p;
+    p.segmenting.glissando_g = style.glissando_g;
+    p.ornament.detect_gamaka = style.detect_gamaka;
+    return p;
 }
 
 }  // namespace anno

@@ -127,6 +127,12 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
         }
         result->notes.push_back(std::move(*note));
     }
+    // Flags that need the whole take (blue notes, phrase peaks, runs), added once all notes exist.
+    const std::vector<PitchFlags> take_flags = annotate_take(result->notes, params.pitch_target);
+    for (std::size_t i = 0; i < take_flags.size(); ++i) {
+        result->notes[i].pitch_target.flags.bits = static_cast<std::uint16_t>(
+            result->notes[i].pitch_target.flags.bits | take_flags[i].bits);
+    }
     result->onsets = std::move(*onsets);
     result->pitch = std::move(*pitch);
     if (auto r = validate(*result); !r) {
