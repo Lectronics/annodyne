@@ -407,6 +407,29 @@ TEST_CASE("a_fast_roll_up_into_the_pitch_is_one_note_with_it", "[segmentation][t
     REQUIRE(notes.size() == 1);
     CHECK(sec(notes[0].source_start) <= 0.25);
     CHECK(sec(notes[0].source_end) >= 1.15);
+    // The vowel starts where voicing does; the roll is part of the vowel, not of the transient.
+    CHECK(sec(notes[0].attack_end) <= 0.26);
+}
+
+TEST_CASE("attack_end_is_where_voicing_starts_after_a_consonant", "[segmentation][transient]") {
+    // 80 ms of unvoiced consonant (voicing 0.1) before a steady vowel at 64.
+    PitchTrack track = make_track({{.start_s = 0.45, .end_s = 1.0, .midi = 64.0}}, 1.4);
+    for (std::size_t i = 72; i < 90; ++i) {
+        track.voicing_prob[i] = 0.1;
+    }
+    SegmentParams params;
+    params.preroll_max = Seconds{0.120};
+    const auto notes = segment(track, make_onsets({0.37}, OnsetKind::consonant), params);
+    REQUIRE(notes.size() == 1);
+    CHECK(sec(notes[0].source_start) <= 0.38);
+    CHECK(std::abs(sec(notes[0].attack_end) - 0.45) <= 0.02);  // consonant | vowel boundary
+}
+
+TEST_CASE("a_vowel_initial_note_has_a_short_attack", "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.3, .end_s = 1.0, .midi = 60.0}}, 1.4);
+    const auto notes = segment(track, make_onsets({0.3}));
+    REQUIRE(notes.size() == 1);
+    CHECK(sec(notes[0].attack_end) - sec(notes[0].source_start) <= 0.05);
 }
 
 TEST_CASE("a_strong_transient_inside_the_same_pitch_splits_the_note", "[segmentation][transient]") {

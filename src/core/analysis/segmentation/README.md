@@ -16,8 +16,10 @@ than min_note (60 ms) or 10 pitch frames are absorbed right to left into the fol
 glide becomes the attack of the note it reaches) or into a preceding long one, else dropped.
 Times: start = the first voiced frame, pulled onto the earliest consonant onset up to 120 ms before it,
 else the nearest onset within -30 / +40 ms (never before the previous note's end); end = last voiced
-frame + one hop, never past the next start; attack end / release start = where the smoothed f0 first
-/ last holds within 40 cents of the note's pitch for 30 ms.
+frame + one hop, never past the next start; attack end = the first frame of a voiced stretch of at least 30 ms (the vowel starts there; what
+precedes it is the consonant or transient, which stays part of the note); release start = where the smoothed f0
+last holds within 40 cents of the note's pitch for 30 ms. The pitch statistics use the first such stable frame
+as their start, so a roll into the pitch is in the vowel but not in the note's rough pitch.
 
 **Limitations / tuning:** every constant above is initial and tuned on synthetic melodies first, then on
 the golden vocals at the Phase 3 review. Glides are not notes (they join the note they reach); a
@@ -26,3 +28,8 @@ Memory: frames x (2 bins + 1) ints for the back pointers. Compiled with `-ffp-co
 
 ## Transient-driven boundaries (ADR-0010a)
 Runs from the note HMM are merged (`detail/merge_runs`) unless a strong attack/consonant onset, a non-trill `pitch_change` onset, an unvoiced gap of 30 ms or a median-pitch difference above `merge_max_cents` (80) separates them, so a pitch that wanders around its target is one note. The HMM's new-note prior only reacts to onsets of strength >= `merge_onset_strength`. Limits: slow legato steps without a `pitch_change` onset and notes whose pitch differs by less than 80 cents can be merged; held-out under-segmentation is 8 %.
+
+**Provisional:** the transient decisions (`merge_onset_strength`, the ramp rule in `merge_runs`, the level-step
+onsets in `core/analysis/onsets`) are threshold heuristics. Owner direction 2026-10-20: consonants are grouped with
+the pitch for now, `attack_end` is the logical consonant | vowel boundary, and transient/consonant analysis will be
+replaced by a more accurate one later (ROADMAP carried items).

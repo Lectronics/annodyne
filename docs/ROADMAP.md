@@ -105,6 +105,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ---
 
 - Carried from the Phase 3 pitch-target review (2026-10-19): follow-up design notes required before Correct Pitch closes: `intended-note.md`, `reference-tuning-drift.md`, `ensemble-tuning.md`, `style-presets.md`, and large-shift artifacts in the synthesis design (see `docs/design/note-pitch-target.md` §9, §11). Transient segmentation and pitch target: `docs/design/phase3-segmentation-transient.md`, `docs/design/note-pitch-target.md`.
+- Carried (owner, 2026-10-20): consonants are grouped with the pitch for now; `Note::attack_end` is the consonant | vowel boundary. Later, decide how Correct Pitch and other tools treat the consonant (vowel edited, consonant left alone). The transient/onset thresholds (SuperFlux delta, level-step onsets, `merge_onset_strength`, the ramp rule) are provisional and are to be replaced by a more accurate transient and consonant analysis, which should also improve pitch detection (ADR-0010a amendments).
 
 ## Phase 4 — First audible edit: pitch
 

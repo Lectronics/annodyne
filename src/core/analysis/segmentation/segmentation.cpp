@@ -270,23 +270,48 @@ Statistics note_statistics(const PitchTrack& pitch, const std::vector<double>& s
             .confidence = std::clamp(voicing_sum / frames * share, 0.0, 1.0)};
 }
 
-/// Attack end and release start of a draft: where the smoothed f0 first / last holds within
-/// `stable_band` of the note's pitch for `stable_min` frames; the note's own ends if it never does.
-std::pair<double, double> attack_and_release(const PitchTrack& pitch,
-                                             const std::vector<double>& smoothed, const Draft& d,
-                                             const SegmentParams& params) {
+/// The three inner times of a note. `attack_end` is where the vowel starts: the first frame of a
+/// voiced stretch of at least `stable_min`; what precedes it (a consonant, breath or the onset's
+/// transient) is the attack. `stable_start` / `release_start` bound the part where the smoothed f0
+/// holds within `stable_band` of the note's pitch; only the pitch statistics use `stable_start`.
+struct InnerTimes {
+    double attack_end = 0.0;
+    double stable_start = 0.0;
+    double release_start = 0.0;
+};
+
+std::optional<std::size_t> first_voiced_stretch(const PitchTrack& pitch, const Region& frames,
+                                                std::size_t min_frames) {
+    std::size_t run = 0;
+    for (std::size_t t = frames.first; t <= frames.last; ++t) {
+        run = is_voiced(pitch, t) ? run + 1 : 0;
+        if (run >= min_frames) {
+            return t + 1 - run;
+        }
+    }
+    return std::nullopt;
+}
+
+InnerTimes inner_times(const PitchTrack& pitch, const std::vector<double>& smoothed, const Draft& d,
+                       const SegmentParams& params) {
     const double hop = pitch.grid.hop.value();
     const auto stable_min =
         static_cast<std::size_t>(std::max(2L, std::lround(params.stable_min.value() / hop)));
+    const auto voiced = first_voiced_stretch(pitch, d.frames, stable_min);
+    const double attack_end =
+        voiced ? std::clamp(time_of(pitch.grid, *voiced), d.start_s, d.end_s) : d.start_s;
     const auto in =
         stable_edge(smoothed, d.frames, d.pitch, params.stable_band.value(), stable_min, true);
     const auto out =
         stable_edge(smoothed, d.frames, d.pitch, params.stable_band.value(), stable_min, false);
     if (!in || !out || *in > *out) {
-        return {d.start_s, d.end_s};
+        return {.attack_end = attack_end, .stable_start = d.start_s, .release_start = d.end_s};
     }
-    const double attack_end = std::clamp(time_of(pitch.grid, *in), d.start_s, d.end_s);
-    return {attack_end, std::clamp(time_of(pitch.grid, *out) + hop, attack_end, d.end_s)};
+    const double stable_start = std::clamp(time_of(pitch.grid, *in), d.start_s, d.end_s);
+    return {.attack_end = attack_end,
+            .stable_start = stable_start,
+            .release_start = std::clamp(time_of(pitch.grid, *out) + hop,
+                                        std::max(attack_end, stable_start), d.end_s)};
 }
 
 /// The HMM input of a track: the smoothed f0, the voicing, the per-frame new-note probability and
@@ -380,13 +405,14 @@ Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const Onset
     drop_unusable(drafts, pitch, min_frames);
     std::set<std::string> used;
     for (const Draft& d : drafts) {
-        const auto [attack_end, release_start] = attack_and_release(pitch, smoothed, d, params);
-        const Statistics stats = note_statistics(pitch, smoothed, d, attack_end, release_start);
+        const InnerTimes inner = inner_times(pitch, smoothed, d, params);
+        const Statistics stats =
+            note_statistics(pitch, smoothed, d, inner.stable_start, inner.release_start);
         NoteSpan span;
         span.id = NoteId{make_id(d.start_s, used)};
         span.source_start = SourceTime{} + Seconds{d.start_s};
-        span.attack_end = SourceTime{} + Seconds{attack_end};
-        span.release_start = SourceTime{} + Seconds{release_start};
+        span.attack_end = SourceTime{} + Seconds{inner.attack_end};
+        span.release_start = SourceTime{} + Seconds{inner.release_start};
         span.source_end = SourceTime{} + Seconds{d.end_s};
         span.rough_pitch = Cents{stats.pitch};
         span.confidence_prob = stats.confidence;

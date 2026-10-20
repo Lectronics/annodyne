@@ -24,7 +24,7 @@ struct Note {
 
     // All on the source axis. start <= attack_end <= release_start <= end.
     SourceTime source_start;
-    SourceTime attack_end;  // end of the transient/consonant
+    SourceTime attack_end;  // end of the transient/consonant = where the vowel (voicing) starts
     SourceTime release_start;
     SourceTime source_end;
 

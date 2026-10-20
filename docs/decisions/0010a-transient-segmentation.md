@@ -44,3 +44,15 @@ as a duplicate. Measured (35 tuning / 5 held-out): onset F20 A1 0.554/0.469 -> 0
 matched-note pitch 0.811/0.784 -> 0.820/0.803, under-segmentation 4.4/9.4 % -> 3.0/4.6 %;
 over-segmentation 9.4/7.6 % -> 11.3/10.2 %; APC (-10/+15) 0.605/0.569 -> 0.615/0.530. The held-out
 APC fall is the cost of more, shorter notes; guard 0.52 still holds.
+
+## Amendment 2026-10-20 (3): attack_end is the consonant | vowel boundary
+
+Owner decision: consonants stay grouped with the pitch (a note starts at its transient), but a note
+must have a logical consonant | vowel separation so that later phases can treat the vowel and the
+consonant differently (or leave the consonant unedited). `Note::attack_end` is that boundary: the
+first frame of a voiced stretch of at least `stable_min` (30 ms). It used to be where the f0 first
+held within 40 cents of the note's pitch, which put the end of a roll into the pitch (track 28,
+0.66 s: 0.835 s) in the "attack". The pitch statistics still start at the pitch-stable frame.
+Loudness integrates from `attack_end`, so it now includes the roll. The thresholds behind the
+transients (merge strength, ramp, level steps) are provisional; a better transient and consonant
+analysis is planned and will replace them.
