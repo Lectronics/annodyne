@@ -9,7 +9,6 @@ namespace anno {
 
 namespace {
 
-constexpr Cents k_not_yet_perceived{0.0};
 constexpr double k_min_source_rate_hz = 4000.0;  // K-weighting design limit (core/dsp/k_weight.h)
 
 /// Adds the stage name to an error.
@@ -37,7 +36,6 @@ Result<Note> describe_note(const NoteSpan& span, const PitchTrack& pitch, const 
     note.attack_end = span.attack_end;
     note.release_start = span.release_start;
     note.source_end = span.source_end;
-    note.perceived_pitch = k_not_yet_perceived;
     note.pitch_center = decomposed->center;
     note.grid = grid;
     note.pitch_drift = std::move(decomposed->drift);
@@ -51,7 +49,8 @@ Result<Note> describe_note(const NoteSpan& span, const PitchTrack& pitch, const 
     if (!perceived) {
         return stage_error("perceived pitch", perceived.error());
     }
-    note.perceived_pitch = *perceived;
+    // Provisional until the pitch-target stage (note-pitch-target.md): the whole-note target.
+    note.pitch_target = make_whole_target(*perceived);
     return note;
 }
 

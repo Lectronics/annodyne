@@ -179,14 +179,14 @@ inline VocaditoScores evaluate(const VocaditoTrack& track, const AnalysisResult&
     for (const RefNote& ref : track.notes_a1) {
         for (const Note& n : result.notes) {
             if (std::abs((n.source_start - SourceTime{}).value() - ref.onset_s) <= 0.050) {
-                const double error = n.perceived_pitch.value() - note_cents(ref);
+                const double error = n.pitch_target.target.value() - note_cents(ref);
                 ++s.matched_notes;
                 s.matched_pitch_ok += std::abs(error) <= 50.0 ? 1 : 0;
                 s.matched_octave += is_harmonic_error(error) ? 1 : 0;
                 const auto [mean, median] =
                     note_mean_median(pitch, (n.source_start - SourceTime{}).value(),
                                      (n.source_end - SourceTime{}).value());
-                s.apc_ok[0] += within_apc(n.perceived_pitch.value(), note_cents(ref)) ? 1 : 0;
+                s.apc_ok[0] += within_apc(n.pitch_target.target.value(), note_cents(ref)) ? 1 : 0;
                 s.apc_ok[1] += within_apc(mean, note_cents(ref)) ? 1 : 0;
                 s.apc_ok[2] += within_apc(median, note_cents(ref)) ? 1 : 0;
                 break;

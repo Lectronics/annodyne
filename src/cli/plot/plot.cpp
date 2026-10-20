@@ -43,8 +43,8 @@ Frame frame_of(const AnalysisResult& a) {
     double hi = -1e9;
     for (const Note& n : a.notes) {
         f.duration_s = std::max(f.duration_s, seconds(n.source_end));
-        lo = std::min(lo, n.perceived_pitch.value() / 100.0);
-        hi = std::max(hi, n.perceived_pitch.value() / 100.0);
+        lo = std::min(lo, n.pitch_target.target.value() / 100.0);
+        hi = std::max(hi, n.pitch_target.target.value() / 100.0);
     }
     if (a.pitch) {
         f.duration_s = std::max(f.duration_s, static_cast<double>(a.pitch->grid.n_frames) *
@@ -83,13 +83,13 @@ std::string pitch_csv(const AnalysisResult& analysis) {
 }
 
 std::string notes_csv(const AnalysisResult& analysis) {
-    std::string out = "id,start_s,attack_end_s,release_start_s,end_s,perceived_pitch_cents,pitch_"
+    std::string out = "id,start_s,attack_end_s,release_start_s,end_s,pitch_target_cents,pitch_"
                       "center_cents,loudness_lufs,confidence,separation_in\n";
     for (const Note& n : analysis.notes) {
         out +=
             std::format("{},{:.4f},{:.4f},{:.4f},{:.4f},{:.2f},{:.2f},{:.2f},{:.3f},{}\n",
                         n.id.value, seconds(n.source_start), seconds(n.attack_end),
-                        seconds(n.release_start), seconds(n.source_end), n.perceived_pitch.value(),
+                        seconds(n.release_start), seconds(n.source_end), n.pitch_target.target.value(),
                         n.pitch_center.value(), n.loudness.value(), n.confidence_prob,
                         n.separation_in == SeparationIn::soft ? "soft" : "hard");
     }
@@ -125,7 +125,7 @@ std::string plot_svg(const AnalysisResult& analysis) {
         }
     }
     for (const Note& n : analysis.notes) {
-        const double semitone = n.perceived_pitch.value() / 100.0;
+        const double semitone = n.pitch_target.target.value() / 100.0;
         svg += std::format(
             "<rect class=\"note\" x=\"{:.1f}\" y=\"{:.1f}\" width=\"{:.1f}\" height=\"{:.1f}\" "
             "fill=\"#3366cc\" fill-opacity=\"0.35\" stroke=\"#3366cc\"/>\n"

@@ -83,12 +83,12 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
     REQUIRE(json["notes"].size() == 2);
     const auto& n0 = json["notes"][0];
     for (const char* key :
-         {"id", "start_s", "attack_end_s", "release_start_s", "end_s", "perceived_pitch_cents",
+         {"id", "start_s", "attack_end_s", "release_start_s", "end_s", "pitch_target",
           "pitch_center_cents", "loudness_lufs", "confidence", "separation_in"}) {
         CHECK(n0.contains(key));
     }
     CHECK(std::abs(n0["start_s"].get<double>() - 0.2) <= 0.02);
-    CHECK(std::abs(n0["perceived_pitch_cents"].get<double>() -
+    CHECK(std::abs(n0["pitch_target"]["target_cents"].get<double>() -
                    to_cents(Hz{262.0}, Hz{440.0}).value()) <= 10.0);
     CHECK(json["onsets"].size() >= 2);
     REQUIRE(json.contains("pitch"));

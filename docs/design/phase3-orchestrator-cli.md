@@ -47,7 +47,7 @@ Determinism: the same source and params give a bit-identical result on the same 
 `anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] [--track-id <id>]`.
 - Reads the WAV (`core/io`), runs `analyse`, prints a one-line summary (notes, duration) to stdout.
 Structure: `cli/commands/analyse` (argument handling, orchestration), `cli/analysis_json` (JSON writer, links nlohmann; unit-testable without a process, like `cli/scenario_json`) and `cli/plot` (CSV + SVG, no third-party code) are separate targets; `cli/commands` does not link nlohmann.
-- `--json`: notes (id, start_s, attack_end_s, release_start_s, end_s, perceived_pitch_cents, pitch_center_cents, loudness_lufs, confidence, separation_in), the onset list, and the pitch track as `{hop_s, start_s, f0_cents[], voicing[], confidence[]}` (NaN as null). Keys are stable and documented in the command's help; the format is for humans and tests, not a persistence format (Phase 7).
+- `--json`: notes (id, start_s, attack_end_s, release_start_s, end_s, pitch_target_cents, pitch_center_cents, loudness_lufs, confidence, separation_in), the onset list, and the pitch track as `{hop_s, start_s, f0_cents[], voicing[], confidence[]}` (NaN as null). Keys are stable and documented in the command's help; the format is for humans and tests, not a persistence format (Phase 7).
 - `--plot-dir`: `pitch.csv` (time_s, f0_cents, voicing, confidence), `notes.csv`, and `plot.svg` (dependency-free: pitch curve as a polyline, notes as rectangles at their perceived pitch, onsets as ticks, a MIDI-name axis). Written by a small `cli/plot` helper with no third-party library.
 - Exit codes as the other commands (0 ok, 1 error, 2 usage). Errors: not_found / corrupt_data from the WAV reader, analysis errors.
 

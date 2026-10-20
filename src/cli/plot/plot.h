@@ -15,7 +15,7 @@ namespace anno::cli {
 /// when unvoiced). Empty text apart from the header if the analysis has no pitch track. Pure.
 [[nodiscard]] std::string pitch_csv(const AnalysisResult& analysis);
 
-/// `notes.csv`: header `id,start_s,attack_end_s,release_start_s,end_s,perceived_pitch_cents,
+/// `notes.csv`: header `id,start_s,attack_end_s,release_start_s,end_s,pitch_target_cents,
 /// pitch_center_cents,loudness_lufs,confidence,separation_in`, one row per note. Pure.
 [[nodiscard]] std::string notes_csv(const AnalysisResult& analysis);
 

@@ -1,7 +1,9 @@
 #include "cli/analysis_json/analysis_json.h"
 
+#include <array>
 #include <cmath>
 #include <nlohmann/json.hpp>
+#include <utility>
 
 namespace anno::cli {
 
@@ -16,6 +18,65 @@ double seconds(SourceTime t) {
 /// NaN becomes null.
 Json number_or_null(double v) {
     return std::isnan(v) ? Json(nullptr) : Json(v);
+}
+
+const char* to_text(PitchTargetKind k) {
+    switch (k) {
+    case PitchTargetKind::whole: return "whole";
+    case PitchTargetKind::settled: return "settled";
+    case PitchTargetKind::glide: return "glide";
+    case PitchTargetKind::multi: return "multi";
+    case PitchTargetKind::ornament: return "ornament";
+    case PitchTargetKind::unpitched: return "unpitched";
+    }
+    return "unpitched";
+}
+
+const char* to_text(ApproachKind k) {
+    switch (k) {
+    case ApproachKind::none: return "none";
+    case ApproachKind::legato: return "legato";
+    case ApproachKind::scoop: return "scoop";
+    case ApproachKind::overshoot: return "overshoot";
+    }
+    return "none";
+}
+
+const char* to_text(ReleaseKind k) {
+    switch (k) {
+    case ReleaseKind::none: return "none";
+    case ReleaseKind::fall: return "fall";
+    case ReleaseKind::rise: return "rise";
+    case ReleaseKind::preparation: return "preparation";
+    }
+    return "none";
+}
+
+Json pitch_target_json(const PitchTarget& t) {
+    Json flags = Json::array();
+    const std::array<std::pair<PitchFlag, const char*>, 7> names{
+        {{PitchFlag::short_note, "short_note"},
+         {PitchFlag::run, "run"},
+         {PitchFlag::creak, "creak"},
+         {PitchFlag::register_break, "register_break"},
+         {PitchFlag::consistent_off_grid, "consistent_off_grid"},
+         {PitchFlag::expressive_peak, "expressive_peak"},
+         {PitchFlag::ambiguous_intent, "ambiguous_intent"}}};
+    for (const auto& [flag, name] : names) {
+        if (t.flags.has(flag)) {
+            flags.push_back(name);
+        }
+    }
+    Json out{{"kind", to_text(t.kind)},
+             {"target_cents", t.target.value()},
+             {"secondary_cents", t.secondary ? Json(t.secondary->value()) : Json(nullptr)},
+             {"core_start_s", seconds(t.core.start())},
+             {"core_end_s", seconds(t.core.end())},
+             {"approach", to_text(t.approach)},
+             {"release", to_text(t.release)},
+             {"flags", flags},
+             {"confidence", t.confidence_prob}};
+    return out;
 }
 
 const char* to_text(OnsetKind k) {
@@ -49,7 +110,7 @@ Json notes_json(const AnalysisResult& a) {
              {"attack_end_s", seconds(n.attack_end)},
              {"release_start_s", seconds(n.release_start)},
              {"end_s", seconds(n.source_end)},
-             {"perceived_pitch_cents", n.perceived_pitch.value()},
+             {"pitch_target", pitch_target_json(n.pitch_target)},
              {"pitch_center_cents", n.pitch_center.value()},
              {"loudness_lufs", n.loudness.value()},
              {"confidence", n.confidence_prob},

@@ -66,9 +66,9 @@ void require_complete(const AnalysisResult& r) {
         REQUIRE(n.pitch_mod.size() == frames);
         REQUIRE(n.amp.size() == frames);
         REQUIRE(std::isfinite(n.loudness.value()));
-        REQUIRE(std::isfinite(n.perceived_pitch.value()));
+        REQUIRE(std::isfinite(n.pitch_target.target.value()));
         REQUIRE(std::isfinite(n.pitch_center.value()));
-        REQUIRE(n.perceived_pitch.value() != 0.0);  // the placeholder was replaced
+        REQUIRE(n.pitch_target.target.value() != 0.0);  // the placeholder was replaced
         REQUIRE(n.is_active);
         REQUIRE(n.voice == 0);
         REQUIRE(n.track_id == TrackId{"t1"});
@@ -83,7 +83,7 @@ std::uint64_t hash_of(const AnalysisResult& r) {
     for (const Note& n : r.notes) {
         mix(sec(n.source_start));
         mix(sec(n.source_end));
-        mix(n.perceived_pitch.value());
+        mix(n.pitch_target.target.value());
         mix(n.pitch_center.value());
         mix(n.loudness.value());
         for (const Cents c : n.pitch_drift) {
@@ -113,8 +113,8 @@ TEST_CASE("a_three_note_melody_is_analysed_into_complete_notes", "[analyse]") {
     for (std::size_t i = 0; i < 3; ++i) {
         const Note& n = result->notes[i];
         CHECK(std::abs(sec(n.source_start) - starts[i]) <= 0.02);
-        CHECK(std::abs(n.perceived_pitch.value() - to_cents(Hz{hz[i]}, Hz{440.0}).value()) <= 10.0);
-        CHECK(std::abs(n.pitch_center.value() - n.perceived_pitch.value()) <= 5.0);
+        CHECK(std::abs(n.pitch_target.target.value() - to_cents(Hz{hz[i]}, Hz{440.0}).value()) <= 10.0);
+        CHECK(std::abs(n.pitch_center.value() - n.pitch_target.target.value()) <= 5.0);
         CHECK(n.confidence_prob > 0.5);
     }
     CHECK(std::abs((result->notes[0].loudness - result->notes[1].loudness).value() - 6.0) <= 1.0);

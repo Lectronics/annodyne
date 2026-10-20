@@ -2,6 +2,7 @@
 
 #include "core/types/frame_grid.h"
 #include "core/types/ids.h"
+#include "core/types/pitch_target.h"
 #include "core/types/result.h"
 #include "core/types/tracks.h"
 #include "core/types/units.h"
@@ -27,7 +28,7 @@ struct Note {
     SourceTime release_start;
     SourceTime source_end;
 
-    Cents perceived_pitch;  // musically weighted pitch (blob position), absolute
+    PitchTarget pitch_target;  // the pitch the note is judged by (ADR-0013), absolute cents
     Cents pitch_center;     // stability-weighted centre, absolute
 
     FrameGrid grid;                  // grid of the three curves below
@@ -45,7 +46,10 @@ struct Note {
     bool is_active = true;         // false = ghost candidate (DNA) the user can switch on
 };
 
-/// Errors: invalid_argument if an id is empty, voice < 0, the four times are out of order, a
+/// Errors: invalid_argument if an id is empty, voice < 0, the four times are out of order, the
+/// pitch target is invalid (target not finite, core outside the note, segments unsorted or outside
+/// the note, glide/ornament without a secondary pitch, an unpitched target other than the
+/// pitch_center, confidence outside 0..1), a
 /// curve is not grid.n_frames long, a nested track's grid is neither empty (n_frames == 0) nor
 /// equal to `grid`, a nested track is invalid, or confidence_prob is outside 0..1.
 /// Pure; thread-safe; not real-time safe.

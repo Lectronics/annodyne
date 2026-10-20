@@ -153,6 +153,41 @@ bool grid_empty_or_equal(const FrameGrid& nested, const FrameGrid& parent) {
     return nested.n_frames == 0 || nested == parent;
 }
 
+bool inside_note(const Note& note, SourceTime t) {
+    return note.source_start <= t && t <= note.source_end;
+}
+
+Result<void> validate_pitch_target(const Note& note) {
+    const PitchTarget& pt = note.pitch_target;
+    if (!std::isfinite(pt.target.value()) ||
+        (pt.secondary && !std::isfinite(pt.secondary->value()))) {
+        return invalid("note pitch target must be finite");
+    }
+    if (!is_prob(pt.confidence_prob)) {
+        return invalid("pitch target confidence must lie in 0..1");
+    }
+    if ((pt.kind == PitchTargetKind::glide || pt.kind == PitchTargetKind::ornament) &&
+        !pt.secondary) {
+        return invalid("a glide or ornament target needs a secondary pitch");
+    }
+    if (pt.kind == PitchTargetKind::unpitched && pt.target != note.pitch_center) {
+        return invalid("an unpitched target must equal the note's pitch_center");
+    }
+    if (pt.core.duration() > Seconds{0.0} &&
+        (!inside_note(note, pt.core.start()) || !inside_note(note, pt.core.end()))) {
+        return invalid("the pitch target core must lie inside the note");
+    }
+    SourceTime previous_end = note.source_start;
+    for (const TonalSegment& seg : pt.segments) {
+        if (seg.range.start() < previous_end || !inside_note(note, seg.range.end()) ||
+            !std::isfinite(seg.start_pitch.value()) || !std::isfinite(seg.end_pitch.value())) {
+            return invalid("pitch target segments must be sorted, finite and inside the note");
+        }
+        previous_end = seg.range.end();
+    }
+    return {};
+}
+
 }  // namespace
 
 Result<void> validate(const Note& note) {
@@ -167,8 +202,7 @@ Result<void> validate(const Note& note) {
         note.source_start < SourceTime{}) {
         return invalid("note times must be finite and not before the source origin");
     }
-    if (!std::isfinite(note.perceived_pitch.value()) || !std::isfinite(note.pitch_center.value()) ||
-        !std::isfinite(note.loudness.value())) {
+    if (!std::isfinite(note.pitch_center.value()) || !std::isfinite(note.loudness.value())) {
         return invalid("note pitch and loudness must be finite");
     }
     if (!(note.source_start <= note.attack_end && note.attack_end <= note.release_start &&
@@ -177,6 +211,9 @@ Result<void> validate(const Note& note) {
     }
     if (!is_prob(note.confidence_prob)) {
         return invalid("note confidence must lie in 0..1");
+    }
+    if (auto r = validate_pitch_target(note); !r) {
+        return r;
     }
     if (auto r = validate(note.grid); !r) {
         return r;

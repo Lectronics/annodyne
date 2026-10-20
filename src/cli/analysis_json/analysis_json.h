@@ -17,7 +17,9 @@ struct AnalysisJsonOptions {
 /// Pretty-printed JSON (2 spaces), ending in a newline:
 ///   { "source": {"id", "duration_s"?}, "version", "algorithm",
 ///     "notes": [{"id", "start_s", "attack_end_s", "release_start_s", "end_s",
-///                "perceived_pitch_cents", "pitch_center_cents", "loudness_lufs", "confidence",
+///                "pitch_target": {"kind", "target_cents", "secondary_cents"|null, "core_start_s",
+///                "core_end_s", "approach", "release", "flags": [], "confidence"},
+///                "pitch_center_cents", "loudness_lufs", "confidence",
 ///                "separation_in": "hard"|"soft"}],
 ///     "onsets": [{"time_s", "strength", "kind"}],
 ///     "pitch": {"hop_s", "start_s", "n_frames", "f0_cents": [number|null], "voicing": [],
