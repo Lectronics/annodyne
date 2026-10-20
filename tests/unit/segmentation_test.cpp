@@ -258,3 +258,125 @@ TEST_CASE("every_segmented_note_can_be_described_on_messy_tracks", "[segmentatio
         }
     }
 }
+
+namespace {
+
+/// A triangle wave of +-`amp` cents with the given period.
+double triangle(double t, double amp, double period) {
+    const double phase = std::fmod(t, period) / period;
+    return amp * (phase < 0.5 ? 4.0 * phase - 1.0 : 3.0 - 4.0 * phase);
+}
+
+OnsetList onset_at(double time_s, double strength, OnsetKind kind) {
+    OnsetList list;
+    list.times.push_back(SourceTime{} + Seconds{time_s});
+    list.strength.push_back(strength);
+    list.kind.push_back(kind);
+    return list;
+}
+
+void append(OnsetList& to, const OnsetList& more) {
+    to.times.insert(to.times.end(), more.times.begin(), more.times.end());
+    to.strength.insert(to.strength.end(), more.strength.begin(), more.strength.end());
+    to.kind.insert(to.kind.end(), more.kind.begin(), more.kind.end());
+}
+
+}  // namespace
+
+TEST_CASE("a_note_that_hunts_around_its_pitch_is_one_note", "[segmentation][transient]") {
+    // One transient, then the pitch wanders +-45 cents over 0.5 s cycles (the singer is hunting
+    // for the pitch). Weak onsets (below the merge strength) at the turning points do not count.
+    const auto hunt = [](double t) { return triangle(t, 45.0, 0.5); };
+    const auto track =
+        make_track({{.start_s = 0.2, .end_s = 1.8, .midi = 62.0, .bend_cents = hunt}}, 2.2);
+    OnsetList onsets = make_onsets({0.2});
+    append(onsets, onset_at(0.45, 1.2, OnsetKind::attack));
+    append(onsets, onset_at(0.95, 1.2, OnsetKind::attack));
+    append(onsets, onset_at(1.45, 1.2, OnsetKind::attack));
+    const auto notes = segment(track, onsets);
+    REQUIRE(notes.size() == 1);
+    CHECK(std::abs(notes[0].rough_pitch.value() - 6200.0) <= 15.0);
+}
+
+TEST_CASE("an_onset_at_the_merge_strength_keeps_two_runs_apart", "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.2, .end_s = 1.0, .midi = 62.0}}, 1.4);
+    OnsetList weak = make_onsets({0.2});
+    append(weak, onset_at(0.6, 1.49, OnsetKind::attack));
+    CHECK(segment(track, weak).size() == 1);
+    OnsetList exact = make_onsets({0.2});
+    append(exact, onset_at(0.6, 1.5, OnsetKind::attack));
+    CHECK(segment(track, exact).size() == 2);
+}
+
+TEST_CASE("a_pitch_step_without_a_transient_needs_a_pitch_change_to_split",
+          "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.2, .end_s = 0.7, .midi = 62.0},
+                                   {.start_s = 0.7, .end_s = 1.2, .midi = 62.6}},
+                                  1.6);
+    CHECK(segment(track, make_onsets({0.2})).size() == 1);  // 60 cents, nothing says "new note"
+    OnsetList legato = make_onsets({0.2});
+    append(legato, onset_at(0.7, 2.5, OnsetKind::pitch_change));
+    CHECK(segment(track, legato).size() == 2);
+}
+
+TEST_CASE("a_large_step_is_never_merged_even_without_an_onset", "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.2, .end_s = 0.7, .midi = 62.0},
+                                   {.start_s = 0.7, .end_s = 1.2, .midi = 63.0}},
+                                  1.6);
+    CHECK(segment(track, make_onsets({0.2})).size() == 2);  // 100 cents: a missed transient
+}
+
+TEST_CASE("an_unvoiced_gap_of_30_ms_separates_equal_pitches", "[segmentation][transient]") {
+    for (const double gap : {0.040, 0.030}) {
+        const auto track = make_track({{.start_s = 0.2, .end_s = 0.7, .midi = 62.0},
+                                       {.start_s = 0.7 + gap, .end_s = 1.2, .midi = 62.0}},
+                                      1.6);
+        CHECK(segment(track, make_onsets({0.2})).size() == 2);
+    }
+    const auto close = make_track({{.start_s = 0.2, .end_s = 0.7, .midi = 62.0},
+                                   {.start_s = 0.715, .end_s = 1.2, .midi = 62.0}},
+                                  1.6);
+    CHECK(segment(close, make_onsets({0.2})).size() == 1);  // a 15 ms dropout is not a boundary
+}
+
+TEST_CASE("a_trill_stays_one_note", "[segmentation][transient]") {
+    // 100 cents, 6 Hz, flat plateaus of ~83 ms; every flip is reported as a pitch_change onset.
+    const auto trill = [](double t) { return std::fmod(t, 0.1667) < 0.0833 ? 0.0 : 100.0; };
+    const auto track =
+        make_track({{.start_s = 0.2, .end_s = 1.4, .midi = 62.0, .bend_cents = trill}}, 1.8);
+    OnsetList onsets = make_onsets({0.2});
+    for (int flip = 1; flip <= 14; ++flip) {
+        append(onsets, onset_at(0.2 + 0.0833 * flip, 2.5, OnsetKind::pitch_change));
+    }
+    CHECK(segment(track, onsets).size() == 1);
+}
+
+TEST_CASE("the_transient_parameters_are_validated", "[segmentation][transient]") {
+    const auto track = make_track({{.start_s = 0.2, .end_s = 0.8, .midi = 60.0}}, 1.2);
+    const OnsetList onsets = make_onsets({0.2});
+    const auto nan = std::nan("");
+    SegmentParams p;
+    p.merge_onset_strength = 0.0;
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.merge_max_cents = Cents{nan};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.merge_onset_zone = Seconds{0.0};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.min_gap_for_split = Seconds{-1.0};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.trill_max_plateau = Seconds{0.0};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.trill_min_steps = 0;
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.snap_before = Seconds{nan};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+    p = {};
+    p.snap_after = Seconds{0.0};
+    CHECK(!segment_notes(track, onsets, p).has_value());
+}

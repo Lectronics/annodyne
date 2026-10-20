@@ -29,6 +29,17 @@ struct SegmentParams {
         0.030};               // how far before the voiced part a consonant onset may pull the start
     Cents stable_band{40.0};  // attack/release: within this of the note pitch counts as stable
     Seconds stable_min{0.030};  // ... for at least this long
+    // Transient-driven boundaries (docs/design/phase3-segmentation-transient.md): a pitch change
+    // alone does not make a new note.
+    double merge_onset_strength = 1.5;  // an onset weaker than this (OnsetList::strength) is not
+                                        // evidence of a new note
+    Cents merge_max_cents{80.0};       // neighbouring runs further apart than this are never merged
+    Seconds merge_onset_zone{0.040};   // an onset this close to a run boundary separates the runs
+    Seconds min_gap_for_split{0.030};  // an unvoiced gap this long always separates two notes
+    Seconds trill_max_plateau{0.150};  // pitch_change onsets of a trill cluster (>= trill_min_steps
+    int trill_min_steps = 3;           // alternating steps, plateaus up to this long) do not split
+    Seconds snap_before{0.030};        // a start snaps to an onset up to this much before it ...
+    Seconds snap_after{0.040};         // ... or this much after the voiced start
 };
 
 /// Spans sorted by source_start, non-overlapping (monophonic). The id is "n" + start in

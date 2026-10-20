@@ -23,3 +23,6 @@ frame + one hop, never past the next start; attack end / release start = where t
 the golden vocals at the Phase 3 review. Glides are not notes (they join the note they reach); a
 sustained portamento between two notes counts as the second note's attack. The HMM is monophonic.
 Memory: frames x (2 bins + 1) ints for the back pointers. Compiled with `-ffp-contract=off`.
+
+## Transient-driven boundaries (ADR-0010a)
+Runs from the note HMM are merged (`detail/merge_runs`) unless a strong attack/consonant onset, a non-trill `pitch_change` onset, an unvoiced gap of 30 ms or a median-pitch difference above `merge_max_cents` (80) separates them, so a pitch that wanders around its target is one note. The HMM's new-note prior only reacts to onsets of strength >= `merge_onset_strength`. Limits: slow legato steps without a `pitch_change` onset and notes whose pitch differs by less than 80 cents can be merged; held-out under-segmentation is 8 %.

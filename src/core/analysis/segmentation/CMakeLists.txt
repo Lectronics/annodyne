@@ -1,5 +1,6 @@
 anno_add_library(core/analysis/segmentation
     SOURCES
+        detail/merge_runs.cpp
         detail/note_hmm.cpp
         segmentation.cpp
     PUBLIC_DEPS anno::core_types)

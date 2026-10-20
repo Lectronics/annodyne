@@ -84,6 +84,16 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     sec("vib", p.segmentation.vibrato_smooth);
     sec("preroll", p.segmentation.preroll_max);
     sec("stab_min", p.segmentation.stable_min);
+    get("mstr", p.segmentation.merge_onset_strength);
+    sec("mzone", p.segmentation.merge_onset_zone);
+    sec("msplit", p.segmentation.min_gap_for_split);
+    sec("snapb", p.segmentation.snap_before);
+    sec("snapa", p.segmentation.snap_after);
+    {
+        double mc = p.segmentation.merge_max_cents.value();
+        get("mcents", mc);
+        p.segmentation.merge_max_cents = Cents{mc};
+    }
     get("sigma", p.segmentation.pitch_sigma_cents);
     get("stay", p.segmentation.stay_stable);
     get("s2s", p.segmentation.stable_to_silence);

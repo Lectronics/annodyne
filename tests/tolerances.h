@@ -86,15 +86,15 @@ inline constexpr Seconds k_onset_synthetic{0.005};
 /// a REGRESSION GUARD: each threshold is the measured value of the held-out set rounded down with
 /// a margin, not a quality target. Measured: voicing recall 0.967, RPA(50 c) 0.948, octave/harmonic
 /// error rate 0.013 (octave, or a third harmonic: +-1200, +-1902, +-2400 cents), onset F-measure at
-/// +-20 / +-50 ms 0.439 / 0.700 (better annotator of the two, who agree with each other at only
-/// ~0.75), matched-note pitch within 50 cents 0.731. The owner's goal stays onset F >= 0.9 and no
+/// +-20 / +-50 ms 0.472 / 0.758 (better annotator of the two, who agree with each other at only
+/// ~0.75), matched-note pitch within 50 cents 0.740. The owner's goal stays onset F >= 0.9 and no
 /// octave errors (docs/decisions/0012); the guard rises as the analysis improves.
 inline constexpr double k_golden_voicing_recall_min = 0.92;
 inline constexpr double k_golden_rpa_min = 0.90;
 inline constexpr double k_golden_octave_rate_max = 0.03;
-inline constexpr double k_golden_onset_f20_min = 0.40;
-inline constexpr double k_golden_onset_f50_min = 0.65;
-inline constexpr double k_golden_note_pitch_ok_min = 0.69;
+inline constexpr double k_golden_onset_f20_min = 0.43;
+inline constexpr double k_golden_onset_f50_min = 0.69;
+inline constexpr double k_golden_note_pitch_ok_min = 0.70;
 
 // ---- Analysis DSP (Phase 3) ------------------------------------------------------------------
 

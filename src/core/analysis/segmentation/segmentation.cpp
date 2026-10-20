@@ -1,5 +1,6 @@
 #include "core/analysis/segmentation/segmentation.h"
 
+#include "core/analysis/segmentation/detail/merge_runs.h"
 #include "core/analysis/segmentation/detail/note_hmm.h"
 
 #include <algorithm>
@@ -16,12 +17,9 @@ namespace {
 
 constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
 constexpr double k_smooth_reach_cents =
-    120.0;                                // frames this close to the centre frame are averaged
-constexpr double k_onset_zone_s = 0.030;  // an onset this close to a note's start snaps the start
+    120.0;  // frames this close to the centre frame are averaged
 constexpr double k_onset_evidence_s =
-    0.010;  // frames this close to an onset get onset_new_note_prob
-constexpr double k_snap_after_s =
-    0.040;  // an onset up to this much after the voiced start snaps the start
+    0.010;                              // frames this close to an onset get onset_new_note_prob
 constexpr double k_soft_gap_s = 0.020;  // abutting notes: separation is soft
 constexpr double k_confidence_band_cents = 60.0;
 constexpr int k_min_frames = 10;  // pitch frames every note has at least
@@ -36,7 +34,12 @@ Result<void> validate_params(const SegmentParams& p) {
                      !prob(p.stay_stable) || !prob(p.stable_to_silence) || !prob(p.new_note_prob) ||
                      p.stay_stable + p.stable_to_silence > 1.0 || !prob(p.onset_new_note_prob) ||
                      !positive(p.preroll_max.value()) || !positive(p.stable_band.value()) ||
-                     !positive(p.stable_min.value());
+                     !positive(p.stable_min.value()) || !positive(p.merge_onset_strength) ||
+                     !positive(p.merge_max_cents.value()) ||
+                     !positive(p.merge_onset_zone.value()) ||
+                     !positive(p.min_gap_for_split.value()) ||
+                     !positive(p.trill_max_plateau.value()) || p.trill_min_steps < 1 ||
+                     !positive(p.snap_before.value()) || !positive(p.snap_after.value());
     if (bad) {
         return fail(ErrorCode::invalid_argument, "segment_notes: invalid parameters");
     }
@@ -69,12 +72,17 @@ std::vector<double> smooth_f0(const PitchTrack& pitch, Seconds window) {
     return out;
 }
 
-/// P(a new note starts) per frame: `base` except within k_onset_evidence_s of an onset.
+/// P(a new note starts) per frame: `base` except within k_onset_evidence_s of an onset of at least
+/// `min_strength`.
 std::vector<double> new_note_probability(const PitchTrack& pitch, const OnsetList& onsets,
-                                         double base, double at_onset) {
+                                         double base, double at_onset, double min_strength) {
     std::vector<double> p(pitch.f0.size(), base);
     const double zone = k_onset_evidence_s / pitch.grid.hop.value();
-    for (const SourceTime t : onsets.times) {
+    for (std::size_t k = 0; k < onsets.times.size(); ++k) {
+        if (onsets.strength[k] < min_strength) {
+            continue;  // too weak to be evidence of a new note
+        }
+        const SourceTime t = onsets.times[k];
         const double centre = (t - pitch.grid.start).value() / pitch.grid.hop.value();
         const auto lo = static_cast<std::int64_t>(std::max(0.0, std::ceil(centre - zone)));
         const auto hi = static_cast<std::int64_t>(
@@ -164,7 +172,9 @@ struct Draft {
 
 /// Pulls a note's start onto an onset: the earliest consonant onset up to `preroll` before it, else
 /// the nearest onset within the snap zone; never before `floor_s`.
-double snap_start(double start_s, const OnsetList& onsets, double preroll, double floor_s) {
+double snap_start(double start_s, const OnsetList& onsets, const SegmentParams& params,
+                  double floor_s) {
+    const double preroll = params.preroll_max.value();
     std::optional<double> consonant;
     std::optional<double> nearest;
     for (std::size_t i = 0; i < onsets.times.size(); ++i) {
@@ -175,7 +185,7 @@ double snap_start(double start_s, const OnsetList& onsets, double preroll, doubl
         if (onsets.kind[i] == OnsetKind::consonant && t <= start_s && start_s - t <= preroll) {
             consonant = consonant ? std::min(*consonant, t) : t;
         }
-        if (t >= start_s - k_onset_zone_s && t <= start_s + k_snap_after_s &&
+        if (t >= start_s - params.snap_before.value() && t <= start_s + params.snap_after.value() &&
             (!nearest || std::abs(t - start_s) < std::abs(*nearest - start_s))) {
             nearest = t;
         }
@@ -214,11 +224,11 @@ std::vector<Draft> make_drafts(const PitchTrack& pitch, const std::vector<double
 }
 
 /// Starts (onset snapping, left to right), then ends (never past the next start).
-void place_times(std::vector<Draft>& drafts, const OnsetList& onsets, double preroll_s,
+void place_times(std::vector<Draft>& drafts, const OnsetList& onsets, const SegmentParams& params,
                  double last_time) {
     double previous_end = 0.0;
     for (Draft& d : drafts) {
-        d.start_s = std::clamp(snap_start(d.start_s, onsets, preroll_s, previous_end), previous_end,
+        d.start_s = std::clamp(snap_start(d.start_s, onsets, params, previous_end), previous_end,
                                last_time);
         previous_end = std::max(previous_end, d.end_s);
     }
@@ -299,7 +309,8 @@ std::optional<NoteHmmInput> build_hmm_input(const PitchTrack& pitch, const Onset
     input.smoothed_cents = smoothed;
     input.voicing_prob = pitch.voicing_prob;
     input.new_note_prob =
-        new_note_probability(pitch, onsets, params.new_note_prob, params.onset_new_note_prob);
+        new_note_probability(pitch, onsets, params.new_note_prob, params.onset_new_note_prob,
+                             params.merge_onset_strength);
     input.min_cents = *lo_it - margin;
     input.bin_cents = params.note_bin_cents;
     input.bin_count =
@@ -353,15 +364,19 @@ Result<std::vector<NoteSpan>> segment_notes(const PitchTrack& pitch, const Onset
         return notes;  // nothing voiced
     }
 
-    // 1. HMM over vibrato-smoothed f0; 2. short runs are absorbed or dropped.
+    // 1. HMM over vibrato-smoothed f0; 2. runs nothing separates are merged; 3. short runs are
+    // absorbed or dropped.
     std::vector<NoteRun> runs = decode_note_runs(*input, params);
+    runs = merge_runs(
+        std::move(runs),
+        {.pitch = &pitch, .smoothed_cents = &smoothed, .onsets = &onsets, .params = &params});
     const auto min_frames = static_cast<std::size_t>(
         std::max<long>(k_min_frames, std::lround(params.min_note.value() / hop)));
     absorb_short_runs(runs, min_frames);
 
     // 3. Voiced extents, snapped times, then the description of every note.
     std::vector<Draft> drafts = make_drafts(pitch, smoothed, runs);
-    place_times(drafts, onsets, params.preroll_max.value(), time_of(pitch.grid, n - 1));
+    place_times(drafts, onsets, params, time_of(pitch.grid, n - 1));
     drop_unusable(drafts, pitch, min_frames);
     std::set<std::string> used;
     for (const Draft& d : drafts) {

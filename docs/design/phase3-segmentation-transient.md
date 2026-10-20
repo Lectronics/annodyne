@@ -1,7 +1,7 @@
 # Design note: Transient-driven note segmentation
 
 - **Phase:** 3 (follow-up slice, stage 2 of the pitch-target work)
-- **Status:** draft
+- **Status:** implemented (stage 2, 2026-10-20); measurements in ADR-0010a
 - **Spec sections:** implementation guide B3 (note segmentation); architecture spec §4.2 `segment_notes`; ADR-0010
 - **Folder / CMake target:** `src/core/analysis/segmentation/` (layer 1), new `detail/merge_runs.{h,cpp}`
 - **Related:** `note-pitch-target.md` (what happens to a note's pitch after it is segmented)
@@ -15,7 +15,7 @@ No new public type. `SegmentParams` (struct, caller-owned, value) gains:
 ```cpp
 Seconds min_gap_for_split{0.030};     // unvoiced/silent gap that always separates two notes
 double  merge_onset_strength = 1.5;   // OnsetList::strength (activation / threshold, >= 1) a transient needs to keep two runs apart
-Cents   merge_max_cents{150.0};       // runs whose robust centres differ more are never merged (a missed transient, not a wobble)
+Cents   merge_max_cents{80.0};  // was drafted as 150; 80 measured best (see ADR-0010a)       // runs whose robust centres differ more are never merged (a missed transient, not a wobble)
 Seconds snap_before{0.030};           // today's k_onset_zone_s, now tunable
 Seconds snap_after{0.040};            // today's k_snap_after_s, now tunable
 ```
