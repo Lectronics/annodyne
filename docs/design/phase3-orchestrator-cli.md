@@ -54,8 +54,41 @@ Structure: `cli/commands/analyse` (argument handling, orchestration), `cli/analy
 ## 3. Metrics (tests/support/analysis_metrics.h, mir_eval definitions)
 `raw_pitch_accuracy(est, ref, tolerance)` and `raw_chroma_accuracy` at 50 and 10 cents (voiced reference frames only), `voicing_recall` / `voicing_false_alarm`, `octave_errors` (count of voiced frames where the estimate is within 50 cents of ±1200 of the reference), `note_onset_f(est, ref, window)` (precision/recall/F at ±20 ms, one-to-one matching), `note_pitch_error`.
 
-## 4. Golden recordings (tests/golden/vocals/)
-3-5 short vocal WAVs supplied by the owner, with a `README.md` (source, licence, length) and, per recording `<name>.wav`, two hand-checked files: `<name>.notes.json` = `{"notes": [{"start_s": 1.20, "end_s": 1.85, "midi": 64}, ...]}` (pitch within ±0.5 semitone) and `<name>.pitch.json` = `{"spots": [{"time_s": 1.5, "midi": 64.0}, ...]}` (at least 10 voiced spot checks per file, used only for the octave check: the estimate within 50 cents of the spot, never ±1200 off). Golden tests (label `golden`) require onset F ≥ 0.9 at ±20 ms, zero octave errors at the spots, and every golden file analyses without error. **The gate is not vacuous:** when `tests/golden/vocals/` holds fewer than 3 recordings the golden tests `SKIP` (CI stays green while the files are missing), and the Phase 3 close checklist plus a `golden_inventory` test run with `ANNO_REQUIRE_GOLDEN=3` fail unless ≥ 3 recordings with both files exist. The owner hand-checks the expected lists (listed in the review) and the five SVG plots (`docs/reviews/phase3-plots.md`).
+## 4. Golden recordings (tests/golden/vocals/): Vocadito
+**Revised after the owner supplied the corpus** (replaces the earlier hand-made `notes.json` / `pitch.json` format; the owner chose Vocadito, Zenodo record 5578259, CC BY 4.0, listed in `zenodo_data/LISCENSE.txt`). Facts measured on the supplied files:
+
+| Property | Value |
+|---|---|
+| Tracks | 40 solo vocals, 8.7-38.7 s (817 s total), 16-bit mono 44.1 kHz WAV, 29 singers, several languages |
+| Layout | `Audio/vocadito_<n>.wav`; `Annotations/F0/vocadito_<n>_f0.csv`; `Annotations/Notes/vocadito_<n>_notesA1.csv` and `_notesA2.csv` (two independent annotators); `Annotations/Lyrics/` (unused); `vocadito_metadata.csv` (track, singer, average pitch as MIDI-ish number, language) |
+| F0 CSV | no header; `time_s,f0_hz` on an even grid of 1/172.27 s (5.805 ms); **0.0 Hz = unvoiced**. 45-81 % of frames are voiced. Dense, so it replaces the sparse "pitch spots" |
+| Notes CSV | no header; `onset_s,pitch_hz,duration_s`; pitch in **Hz** (MIDI = 69 + 12 log2(Hz/440)); durations, not end times |
+| Annotator agreement | the two annotators disagree on segmentation: A1 has 2237 notes, A2 1876; **onset F-measure between A1 and A2 at +-20 ms is 0.75 on average** (0.48-0.88 per track) |
+
+Consequences for the plan:
+1. **Read the native CSVs; no JSON conversion.** `tests/support/vocadito.h` (test-only) parses the three CSVs; the old `<name>.notes.json` / `<name>.pitch.json` formats and their README text are removed. One source of truth, and the full corpus works without a conversion step.
+2. **Repository size.** The full corpus is 73 MB and stays out of git (`.gitignore`: `tests/golden/vocals/zenodo_data/`). A **committed subset of 5 tracks** (about 10 MB; chosen to cover male/female, range, language, and both high and low annotator agreement) lives in `tests/golden/vocals/vocadito/` in the same native layout with `LICENSE.md` (attribution). CI and the Phase 3 gate use the subset. The full corpus is used locally for tuning and a report-only run (`ANNO_VOCADITO_DIR=<path>`), so constants are tuned on 35 tracks that the gate does not use.
+3. **Pitch metric from the dense f0**: raw pitch accuracy at 50 cents, raw chroma accuracy, voicing recall / false alarm and the **octave-error count**, all against the annotated f0 (voiced reference frames), using the metrics already in `tests/support/analysis_metrics.h`. Gate: zero octave errors is not realistic on 817 s of real singing (annotator f0 is itself corrected pYIN output), so the gate is an octave-error **rate** (threshold in the open question below).
+4. **Onset metric against two imperfect references.** Score the estimate against A1 and A2 separately (one-to-one matching, +-20 ms) and gate on the better of the two per track, plus report both. The ROADMAP figure of F >= 0.9 cannot be met against references that agree at 0.75.
+5. **Note pitch**: matched notes' perceived pitch within 50 cents of the annotated pitch (as before), now from Hz.
+6. **Current analyser, first measurement (all 40 tracks, release build, nothing tuned on this data yet)**: 1353 notes found vs 2237 / 1876 annotated; onset F at +-20 ms 0.28 (A1) / 0.30 (A2), at +-50 ms 0.50 / 0.53; precision 0.37, recall 0.23 at +-20 ms. 88 % of matched notes are within 50 cents; 0.2 % are an octave off. So real singing needs tuning (mostly under-segmentation of legato and melismatic phrases), which is what the golden slice of Phase 3 is for.
+
+7. **Diagnosis and experiments on all 40 tracks (throwaway code, reverted; nothing tuned yet).** The notes are lost mostly in the pitch tracker's voicing decision, not in the STFT (which feeds only the onset detector; pitch is time-domain YIN with a 40 ms window). With `beta_mean = 0.1` only 60 % of annotated-voiced frames are called voiced (and the pitch is right when it is: 59.6 % accuracy at 50 cents).
+
+   | Setting | voicing recall | pitch acc. (50 c) | false voiced | notes found | onset F (+-20 ms, A1) |
+   |---|---|---|---|---|---|
+   | current (`beta_mean` 0.1) | 0.60 | 0.60 | 0.9 % | 1353 | 0.28 |
+   | + zero-phase band-pass 60 Hz-2 kHz | 0.68 | 0.68 | 1.4 % | 1587 | 0.32 |
+   | + band-pass 60 Hz-1 kHz | 0.73 | 0.72 | 1.7 % | 1686 | 0.34 |
+   | `beta_mean` 0.3 | 0.87 | 0.84 | 4.8 % | 2120 | 0.39 |
+   | `beta_mean` 0.3 + band-pass 60 Hz-1 kHz | 0.92 | 0.88 | 7.5 % | 2273 | 0.40 |
+
+   The high-pass (60-80 Hz) alone changes nothing; the low-pass is the part that helps. A pitch-only band-pass in the front end is therefore a real, modest gain, to be derived from `PitchParams` (low-pass relative to `max_f0`, not a fixed 1 kHz, which would hurt sopranos). Onset F stalls near 0.4 because of timing: our starts are a median 10 ms before the annotators' (IQR -31..+10 ms), and `attack_end` is no better (median +16 ms, IQR -4..+32); annotators themselves disagree by more than 20 ms on 25 % of onsets, so +-20 ms against one annotator is a noisy target.
+8. **Consonants (owner discussion):** a note starts at its consonant (`preroll`), but its pitch comes only from the voiced/stable part (`perceived_pitch` over `[attack_end, release_start]`), so the consonant is already assigned the vowel's pitch afterwards. **Open decision for later (Phase 4):** whether the consonant itself is pitch-shifted by a correction or left unshifted (unvoiced consonants have no pitch to shift).
+
+**The gate is still not vacuous:** `ANNO_REQUIRE_GOLDEN=<n>` fails the inventory test unless n complete tracks (wav + f0 + both note files) exist; the Phase 3 close uses 3 of the 5 committed tracks or more. The five-plot human check (`docs/reviews/phase3-plots.md`) uses the committed tracks.
+
+**Open (owner decision, ROADMAP gate wording):** what replaces "onset F >= 0.9 at +-20 ms, no octave errors"? Proposal in the review.
 
 ## Effect on audio
 None: analysis does not render. No audio-verifier run is needed; the audio checks (`-L audio`) still run in the gate.
@@ -83,5 +116,5 @@ None: analysis does not render. No audio-verifier run is needed; the audio check
 ## Implementation notes
 - CLI targets: `cli/analysis_json` (nlohmann, private), `cli/plot` (no third-party code), `cli/commands/analyse`. The JSON writer builds `Json(nullptr)` / `Json(v)` with parentheses: `Json{v}` makes a one-element array (an nlohmann initializer-list pitfall found by the test).
 - `anno-cli analyse <file.wav> [--json f] [--plot-dir d] [--pitch-track] [--track-id id]`; exit codes 0 / 1 / 2 as the other commands (process tests `anno_cli.analyse_*`).
-- The golden test (`tests/golden/golden_vocals_test.cpp`) prints a warning and passes when no recordings are present; `ANNO_REQUIRE_GOLDEN=<n>` makes the inventory test fail unless n complete recordings (wav + notes.json + pitch.json) exist. The Phase 3 close requires 3.
+- The golden test (`tests/golden/golden_vocals_test.cpp`) prints a warning and passes when no recordings are present; `ANNO_REQUIRE_GOLDEN=<n>` makes the inventory test fail unless n complete recordings (wav + f0 + both note files) exist. The Phase 3 close requires 3.
 - `analyse()` result is a `shared_ptr<const AnalysisResult>`; it is deterministic (hash test), leaves the source untouched, and every note passes the completeness contract test (grid frames, curve lengths, finite loudness and pitch).

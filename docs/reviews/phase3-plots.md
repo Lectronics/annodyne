@@ -4,7 +4,8 @@ Needed to close Phase 3 (ROADMAP: "look at the exported note plots for 5 vocal f
 notes"). No audio is rendered in Phase 3, so there is no listening sheet; this is a visual check.
 
 **How:** for each golden recording run
-`anno-cli analyse tests/golden/vocals/<name>.wav --plot-dir plots/<name> --json plots/<name>/analysis.json`
+`anno-cli analyse tests/golden/vocals/vocadito/Audio/vocadito_<N>.wav --plot-dir plots/<N> --json plots/<N>/analysis.json`
+(<N> = 2, 4, 13, 28, 37, the committed Vocadito tracks; the annotators' notes are in `Annotations/Notes/`)
 and open `plots/<name>/plot.svg` in a browser. Blue rectangles are notes (placed at their perceived pitch,
 labelled with the note id), the red line is the f0 curve (voiced parts only), green ticks at the bottom
 are onsets, grey lines are semitones (labelled at each C). `notes.csv` has the numbers.

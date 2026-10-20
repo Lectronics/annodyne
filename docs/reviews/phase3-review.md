@@ -32,7 +32,7 @@ ADRs: 0009 (pocketfft), 0010 (analysis signatures).
 | clang-tidy, clang-format | clean (pinned 23.1.3) | local runs, CI |
 | CI (Linux, macOS, Windows, tidy) | see the closing commit | GitHub Actions |
 | ROADMAP synthetic accuracy | **met** (numbers below) | `pitch_test`, `onsets_test`, `segmentation_test` |
-| Golden vocals: onsets +-20 ms, no octave errors | **pending**: owner supplies 3-5 recordings | `tests/golden/vocals/README.md` |
+| Golden vocals (Vocadito, 5 held-out tracks) | gate runs and passes as a regression guard (voicing recall 0.92, pitch accuracy 0.86, octave rate 0.054, onset F 0.39 at +-20 ms / 0.65 at +-50 ms, matched-note pitch 0.72). **The ROADMAP wording (F >= 0.9, no octave errors) is NOT met and cannot be on this data** (annotators agree at 0.75); replacement gate needs the owner's ADR | `docs/design/phase3-activity.md`, `tests/golden/vocals/README.md` |
 | Human check of 5 note plots | **pending** | `docs/reviews/phase3-plots.md` |
 | Audio checks | no rendered audio changes; `-L audio` still passes (null, undo-null, untouched, click, sanity, determinism, length) | local runs |
 
@@ -58,7 +58,8 @@ the observed voiced mass forced to the path's side of 0.5; onsets are modelled a
   about 3 s for 2-3 s of audio).
 
 ## Open issues carried forward
-- **Golden vocals and the plot check** (above): required to close the phase.
+- **Golden gate wording** (owner decision + ADR) and **the plot check** (above): required to close the phase.
+- ADR-0011 added the internal activity stage and the pitch front end after the first real-vocal measurements (`phase3-activity.md`).
 - **All HMM, onset and weighting constants are initial values tuned on synthetic signals** (bin size, sigma,
   transition probabilities, `delta`, `min_activation`, `log_lambda`, stability scale 600 cents/s, trims, the
   2.5 Hz drift cutoff). Tune on the golden set and record the final values in the module READMEs.

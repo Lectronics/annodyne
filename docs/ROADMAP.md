@@ -94,6 +94,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `analysis/perceived_pitch`: stability-weighted pitch; `decompose_pitch_curve` (centre/drift/mod).
 - `analysis/loudness`: per-note loudness and amplitude curve.
 - `analysis/orchestrator`: `analyse()` for the `melodic` algorithm.
+- *(ADR-0011)* `analysis/activity` (internal noise floor and silent/active frame labels that gate the pitch track) and a zero-phase band-pass front end for pitch (`dsp/filter`), added after the first real-vocal measurements. No gap, breath or segment-timeline work (Phases 5-6).
 - `anno-cli analyse <file> --json` and a simple plot export (CSV or PNG) of pitch curve + notes for humans to inspect.
 
 **Verify:**
