@@ -29,7 +29,7 @@ struct Note {
     SourceTime source_end;
 
     PitchTarget pitch_target;  // the pitch the note is judged by (ADR-0013), absolute cents
-    Cents pitch_center;     // stability-weighted centre, absolute
+    Cents pitch_center;        // stability-weighted centre, absolute
 
     FrameGrid grid;                  // grid of the three curves below
     std::vector<Cents> pitch_drift;  // slow component, relative to pitch_center

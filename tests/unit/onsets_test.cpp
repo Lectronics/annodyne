@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 using namespace anno;
 using namespace anno::test;
@@ -182,7 +183,7 @@ std::vector<float> level_step_tone(double step_db, double tremolo_db = 0.0) {
     for (std::size_t i = 0; i < x.size(); ++i) {
         const double t = static_cast<double>(i) / k_rate;
         const double ramp = std::clamp((t - 0.5) / 0.010, 0.0, 1.0);
-        const double db = step_db * ramp + tremolo_db * std::sin(2.0 * 3.14159265358979 * 6.0 * t);
+        const double db = step_db * ramp + tremolo_db * std::sin(2.0 * std::numbers::pi * 6.0 * t);
         x[i] = static_cast<float>(x[i] * std::pow(10.0, db / 20.0));
     }
     return x;
