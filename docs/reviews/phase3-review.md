@@ -106,3 +106,12 @@ Verification: release 544+ tests, debug-asan green (it caught an out-of-range re
 - Owner: the project licence decision that follows from ADR-0014 (and JUCE / ARA SDK compatibility); the plot check of tracks 13 and 28 and a trill/glide example; whether the target-vs-median -10/+15 result is accepted (now 0.578 vs 0.667 held-out); non-pop style presets; unverified citations.
 - Residual octave errors (0.2 % tuning, tracks 34 and 40); onset F far from 0.9 (annotators agree at 0.75); the plugin's absolute low-amplitude rule (take-relative reference); the 61.7 Hz floor; segmentation not re-tuned for the new tracker.
 - Carried audit items of the previous addendum; transient/consonant analysis to be replaced by a more accurate method (owner).
+
+## Addendum 2026-10-20 (3): weak-voicing fix, voicing review re-check, fuzzy thresholds
+
+**Track 28 (owner)**: the roll up from 11.958 s that settles at 12.083 s is a note of its own. The note HMM read the tracker's weakly voiced frames (voicing 0.5) as silence; `SegmentParams::voiced_floor_prob` 0.55 fixes it (ADR-0010a amendment 4). Notes 1544 -> 1671 of 1923; onset F20 A1 0.541 / 0.519 -> 0.582 / 0.552; matched-note pitch 0.878 / 0.818 -> 0.853 / 0.803; target within -10/+15 cents 0.694 / 0.578 -> 0.655 / 0.552 (guard 0.55; margin thin, 0.6 would break it). Track 13: owner reads it as mostly fine; unchanged.
+
+**Voicing review re-check on the c4dm tracker**: the 17 ported probe rows all still pass after the change; voicing recall (0.989 / 0.997), pitch within 50 cents (0.982 / 0.995) and octave rate (0.002 / 0.000) are identical to before, because the change is in the segmentation, not the tracker. The four rows that failed on the annodyne pYIN stay fixed. The review's remaining proposals (drop gate, level weight, hum classifier, note HMM) are not needed for the probes and are not adopted.
+
+**Fuzzy thresholds (owner)**: the fixed thresholds of Phase 3 are provisional. With more analysis tools (transient and consonant tags, key, tuning reference, tempo) they can become graded memberships that change locally with the tags of the current waveform and globally per performance. Recorded in the ROADMAP (Phase 3 carried items and Phase 8). Nothing is built.
+
