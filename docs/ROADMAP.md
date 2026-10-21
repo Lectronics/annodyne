@@ -144,13 +144,16 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 ## Phase 6 — Expression tools and macros
 
-- `tools/pitch` (transitions), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
+- `tools/pitch` (transitions: rolling pitch changes instead of hard steps, see `docs/design/pitch-glide-transitions.md`), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
+- *(ADR-0019, proposed)* `core/analysis/pitch_marks`: SPTK's REAPER wrapper as the pitch-mark (epoch) source, stored per note as `Note::pitch_marks`, and used by `PsolaEngine` (`mark_source`) only if the objective A/B trial in ADR-0019 decision 6 passes (the dependency stays out of the main build until then; the trial needs owner-supplied rough/breathy labels and 440-880 Hz material). The trial is the first slice of Phase 6 and needs a design note and structure review first. SPTK's Harvest/SWIPE' may become the second tracker for the octave flag (ADR-0018 amended; Phase 13 neural estimator stays the alternative).
+- *(owner 2026-10-21)* **Continuous pitch and formant changes** (its own sub-gate inside Phase 6, see `docs/design/pitch-glide-transitions.md`): every pitch and formant tool takes a time-varying amount, not one static shift: a linear ramp or a drawn curve over a note or range. Needed for rolling pitch changes at note edges and for vibrato control (rate, depth, shape changing through a note). Requires one ADR (ADR-0020, provisional) before code: the curve type and its fold under `set`/`add`/`scale`/`reset`, superseding ADR-0016 decision 5 (engines take a per-frame ratio), the limit checked at the curve's peak, and `dirty_regions`.
+- *(owner 2026-10-21)* **Formant fixes land here.** The Phase 4 first-formant check (single parabolic envelope peak, sparse harmonics) measured -18.0 % at -200 cents, +11.0 % at -700 and -8.5 % on the sibilant vowel for PSOLA (`phase4-pitch-edit.md` stage 9), with real-voice failures of unestablished cause (measurement or engine). With 110 Hz source harmonics (dense) the PSOLA unit test holds the 5 % bound at +700 cents. The `formant` tool starts by validating the formant measure on dense-harmonic and real material, then decides between an engine change and correcting an engine's output by the ratio of the original to the shifted envelope.
 - `macros/correct_pitch`, `macros/leveling`; the `pitch_target_mode` edit and ADR-0015 (moved here from Phase 4, owner 2026-10-20; ADR-0013 amended).
 - *(ADR-0008)* Breath chain (`core/dsp/dynamics`: `Compressor`, `Limiter`, `HighPass`; `render_breath_event`), the `breath`, `breath_chain` and `breath_assignment` edits and the breath macros (`features/breaths`: `BreathLevel`, `MuteSmallBreaths`, `RemoveBreaths`).
 - `core/tuning`: chromatic and scale grids, `target_pitch`.
 - *(ADR-0018)* Research items for expression: sibilant 4-16 kHz tonal-peak check, de-ess after resynthesis, noise gains per class; keep and re-apply fast perturbation after pitch edits (no low-pass of contours); analysis metrics CPPS, GNE, H1-H2, jitter, shimmer, SHR with the breathy and rough calibration checks.
 
-**Verify:** modulation/drift scaling, formant round-trip, level round-trip, noise gain applies only to noise frames. Audition `phase6-expression` covering every tool.
+**Verify:** modulation/drift scaling, formant round-trip, level round-trip, noise gain applies only to noise frames; ADR-0019 trial result recorded; ramp round trip (pitch follows the curve at ten points) and a zero-length ramp equal to the Phase 4 result. Audition `phase6-expression` covering every tool.
 
 **Listening gate #2.**
 
@@ -224,7 +227,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ## Phase 13 — Optional neural models
 
 - `core/models` with ONNX Runtime: neural pitch estimator, neural transcriber, optional neural vocoder engine.
-- *(ADR-0018)* The neural pitch estimator is the second independent tracker for the octave-ratio flag; noise-conditioned neural vocoders (h-NSF, uSFGAN, VISinger 2 style) are candidates for rough and breathy material, compared against the DSP routing on the same scenarios.
+- *(ADR-0018)* The neural pitch estimator is the second independent tracker for the octave-ratio flag (unless ADR-0019's trial keeps SPTK and its Harvest/SWIPE' tracker passes the octave check in Phase 6, then the neural estimator is the alternative); noise-conditioned neural vocoders (h-NSF, uSFGAN, VISinger 2 style) are candidates for rough and breathy material, compared against the DSP routing on the same scenarios.
 - Each model sits behind an existing interface, is compared against the DSP version on the same scenarios, and only becomes default through an ADR with objective numbers and a listening sheet.
 
 ---

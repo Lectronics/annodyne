@@ -40,3 +40,6 @@ Phase 4 scope grows by the frame classifier's first metric set (already planned 
 
 ## Spec updates
 None; the specs stay read-only. ADR-0017 overrides architecture §3 for `FrameClass`.
+
+## Amendment 2026-10-21 (ADR-0019)
+The Phase 13 row "Two independent pitch trackers for the octave flag" is conditionally movable to Phase 6 if ADR-0019's trial keeps SPTK and a Harvest/SWIPE' tracker passes the octave-error check (under 2 %); the neural estimator stays the alternative. No other row changes.
