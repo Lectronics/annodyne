@@ -1,5 +1,6 @@
 #include "core/synthesis/harmonic_noise/harmonic_noise_engine.h"
 
+#include "core/synthesis/engine/engine_support.h"
 #include "core/synthesis/engine/source_through_map.h"
 
 #include <algorithm>
@@ -17,19 +18,9 @@ namespace {
 
 constexpr double k_two_pi = 2.0 * std::numbers::pi;
 constexpr double k_max_envelope_gain_db = 20.0;  // envelope re-read gain limit, both directions
-constexpr double k_slope_tolerance = 1e-9;
 
 // ---- Which edits the engine realises
 // -------------------------------------------------------------
-
-bool only_pitch_edited(const EffectiveNote& e) {
-    return e.mod_scale == Ratio{1.0} && e.drift_scale == Ratio{1.0} &&
-           e.transition_in_scale == Ratio{1.0} && e.transition_out_scale == Ratio{1.0} &&
-           e.formant_offset == Cents{} && e.gain == Decibels{} &&
-           e.within_note_flatten == Ratio{} && e.fade_in == Seconds{} && e.fade_out == Seconds{} &&
-           e.noise_gain == NoiseGains{} && e.length_scale == Ratio{1.0} && e.handles.empty() &&
-           e.attack_time_scale == Ratio{1.0};
-}
 
 Result<void> check_supported(const AudioSource& src, const Note& note, const EffectiveNote& eff) {
     const auto no = [](const char* what) {
@@ -74,29 +65,6 @@ Result<void> check_params(const HarmonicNoiseEngineParams& p) {
             "<= 0.5");
     }
     return {};
-}
-
-/// Whole samples d such that output sample n plays source sample n - d over the whole zone; errors
-/// when the zone is not inside one slope-1 warp span.
-Result<std::int64_t> zone_shift(const TimeMap& map, Hz rate, OutputRange zone) {
-    for (const TimeSpan& span : map.spans()) {
-        if (span.kind != SpanKind::warp || zone.start() < span.output_start ||
-            zone.end() > span.output_end) {
-            continue;
-        }
-        const Seconds out_len = span.output_end - span.output_start;
-        const Seconds src_len = span.source_end - span.source_start;
-        const double shift =
-            ((span.output_start - OutputTime{}) - (span.source_start - SourceTime{})).value() *
-            rate.value();
-        if (std::abs((out_len - src_len).value()) > k_slope_tolerance ||
-            std::abs(shift - std::round(shift)) > 1e-6) {
-            break;
-        }
-        return static_cast<std::int64_t>(std::llround(shift));
-    }
-    return fail(ErrorCode::not_implemented,
-                "HarmonicNoiseEngine: the zone must lie inside one slope-1 warp of the time map");
 }
 
 // ---- The harmonic model on the output sample axis
@@ -214,46 +182,15 @@ std::vector<Frame> build_frames(const Note& note, double rate, std::int64_t d, d
 // ---- Weights: 1 on shifted runs, raised-cosine edges
 // ------------------------------------------------
 
-double ramp(double u) {
-    if (u <= 0.0) {
-        return 0.0;
-    }
-    if (u >= 1.0) {
-        return 1.0;
-    }
-    const double s = std::sin(0.5 * std::numbers::pi * u);
-    return s * s;
-}
-
-/// w[n - first] for the zone samples [first, first + count). The first and last real frames carry
-/// no edge at the note's boundary (the renderer fades there); the virtual frames inherit their
-/// class.
+/// w[n - first] for the zone samples [first, first + count): run_weights over the frames' classes.
 std::vector<double> build_weights(const std::vector<Frame>& frames, double hop_samples,
                                   double fade_samples, std::int64_t first, std::int64_t count) {
-    std::vector<double> w(static_cast<std::size_t>(count), 0.0);
-    const std::size_t last = frames.size() - 1;
-    for (std::size_t i = 0; i <= last;) {
-        if (!frames[i].shifted) {
-            ++i;
-            continue;
-        }
-        std::size_t j = i;
-        while (j + 1 <= last && frames[j + 1].shifted) {
-            ++j;
-        }
-        const double left = i == 0 ? -std::numeric_limits<double>::infinity()
-                                   : frames[i].position - 0.5 * hop_samples;
-        const double right = j == last ? std::numeric_limits<double>::infinity()
-                                       : frames[j].position + 0.5 * hop_samples;
-        for (std::int64_t n = 0; n < count; ++n) {
-            const auto pos = static_cast<double>(first + n);
-            w[static_cast<std::size_t>(n)] = std::min(
-                1.0, w[static_cast<std::size_t>(n)] +
-                         ramp((pos - left) / fade_samples) * ramp((right - pos) / fade_samples));
-        }
-        i = j + 1;
+    std::vector<RunFrame> run;
+    run.reserve(frames.size());
+    for (const Frame& f : frames) {
+        run.push_back({.position = f.position, .shifted = f.shifted});
     }
-    return w;
+    return run_weights(run, hop_samples, fade_samples, first, count);
 }
 
 // ---- Additive synthesis of one segment between two frames
@@ -381,16 +318,6 @@ void add_segment(const Frame& a, const Frame& b, SegmentRange range, std::int64_
     }
 }
 
-/// Lower-case hex of a 64-bit pattern, 16 digits.
-std::string hex64(std::uint64_t v) {
-    constexpr std::string_view k_digits = "0123456789abcdef";
-    std::string out(16, '0');
-    for (std::size_t i = 0; i < 16; ++i) {
-        out[15 - i] = k_digits[(v >> (4 * i)) & 0xFU];
-    }
-    return out;
-}
-
 }  // namespace
 
 HarmonicNoiseEngine::HarmonicNoiseEngine(HarmonicNoiseEngineParams params) : params_{params} {}
@@ -419,7 +346,7 @@ Result<OutputAudio> HarmonicNoiseEngine::render_note(const AudioSource& src, con
     if (last.value() < first.value()) {
         return fail(ErrorCode::invalid_argument, "HarmonicNoiseEngine: a negative range");
     }
-    auto shift_samples = zone_shift(time_map, rate, out_range);
+    auto shift_samples = zone_shift(time_map, rate, out_range, "HarmonicNoiseEngine");
     if (!shift_samples) {
         return Unexpected{shift_samples.error()};
     }

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "core/synthesis/engine/synthesis_engine.h"
+#include "core/types/frame_class_set.h"
 #include "core/types/tracks.h"
 #include "core/types/units.h"
 
 #include <cstdint>
-#include <initializer_list>
 #include <string>
 #include <string_view>
 
@@ -13,26 +13,6 @@
 // ADR-0017). Design: docs/design/phase4-pitch-edit.md.
 
 namespace anno {
-
-/// A set of frame classes: canonical (no order, no duplicates), so equal sets give equal cache
-/// keys.
-class FrameClassSet {
-public:
-    constexpr FrameClassSet() noexcept = default;
-    constexpr FrameClassSet(std::initializer_list<FrameClass> classes) noexcept {
-        for (const FrameClass c : classes) {
-            bits_ |= std::uint32_t{1} << static_cast<unsigned>(c);
-        }
-    }
-    [[nodiscard]] constexpr bool contains(FrameClass c) const noexcept {
-        return (bits_ >> static_cast<unsigned>(c) & 1U) != 0U;
-    }
-    [[nodiscard]] constexpr std::uint32_t bits() const noexcept { return bits_; }
-    friend constexpr bool operator==(FrameClassSet, FrameClassSet) noexcept = default;
-
-private:
-    std::uint32_t bits_ = 0;
-};
 
 struct HarmonicNoiseEngineParams {
     // Frames of these classes are shifted; every other frame keeps the original samples (research

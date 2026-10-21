@@ -44,3 +44,8 @@ noise above the harmonics is the unmoved residual either way). Engine params use
 (canonical set, empty set = shift nothing). The 4 ms fade is one `class_edge_fade` for every class
 boundary inside a note; the separate `consonant_fade` of the design note is dropped (a consonant is
 an unshifted class, so its boundary is a class boundary).
+
+
+## Amendment 2026-10-21 (stage 6, PsolaEngine)
+
+`PsolaEngine` uses the same routing as the harmonic engine: `shifted_classes` is a `FrameClassSet` defaulting to voiced and breathy, other classes keep the original samples, and `class_edge_fade` is the single fade. Unlike the harmonic engine it moves the noise inside a shifted frame (a time-domain method cannot separate it); this is the intended comparison, judged at listening gate #1. Its engine-specific limit is `max_shift` (700 cents). Shared helpers moved to `synthesis/engine/engine_support`.
