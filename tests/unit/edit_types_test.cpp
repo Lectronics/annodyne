@@ -194,3 +194,19 @@ TEST_CASE("the_new_categories_accept_only_a_parameterless_reset", "[edit_types]"
         CHECK(validate_for_add(reset).has_value());
     }
 }
+
+TEST_CASE("center_offset_set_is_limited_to_the_pitch_offset_gate", "[edit_types]") {
+    const auto& info = param_info(EditParam::center_offset);
+    CHECK(info.set_min == -k_max_pitch_offset.value());
+    CHECK(info.set_max == k_max_pitch_offset.value());
+    CHECK(k_max_pitch_offset == Cents{2400.0});
+    CHECK(validate(make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::set,
+                             k_max_pitch_offset))
+              .has_value());
+    CHECK_FALSE(validate(make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::set,
+                                   Cents{2400.5}))
+                    .has_value());
+    CHECK_FALSE(validate(make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::set,
+                                   Cents{-2400.5}))
+                    .has_value());
+}

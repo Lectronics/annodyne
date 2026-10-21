@@ -340,3 +340,23 @@ TEST_CASE("every_scalar_parameter_maps_to_its_own_field_through_set_add_scale_an
         CHECK_FALSE(eff.is_edited);
     }
 }
+
+TEST_CASE("the_folded_pitch_offset_is_clamped_to_the_gate", "[effective_state]") {
+    const Note note = make_note("a", 1.0, 2.0);
+    // add ops are not range-checked individually, so the sum can leave the gate.
+    const auto up = effective_state(
+        note,
+        list_with(
+            {{spec(EditCategory::pitch, EditParam::center_offset, EditOp::add, Cents{2000.0})},
+             {spec(EditCategory::pitch, EditParam::center_offset, EditOp::add, Cents{2000.0})}}));
+    CHECK(up.center - note.pitch_center == k_max_pitch_offset);
+    CHECK(up.is_edited);
+    const auto down =
+        effective_state(note, list_with({{spec(EditCategory::pitch, EditParam::center_offset,
+                                               EditOp::add, Cents{-5000.0})}}));
+    CHECK(down.center - note.pitch_center == -k_max_pitch_offset);
+    const auto inside =
+        effective_state(note, list_with({{spec(EditCategory::pitch, EditParam::center_offset,
+                                               EditOp::add, Cents{1200.0})}}));
+    CHECK(inside.center - note.pitch_center == Cents{1200.0});
+}

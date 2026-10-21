@@ -119,7 +119,8 @@ namespace {
 
 constexpr double k_inf = std::numeric_limits<double>::infinity();
 
-constexpr ParamInfo offset_row(EditParam p, EditCategory c, ValueKind k, double min = -k_inf) {
+constexpr ParamInfo offset_row(EditParam p, EditCategory c, ValueKind k, double min = -k_inf,
+                               double max = k_inf) {
     return {.param = p,
             .category = c,
             .kind = k,
@@ -127,7 +128,7 @@ constexpr ParamInfo offset_row(EditParam p, EditCategory c, ValueKind k, double 
             .allows_scale = false,
             .neutral = 0.0,
             .set_min = min,
-            .set_max = k_inf,
+            .set_max = max,
             .scale_min = -k_inf};
 }
 constexpr ParamInfo multiplier_row(EditParam p, EditCategory c, double min, double max,
@@ -171,7 +172,8 @@ static_assert(k_min_time_scale.value() == k_min_scale);
 
 // Indexed by EditParam; edit_types_test checks every row.
 constexpr std::array<ParamInfo, k_edit_param_count> k_table{{
-    offset_row(EditParam::center_offset, EditCategory::pitch, ValueKind::cents),
+    offset_row(EditParam::center_offset, EditCategory::pitch, ValueKind::cents,
+               -k_max_pitch_offset.value(), k_max_pitch_offset.value()),
     multiplier_row(EditParam::mod_scale, EditCategory::pitch_mod, -k_inf, k_inf, -k_inf),
     multiplier_row(EditParam::drift_scale, EditCategory::pitch_drift, -k_inf, k_inf, -k_inf),
     multiplier_row(EditParam::transition_in_scale, EditCategory::transition, 0.0, k_inf, -k_inf),
