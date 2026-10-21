@@ -21,8 +21,9 @@ struct AuditionSummary {
 /// and PASS/FAIL; it never judges how the audio sounds, and says a human still has to listen.
 /// Checks: null test (empty edit list renders the source), untouched regions (outside
 /// dirty_regions), click detector, sanity, determinism, length.
-/// Errors: as run_render, plus io_error for the output folder. A failing check is not an error;
-/// it is `all_checks_passed == false`. Not real-time safe.
+/// Errors: as run_render (an engine refusal returns its not_implemented error and writes no
+/// package; scripts/phase4_audition.py records it), plus io_error for the output folder. A failing
+/// check is not an error; it is `all_checks_passed == false`. Not real-time safe.
 [[nodiscard]] Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
                                                    const std::filesystem::path& out_dir,
                                                    EngineChoice engine,

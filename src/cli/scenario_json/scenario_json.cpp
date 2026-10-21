@@ -1,9 +1,11 @@
 #include "cli/scenario_json/scenario_json.h"
 
+#include <algorithm>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
+#include <utility>
 
 namespace anno::cli {
 
@@ -265,7 +267,50 @@ Result<std::vector<ScenarioNote>> parse_notes(const Json& root) {
     return notes;
 }
 
-/// Fills scenario.edits and edits_json from the "edits" array (an absent array means no edits).
+/// {"tool": "pitch_drag", "target": {"note_index": i}, "offset_cents" | "target_cents": n,
+/// "snap": "chromatic"?}.
+Result<ScenarioPitchDrag> parse_pitch_drag(const Json& j, const std::string& path) {
+    for (const auto& [key, value] : j.items()) {
+        if (key != "tool" && key != "target" && key != "offset_cents" && key != "target_cents" &&
+            key != "snap") {
+            return bad(at(path, key), "unknown key");
+        }
+    }
+    if (j.at("tool") != "pitch_drag") {  // the caller checked that "tool" is present
+        return bad(at(path, "tool"), "unknown tool (available: pitch_drag)");
+    }
+    ScenarioPitchDrag drag;
+    const auto target = j.find("target");
+    if (target == j.end() || !target->is_object() || target->size() != 1 ||
+        !target->contains("note_index") || !(*target)["note_index"].is_number_integer() ||
+        (*target)["note_index"].get<long long>() < 0) {
+        return bad(at(path, "target"), R"(must be {"note_index": a non-negative integer})");
+    }
+    drag.note_index = static_cast<std::size_t>((*target)["note_index"].get<long long>());
+    if (j.contains("offset_cents") == j.contains("target_cents")) {
+        return bad(path, "needs exactly one of offset_cents, target_cents");
+    }
+    for (const char* key : {"offset_cents", "target_cents"}) {
+        if (!j.contains(key)) {
+            continue;
+        }
+        auto v = number(j[key], at(path, key));
+        if (!v) {
+            return Unexpected{v.error()};
+        }
+        (std::string{key} == "offset_cents" ? drag.offset_cents : drag.target_cents) = *v;
+    }
+    if (const auto snap = j.find("snap"); snap != j.end()) {
+        if (!snap->is_string() || snap->get<std::string>() != "chromatic") {
+            return bad(at(path, "snap"), R"(must be "chromatic")");
+        }
+        drag.snap_chromatic = true;
+    }
+    return drag;
+}
+
+/// Fills scenario.edits, scenario.drags and edits_json from the "edits" array (an absent array
+/// means no edits).
 Result<void> parse_edits(const Json& root, Scenario& scenario) {
     const auto it = root.find("edits");
     if (it == root.end()) {
@@ -276,8 +321,34 @@ Result<void> parse_edits(const Json& root, Scenario& scenario) {
         return bad("$.edits", "must be an array");
     }
     scenario.edits_json = it->dump(2);
+    const auto tool_edits = std::ranges::count_if(
+        *it, [](const Json& e) { return e.is_object() && e.contains("tool"); });
+    if (tool_edits != 0 && std::cmp_not_equal(tool_edits, it->size())) {
+        // Drags are resolved after the analysis and added after raw edits, so a mix would apply in
+        // a different order than written.
+        return bad("$.edits", R"(must be all "tool" edits or all raw edits, not a mix)");
+    }
     for (std::size_t i = 0; i < it->size(); ++i) {
-        auto edit = parse_edit((*it)[i], scenario.notes, "edits[" + std::to_string(i) + "]");
+        const std::string path = "edits[" + std::to_string(i) + "]";
+        if ((*it)[i].is_object() && (*it)[i].contains("tool")) {
+            if (scenario.analysis != ScenarioAnalysis::analyse) {
+                return bad(path, R"("tool" edits need "analysis": "analyse")");
+            }
+            auto drag = parse_pitch_drag((*it)[i], path);
+            if (!drag) {
+                return Unexpected{drag.error()};
+            }
+            scenario.drags.push_back(*drag);
+            continue;
+        }
+        if (scenario.analysis == ScenarioAnalysis::analyse && (*it)[i].is_object() &&
+            (*it)[i].contains("target") && (*it)[i]["target"].is_object() &&
+            (*it)[i]["target"].contains("note_index")) {
+            return bad(
+                path,
+                R"(raw edits cannot use note_index with "analysis": "analyse"; use a "tool" edit or note_id)");
+        }
+        auto edit = parse_edit((*it)[i], scenario.notes, path);
         if (!edit) {
             return Unexpected{edit.error()};
         }
@@ -297,7 +368,7 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     if (!root.is_object()) {
         return bad("$", "must be an object");
     }
-    static const std::set<std::string> keys{"name",  "source", "algorithm",
+    static const std::set<std::string> keys{"name",  "source", "algorithm", "analysis",
                                             "notes", "edits",  "expect"};
     for (const auto& [key, value] : root.items()) {
         if (!keys.contains(key)) {
@@ -320,6 +391,18 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     scenario.name = *name;
     scenario.source = resolve_source(*source, base_dir, repo_root);
     scenario.algorithm = algorithm->empty() ? "melodic" : *algorithm;
+    auto analysis = string_field(root, "analysis", "$", false);
+    if (!analysis) {
+        return Unexpected{analysis.error()};
+    }
+    if (*analysis == "analyse") {
+        scenario.analysis = ScenarioAnalysis::analyse;
+    } else if (!analysis->empty() && *analysis != "given") {
+        return bad("$.analysis", R"(must be "given" or "analyse")");
+    }
+    if (scenario.analysis == ScenarioAnalysis::analyse && root.contains("notes")) {
+        return bad("$.notes", R"(not allowed with "analysis": "analyse")");
+    }
     auto notes = parse_notes(root);
     if (!notes) {
         return Unexpected{notes.error()};

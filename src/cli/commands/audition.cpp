@@ -4,7 +4,6 @@
 #include "cli/scenario/scenario.h"
 #include "core/edits/dirty_regions.h"
 #include "core/io/wav.h"
-#include "core/synthesis/passthrough/passthrough_engine.h"
 
 #include <algorithm>
 #include <cmath>
@@ -138,8 +137,8 @@ std::string report_text(const LoadedScenario& run, std::string_view engine_name,
     text += "\nThe click detector thresholds are initial values pending human review "
             "(ClickParams in cli/checks).\n";
     if (!run.expect_json.empty()) {
-        text += "\n## Scenario `expect` (not checked in Phase 2)\n\n```json\n" + run.expect_json +
-                "\n```\n";
+        text += "\n## Scenario `expect` (not checked by this report yet)\n\n```json\n" +
+                run.expect_json + "\n```\n";
     }
     text += "\nThese checks are structural. A human still has to listen to `original_matched.wav` "
             "against `edited.wav`; this report makes no statement about how either sounds.\n";
@@ -170,9 +169,8 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
     if (!run) {
         return Unexpected{run.error()};
     }
-    const PassthroughEngine passthrough;
-    const SynthesisEngine& chosen = passthrough;
-    (void)engine;  // passthrough is the only engine (render.h: EngineChoice)
+    const std::unique_ptr<const SynthesisEngine> chosen_engine = make_engine(engine);
+    const SynthesisEngine& chosen = *chosen_engine;
 
     const AudioSource& source = run->source;
     const OutputRange whole = OutputRange::from_start(

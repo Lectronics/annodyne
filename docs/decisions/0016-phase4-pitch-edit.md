@@ -27,3 +27,8 @@ Phase 4 adds the first audible edit: a per-note `pitch` offset rendered by two e
 
 ## Spec updates
 Architecture spec §5.3 (amplitude re-read, no offset limit), §4.2/§4.3 (`target_pitch` gets a concrete grid type), §4.5 (engine scope) are overridden by this ADR; the specs stay read-only.
+
+## Amendment 2026-10-21 (stage 8, scenario format)
+
+Scenario files gain `"analysis": "given" | "analyse"` and a `{"tool": "pitch_drag", ...}` edit form (resolved with `pitch_drag_edit`, so scenarios run the code a UI will), and `expect.engines` names the engines a package runs. `docs/AUDIO_VERIFICATION.md` section 2 is not updated here (it is a spec; owner's decision) and its example parameter name `center_offset_cents` is not what the parser reads (`center_offset`).
+

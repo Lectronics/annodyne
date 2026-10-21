@@ -1,0 +1,22 @@
+{
+  "name": "vocadito2_note2_up700",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "tool": "pitch_drag",
+      "target": {
+        "note_index": 2
+      },
+      "offset_cents": 700
+    }
+  ],
+  "expect": {
+    "pitch_cents_delta": 700,
+    "vibrato_preserved": true,
+    "engines": [
+      "harmonic_noise",
+      "psola"
+    ]
+  }
+}
