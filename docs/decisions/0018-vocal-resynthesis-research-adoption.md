@@ -1,7 +1,7 @@
 # ADR-0018: Adopting the vocal resynthesis research, and which phase builds what
 
 - **Date:** 2026-10-20
-- **Status:** proposed (owner to accept)
+- **Status:** accepted 2026-10-20 (owner: "your instincts are good here"; thresholds stay provisional, ADR-0018)
 - **Phase:** 4 (allocation spans 4-13)
 
 ## Context

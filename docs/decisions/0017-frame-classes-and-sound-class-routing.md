@@ -1,7 +1,7 @@
 # ADR-0017: Frame classes breathy and rough, and sound-class routing for pitch edits
 
 - **Date:** 2026-10-20
-- **Status:** proposed (owner to accept; the thresholds are the research's starting values, see ADR-0018)
+- **Status:** accepted 2026-10-20 (owner: "your instincts are good here"; thresholds stay provisional, ADR-0018)
 - **Phase:** 4
 
 ## Context
