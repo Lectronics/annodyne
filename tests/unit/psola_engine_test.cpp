@@ -2,6 +2,7 @@
 #include "core/synthesis/psola/psola_engine.h"
 #include "support/engine_fixture.h"
 #include "support/synth_signals.h"
+#include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <numbers>
+#include <random>
 #include <vector>
 
 using namespace anno;
@@ -412,4 +414,58 @@ TEST_CASE("psola_rejects_a_non_finite_center_a_ragged_class_track_and_a_reversed
     Note no_classes = fx.note;
     no_classes.noise.frame_class.clear();  // absent: every frame counts as modal
     CHECK(engine.render_note(fx.src, no_classes, fx.effective(100.0), fx.map, zone).has_value());
+}
+
+TEST_CASE("a_large_down_shift_leaves_no_dc_offset", "[psola_engine]") {
+    // Before the one-period local mean was taken out, -700 cents on a rich voice left -58.5 dBFS
+    // of DC in the audition scenario (limit -60). Random harmonic phases: a zero-phase sum is a
+    // pulse train.
+    std::mt19937 rng{7};
+    std::uniform_real_distribution<double> phase{0.0, 2.0 * std::numbers::pi};
+    std::vector<double> phases(30);
+    for (double& p : phases) {
+        p = phase(rng);
+    }
+    std::vector<float> x(static_cast<std::size_t>(k_total_s * k_rate), 0.0F);
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double t = static_cast<double>(i) / k_rate;
+        double v = 0.0;
+        for (std::size_t k = 1; k <= 30; ++k) {
+            v += std::cos(2.0 * std::numbers::pi * 196.0 * static_cast<double>(k) * t +
+                          phases[k - 1]) /
+                 static_cast<double>(k);
+        }
+        x[i] =
+            static_cast<float>(0.05 * v * std::clamp(std::min(t - 0.2, 1.4 - t) / 0.02, 0.0, 1.0));
+    }
+    const Fixture fx{x};
+    const auto out = fx.render(PsolaEngine{}, fx.effective(-700.0)).value();
+    double mean = 0.0;
+    for (const float v : out.audio.channel(0)) {
+        mean += static_cast<double>(v);
+    }
+    mean /= static_cast<double>(out.audio.channel(0).size());
+    const double dc_dbfs = 20.0 * std::log10(std::max(std::abs(mean), 1e-12));
+    const auto dc_of = [](std::span<const float> v) {
+        double m = 0.0;
+        for (const float e : v) {
+            m += static_cast<double>(e);
+        }
+        return 20.0 * std::log10(std::max(std::abs(m / static_cast<double>(v.size())), 1e-12));
+    };
+    INFO("DC " << dc_dbfs << " dBFS; source " << dc_of(x) << "; -300: "
+               << dc_of(fx.render(PsolaEngine{}, fx.effective(-300.0)).value().audio.channel(0))
+               << "; interior(0.4-1.1s) " << dc_of(out.audio.channel(0).subspan(17640, 30870))
+               << "; edge(0.2-0.4s) " << dc_of(out.audio.channel(0).subspan(8820, 8820))
+               << "; +300: "
+               << dc_of(fx.render(PsolaEngine{}, fx.effective(300.0)).value().audio.channel(0)));
+    CHECK(dc_dbfs < tolerance::k_dc_offset_max_dbfs.value());
+    // The fundamental keeps its level: the one-period mean does not touch harmonics.
+    const auto level = [&](const OutputAudio& o) {
+        const std::vector<float> v(o.audio.channel(0).begin() + 22050,
+                                   o.audio.channel(0).begin() + 44100);
+        return rms(v);
+    };
+    const double before = level(fx.render(PsolaEngine{}, fx.effective(0.0)).value());
+    CHECK(std::abs(20.0 * std::log10(level(out) / before)) < 1.5);
 }

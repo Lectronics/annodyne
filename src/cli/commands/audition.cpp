@@ -85,8 +85,9 @@ AudioBuffer difference(const AudioBuffer& edited, const AudioBuffer& original) {
     return out;
 }
 
-CheckRow make_row(std::string name, bool passed, std::string measured) {
-    return CheckRow{.name = std::move(name), .passed = passed, .measured = std::move(measured)};
+CheckRow make_row(AuditionCheck kind, std::string name, bool passed, std::string measured) {
+    return CheckRow{
+        .kind = kind, .name = std::move(name), .passed = passed, .measured = std::move(measured)};
 }
 
 struct ClickCount {
@@ -142,12 +143,13 @@ Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioB
         const auto shift = median_pitch_shift(*run.analysis, **again, note, limits);
         rows.push_back(
             shift
-                ? make_row("Pitch round trip" + who,
+                ? make_row(AuditionCheck::pitch_round_trip, "Pitch round trip" + who,
                            std::abs((*shift - requested).value()) <= limits.pitch_roundtrip.value(),
                            std::format("requested {:+.1f}, measured {:+.2f} cents (limit {:.1f})",
                                        requested.value(), shift->value(),
                                        limits.pitch_roundtrip.value()))
-                : make_row("Pitch round trip" + who, false, "too few voiced frames to measure"));
+                : make_row(AuditionCheck::pitch_round_trip, "Pitch round trip" + who, false,
+                           "too few voiced frames to measure"));
         const Note* after = matching_note(**again, note);
         const auto before_vibrato = vibrato_of(note, limits);
         if (before_vibrato && before_vibrato->extent.value() >= k_min_vibrato_extent_cents) {
@@ -159,7 +161,7 @@ Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioB
                 std::abs(after_vibrato->extent.value() / before_vibrato->extent.value() - 1.0) <=
                     limits.vibrato_extent_rel.value();
             rows.push_back(make_row(
-                "Vibrato preservation" + who, ok,
+                AuditionCheck::vibrato, "Vibrato preservation" + who, ok,
                 after_vibrato
                     ? std::format("rate {:.2f} -> {:.2f} Hz, extent {:.1f} -> {:.1f} cents",
                                   before_vibrato->rate.value(), after_vibrato->rate.value(),
@@ -168,12 +170,17 @@ Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioB
         }
         const auto formant_before = first_formant(note);
         const auto formant_after = after ? first_formant(*after) : std::nullopt;
+        if (formant_before && !formant_after) {
+            rows.push_back(make_row(AuditionCheck::first_formant, "First formant" + who, false,
+                                    "found in the source, not measurable in the render"));
+        }
         if (formant_before && formant_after) {
             const double change = formant_after->value() / formant_before->value() - 1.0;
-            rows.push_back(make_row(
-                "First formant" + who, std::abs(change) <= limits.formant_preservation_rel.value(),
-                std::format("{:.0f} -> {:.0f} Hz ({:+.1f} %)", formant_before->value(),
-                            formant_after->value(), 100.0 * change)));
+            rows.push_back(
+                make_row(AuditionCheck::first_formant, "First formant" + who,
+                         std::abs(change) <= limits.formant_preservation_rel.value(),
+                         std::format("{:.0f} -> {:.0f} Hz ({:+.1f} %)", formant_before->value(),
+                                     formant_after->value(), 100.0 * change)));
         }
     }
     return rows;
@@ -200,7 +207,8 @@ std::string report_text(const LoadedScenario& run, std::string_view engine_name,
     text += "\nThe click detector thresholds are initial values pending human review "
             "(ClickParams in cli/checks).\n";
     if (!run.expect_json.empty()) {
-        text += "\n## Scenario `expect` (not checked by this report yet)\n\n```json\n" +
+        text += "\n## Scenario `expect` (echoed; the requested shift is taken from the edits, not "
+                "from `expect`)\n\n```json\n" +
                 run.expect_json + "\n```\n";
     }
     text += "\nThese checks are structural. A human still has to listen to `original_matched.wav` "
@@ -271,26 +279,28 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
     m.notes_rendered = (*edited)->notes_rendered.size();
     m.cache_id = (*edited)->cache_id;
     const bool null_ok = bit_identical((*empty)->buffer.audio, *original);
-    m.rows.push_back(make_row("Null test (empty edit list)", null_ok,
+    m.rows.push_back(make_row(AuditionCheck::null_test, "Null test (empty edit list)", null_ok,
                               null_ok ? "bit-identical to the source" : "differs from the source"));
     const std::int64_t leaks = leaked_samples(*original, out_audio, *mask);
-    m.rows.push_back(make_row("Untouched regions (outside dirty_regions)", leaks == 0,
-                              std::format("{} differing samples", leaks)));
+    m.rows.push_back(make_row(AuditionCheck::untouched, "Untouched regions (outside dirty_regions)",
+                              leaks == 0, std::format("{} differing samples", leaks)));
     const ClickCount clicks = count_new_clicks(*original, out_audio);
-    m.rows.push_back(make_row("Click detector (new vs the source)", clicks.added == 0,
+    m.rows.push_back(make_row(AuditionCheck::click, "Click detector (new vs the source)",
+                              clicks.added == 0,
                               std::format("{} new detections, {} already in the source",
                                           clicks.added, clicks.in_source)));
     const SanityReport sane = sanity(out_audio);
-    m.rows.push_back(make_row(
-        "Sanity (NaN/Inf, DC)", sane.nan_inf_samples == 0 && sane.worst_dc_dbfs.value() < -60.0,
-        std::format("{} NaN/Inf, DC {:.1f} dBFS, peak {:.4f}", sane.nan_inf_samples,
-                    sane.worst_dc_dbfs.value(), static_cast<double>(sane.peak))));
+    m.rows.push_back(
+        make_row(AuditionCheck::sanity, "Sanity (NaN/Inf, DC)",
+                 sane.nan_inf_samples == 0 && sane.worst_dc_dbfs.value() < -60.0,
+                 std::format("{} NaN/Inf, DC {:.1f} dBFS, peak {:.4f}", sane.nan_inf_samples,
+                             sane.worst_dc_dbfs.value(), static_cast<double>(sane.peak))));
     const bool same_hash = hash_audio(out_audio) == hash_audio((*again)->buffer.audio);
-    m.rows.push_back(make_row("Determinism (two renders)", same_hash,
+    m.rows.push_back(make_row(AuditionCheck::determinism, "Determinism (two renders)", same_hash,
                               same_hash ? "equal hashes" : "hashes differ"));
     const std::int64_t length_diff = out_audio.frame_count().value() - source.frame_count().value();
     m.rows.push_back(
-        make_row("Length", std::abs(length_diff) <= 1,
+        make_row(AuditionCheck::length, "Length", std::abs(length_diff) <= 1,
                  std::format("{} frames vs {} expected", out_audio.frame_count().value(),
                              source.frame_count().value())));
     auto pitch = pitch_rows(*run, out_audio, PitchCheckParams{});

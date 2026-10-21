@@ -16,7 +16,8 @@ of Phase 4: the same interface as `synthesis/harmonic_noise`, a different trade-
    the shifted pitch, so harmonic content is untouched). Down shifts space the grains wider than the
    source period and the gaps are filled from different phases of the waveform, which left a DC
    of -58.5 dBFS at -700 cents on the synthetic vowel (limit -60); with the mean taken out it is
-   -68.1 dBFS.
+   -135 dBFS. It is applied to every shifted sample (every sample covered by a grain), so content
+   below about half the shifted pitch is attenuated too; listeners at gate #1 should know.
 6. Runs of frames of a shifted class (default voiced, breathy, as in ADR-0017) are crossfaded
    (equal power, 4 ms) with the original; everything else is the original bits.
 

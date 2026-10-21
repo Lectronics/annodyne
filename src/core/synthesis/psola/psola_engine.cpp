@@ -254,7 +254,7 @@ struct Accumulator {
     std::int64_t first;  // global sample of index 0
     std::vector<double> sum;
     std::vector<double> window_sum;
-    std::vector<double> output_period;  // of the nearest grain, samples (0 where none)
+    std::vector<double> output_period;  // of the latest grain covering the sample (0 where none)
 };
 
 void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
@@ -268,9 +268,7 @@ void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
         const auto idx = static_cast<std::size_t>(n - acc.first);
         acc.sum[idx] += window * x.cubic(static_cast<double>(g.analysis_mark) + u);
         acc.window_sum[idx] += window;
-        if (window >= 0.5) {
-            acc.output_period[idx] = g.output_period;
-        }
+        acc.output_period[idx] = g.output_period;  // the latest grain covering the sample
     }
 }
 
