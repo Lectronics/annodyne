@@ -36,6 +36,7 @@ Every non-trivial change follows this loop. Do not skip steps to save time.
 5. **Verify.** Build in Debug with sanitizers, run all tests, run clang-tidy on changed files. For anything that changes rendered audio, ask the `audio-verifier` subagent to run the audio checks and build the audition package.
 6. **Record decisions.** Any change to a public type, return value, edit category, folder or dependency rule gets an ADR in `docs/decisions/` from `docs/templates/ADR.md`.
 7. **Close the phase** with `docs/templates/PHASE_REVIEW.md`. A phase that changes audio is not done until a human has filled in the listening sheet.
+8. **Commit at logical points.** Commit locally when a stage, slice, design note or ADR is finished and its tests pass (one concern per commit). Never push, open or merge a PR, or tag without the owner's say-so.
 
 If a spec looks wrong or two specs conflict, stop and ask rather than guessing. Record the answer in an ADR.
 

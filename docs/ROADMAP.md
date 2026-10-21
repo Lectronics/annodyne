@@ -15,7 +15,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 | **1. Plan** | Start in plan mode. Read the specs for this phase. List the types, functions and files to create. For each public function: parameters, return type, error cases, units, time axis, thread/RT safety. | Design note(s) in `docs/design/` from `DESIGN_NOTE.md` |
 | **2. Structure review** *(gate)* | `structure-reviewer` subagent checks the design notes against the specs, `architecture.md` and `coding-standards.md`. Fix every blocking finding; re-review. | Review findings appended to the design note |
 | **3. Contracts** | Write headers and tests first. Tests compile and fail. Contract tests for invariants. | Headers + failing tests |
-| **4. Implement** | One function/class at a time. Build and run its tests after each. Commit small. | Passing tests |
+| **4. Implement** | One function/class at a time. Build and run its tests after each. Commit locally at each logical point (one concern per commit, tests green); never push, open a PR or tag without the owner. | Passing tests |
 | **5. Verify** *(gate)* | Full build with sanitizers, all tests, clang-tidy. If audio changes: `audio-verifier` runs objective checks and builds audition packages. | Verification report |
 | **6. Listen** | A human listens to the audition package and fills in the listening sheet. *(Audio phases only.)* | `docs/reviews/<phase>-listening.md` |
 | **7. Close** *(gate)* | Phase review from `PHASE_REVIEW.md`: what was built, deviations from the specs (with ADRs), open issues, structure audit result. Update "Current phase" above. Tag the commit `phase-N`. | `docs/reviews/<phase>-review.md`, git tag |
