@@ -208,3 +208,23 @@ Round 1 (structure-reviewer, 2026-10-20): CHANGES REQUIRED, 7 blocking and 8 sho
 - **Notes:** `NoiseTrack::band_energy_linear` is kept for Phase 6 noise gains (not used by Phase 4 synthesis). The default-engine selection hook is the single `SynthesisEngine` the caller passes to `render()`; per-note selection is a post-gate decision. ADR-0013 item 6 is amended in the same commit as ADR-0016.
 - **R16 (round 2) Margin.** Option (b): see body step 6.
 - **R17 (round 2) Version and mapping.** `AnalysisResult::version` and `AnalyseParams::version` both exist (Phase 3); the caller bumps the latter on re-analysis and `analyse()` copies it. Phase 3 golden numbers for the existing tracks are unchanged. Output-to-source mapping in the engine: slope-1 spans only, the time map is authoritative: output to source uses its inverse over the slope-1 spans; a zone crossing a non-slope-1 span returns `not_implemented` (test); a test with a shifted note.
+
+## Addendum: owner research `vocal-resynthesis-research.md` (2026-10-20)
+The owner's research (`docs/design/vocal-resynthesis-research.md`) routes every 2-5 ms frame to a path by sound class. It confirms the Phase 4 structure and fills the "waiting on research" parameters. Every threshold in it is a starting value to calibrate per singer, so they are provisional parameters for the later fuzzy layer, not constants.
+
+| Research path | Phase 4 handling | Where |
+|---|---|---|
+| Plosive burst (flux peak after closure dip, 5-20 ms) | Protected: original samples, no shift; 2-5 ms crossfade into the vowel, aligned to a pitch period | `shifted_classes` excludes `plosive`; `consonant_fade_s` default 12 ms -> **4 ms** inside this protected-window rule |
+| Fricative/sibilant (unvoiced, centroid > ~4 kHz) | Bypass: original samples | `shifted_classes` excludes `sibilant` |
+| Breath/other noise (unvoiced) | Bypass | excludes `breath`, `silence` |
+| Rough/fry/growl (octave-ratio flag 1.74-2.3 or high SHR) | Not shifted in Phase 4 (texture kept; the harmonic comb must not be forced on a subharmonic voice); frames flagged `rough` pass through | new class, see below |
+| Breathy phonation (MVF < 2 kHz or HNR < 10 dB) | Harmonics below MVF shifted, noise above stays pinned to the original envelope (already how the engine treats the residual) | MVF becomes a per-frame field |
+| Modal vowel | Shifted | default |
+
+Consequences for this phase (tell me if you disagree before stage 2):
+1. **`FrameClass` needs two more members**, `breathy` and `rough` (it is `voiced, sibilant, breath, plosive, silence`). That is a public-type change in `core/types/tracks.h`: it needs an ADR (ADR-0017) and the `NoiseTrack` JSON/validation to follow. Until then the classifier writes `voiced` for breathy and rough frames and the engine shifts them, which is the only behaviour available with five classes.
+2. **Voiced consonants** (m, n, l, v, z, r): the research treats voiced fricatives as mixed excitation (harmonics below MVF, noise above), which is exactly the engine's residual rule; no separate class.
+3. **Metrics for stage 2** (`split_harmonic_noise`): positive spectral flux with the closure-dip test, spectral centroid, ZCR, HNR from autocorrelation at the pitch lag, band aperiodicity / MVF, then (optional, later) CPPS, GNE, H1-H2, jitter, shimmer, SHR, two-tracker octave ratio. Stage 2 builds the first four plus MVF and the octave-ratio flag from the pitch track's `alternates`; the rest are carried until a test shows they are needed.
+4. **Routing order** is the research's: burst, fricative, breath, rough, breathy, modal; labels median-filtered over 3-5 frames, minimum segment 20 ms except bursts, class boundaries crossfaded 2-5 ms. `class_edge_fade_s` default 8 ms -> **4 ms**.
+5. **Calibration** (round-trip null-edit and +-2 semitone tests per class, tolerances in the research's last table, e.g. plosive onset within 2 ms, centroid within 5 %, modal F0 under 10 cents) become the objective checks of stages 5-9; they are the research's guesses, so they are recorded as provisional and never loosened without asking.
+6. Neural vocoders (h-NSF and similar) stay Phase 13. Not built here.
