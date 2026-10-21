@@ -30,7 +30,7 @@ inline Note make_note(const std::string& id, double start_s, double end_s,
     note.attack_end = src(start_s + 0.1 * len);
     note.release_start = src(start_s + 0.9 * len);
     note.source_end = src(end_s);
-    note.perceived_pitch = Cents{pitch_center_cents};
+    note.pitch_target = make_whole_target(Cents{pitch_center_cents});
     note.pitch_center = Cents{pitch_center_cents};
     return note;
 }

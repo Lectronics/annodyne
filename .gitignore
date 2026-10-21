@@ -8,3 +8,6 @@ audition/*/
 .DS_Store
 melo-claude-kit.zip
 .cache/
+
+# Full Vocadito corpus (73 MB, local tuning only; a 5-track subset is committed in tests/golden/vocals/vocadito/)
+tests/golden/vocals/zenodo_data/

@@ -170,6 +170,8 @@ Notation: `→` shows the return type. Parameters list the main controls only; e
 
 ### 4.2 Analysis — `core/analysis/<stage>/`
 
+> **ADR-0010 (accepted):** the typed Phase 3 forms of `segment_notes` (returns `NoteSpan`s), `decompose_pitch_curve`, `measure_loudness`, `detect_onsets` and `perceived_pitch` differ from the rows below; where they differ the ADR wins.
+
 | Function | Key parameters | Returns |
 |---|---|---|
 | `detect_pitch(src, range_hz=(50, 1600), hop=0.005, model="rmvpe", smoothing="viterbi", octave_penalty=…)` | estimator, range, hop, smoothing strength | `PitchTrack` |

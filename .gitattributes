@@ -1,0 +1,3 @@
+# Binary-safe test data: no end-of-line or encoding conversion
+*.wav -text
+tests/golden/vocals/vocadito/**/*.csv -text

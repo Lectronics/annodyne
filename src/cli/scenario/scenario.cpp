@@ -34,7 +34,7 @@ Result<AnalysisResult> make_scenario_analysis(const Scenario& scenario, const Au
         note.attack_end = SourceTime{} + Seconds{n.start_s + 0.1 * len};
         note.release_start = SourceTime{} + Seconds{n.start_s + 0.9 * len};
         note.source_end = SourceTime{} + Seconds{n.end_s};
-        note.perceived_pitch = k_a4_cents;
+        note.pitch_target = make_whole_target(k_a4_cents);
         note.pitch_center = k_a4_cents;
         analysis.notes.push_back(std::move(note));
     }

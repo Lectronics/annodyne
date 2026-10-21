@@ -153,7 +153,7 @@ void put(Writer& w, const Note& n) {
     put(w, n.attack_end);
     put(w, n.release_start);
     put(w, n.source_end);
-    put(w, n.perceived_pitch);
+    put(w, n.pitch_target.target);
     put(w, n.pitch_center);
     put(w, n.grid);
     put_all(w, n.pitch_drift);

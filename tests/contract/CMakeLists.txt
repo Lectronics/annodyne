@@ -59,6 +59,11 @@ anno_layer_fixture(deny_external R6)
 anno_layer_fixture(allow_cli_json PASS)
 anno_layer_fixture(allow_render_threads PASS)
 anno_layer_fixture(deny_render_json R6)
+anno_layer_fixture(allow_dsp_pocketfft PASS)
+anno_layer_fixture(deny_analysis_pocketfft R6)
+anno_layer_fixture(allow_pitch_c4dm_pyin PASS)
+anno_layer_fixture(deny_onsets_c4dm_pyin R6)
+anno_layer_fixture(deny_dsp_c4dm_pyin R6)
 
 # ---- Include-level rules ------------------------------------------------------------------------
 find_package(Python3 REQUIRED COMPONENTS Interpreter)

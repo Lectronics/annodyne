@@ -4,6 +4,8 @@
 #include "core/types/result.h"
 #include "core/types/units.h"
 
+#include <cmath>
+#include <cstddef>
 #include <vector>
 
 // Frame-based and event analysis tracks (architecture spec §3). Plain data; the producing
@@ -23,6 +25,15 @@ struct PitchTrack {
     std::vector<double> voicing_prob;            // 0..1
     std::vector<std::vector<Cents>> alternates;  // 2nd/3rd best paths, each grid.n_frames long
 };
+
+/// A pitch frame counts as voiced when its f0 is a number and voicing_prob reaches this. One
+/// definition for every stage (pitch, onsets, segmentation, pitch description).
+inline constexpr double k_voiced_probability = 0.5;
+
+/// Pre: i < track.f0.size() and the track is valid. Pure; real-time safe.
+[[nodiscard]] inline bool is_voiced(const PitchTrack& track, std::size_t i) noexcept {
+    return !std::isnan(track.f0[i].value()) && track.voicing_prob[i] >= k_voiced_probability;
+}
 
 /// Detected onsets, parallel arrays of equal length.
 struct OnsetList {

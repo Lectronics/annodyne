@@ -183,3 +183,57 @@ TEST_CASE("harmonic_noise_and_envelope_tracks_check_their_shapes", "[analysis_ty
     e.freqs.pop_back();
     CHECK_FALSE(validate(e).has_value());
 }
+
+TEST_CASE("a_default_pitch_target_is_valid_and_unpitched", "[analysis_types][pitch_target]") {
+    Note note = note_with_grid(10);
+    note.pitch_target = PitchTarget{};
+    note.pitch_center = Cents{6900.0};  // any centre: `target` means nothing for an unpitched note
+    CHECK(note.pitch_target.kind == PitchTargetKind::unpitched);
+    CHECK(validate(note).has_value());
+}
+
+TEST_CASE("pitch_target_rules_are_validated", "[analysis_types][pitch_target]") {
+    const auto invalid = [](const auto& edit) {
+        Note note = note_with_grid(10);
+        edit(note);
+        return !validate(note).has_value();
+    };
+    CHECK(invalid(
+        [](Note& n) { n.pitch_target.target = Cents{std::numeric_limits<double>::quiet_NaN()}; }));
+    CHECK(invalid([](Note& n) { n.pitch_target.confidence_prob = 1.5; }));
+    CHECK(invalid([](Note& n) { n.pitch_target.kind = PitchTargetKind::glide; }));  // no secondary
+    CHECK(
+        invalid([](Note& n) { n.pitch_target.kind = PitchTargetKind::ornament; }));  // no secondary
+    CHECK(invalid([](Note& n) { n.pitch_target.target_whole = Cents{std::nan("")}; }));
+    CHECK(invalid([](Note& n) { n.pitch_target.target_end = Cents{std::nan("")}; }));
+    CHECK(invalid([](Note& n) {  // core outside the note
+        n.pitch_target = make_whole_target(n.pitch_center);
+        n.pitch_target.core = SourceRange::from_start(n.source_end, Seconds{1.0});
+    }));
+    CHECK(invalid([](Note& n) {  // segments overlap
+        n.pitch_target = make_whole_target(n.pitch_center);
+        const SourceRange a = SourceRange::from_start(n.source_start, Seconds{0.5});
+        const TonalSegment seg{
+            .range = a, .shape = TonalShape::level, .start_pitch = Cents{}, .end_pitch = Cents{}};
+        n.pitch_target.segments = {seg, seg};
+    }));
+    Note ok = note_with_grid(10);
+    ok.pitch_target = make_whole_target(ok.pitch_center);
+    ok.pitch_target.core = SourceRange::from_start(ok.source_start, Seconds{0.5});
+    CHECK(validate(ok).has_value());
+    ok.pitch_target.kind = PitchTargetKind::glide;
+    ok.pitch_target.secondary = Cents{100.0};
+    CHECK(validate(ok).has_value());
+}
+
+TEST_CASE("pitch_flags_set_clear_and_test_bits", "[analysis_types][pitch_target]") {
+    PitchFlags flags;
+    CHECK_FALSE(flags.has(PitchFlag::creak));
+    flags.set(PitchFlag::creak);
+    flags.set(PitchFlag::short_note);
+    CHECK(flags.has(PitchFlag::creak));
+    CHECK(flags.has(PitchFlag::short_note));
+    flags.clear(PitchFlag::creak);
+    CHECK_FALSE(flags.has(PitchFlag::creak));
+    CHECK(flags.has(PitchFlag::short_note));
+}

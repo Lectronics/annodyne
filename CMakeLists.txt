@@ -12,6 +12,8 @@ include(AnnoWarnings)
 include(AnnoSanitizers)
 include(AnnoLayers)
 include(AnnoJson)
+include(AnnoPocketfft)
+include(AnnoC4dmPyin)
 
 add_subdirectory(src)
 

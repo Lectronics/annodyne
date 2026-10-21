@@ -21,6 +21,7 @@ anno_add_test(NAME audio_checks_test SOURCES audio_checks_test.cpp LABELS unit D
 anno_add_test(NAME scenario_test SOURCES scenario_test.cpp LABELS unit DEPS anno::cli_scenario_json anno::cli_checks)
 anno_add_test(NAME wav_test SOURCES wav_test.cpp LABELS unit DEPS anno::core_io)
 anno_add_test(NAME cli_info_test SOURCES cli_info_test.cpp LABELS unit DEPS anno::cli_commands)
+anno_add_test(NAME cli_analyse_test SOURCES cli_analyse_test.cpp LABELS unit DEPS anno::cli_commands anno::cli_analysis_json anno::cli_plot anno::core_io nlohmann_json::nlohmann_json)
 
 # anno-cli as a process: exit codes 0 (ok), 1 (error), 2 (usage).
 add_executable(write_test_wav write_test_wav.cpp)
@@ -42,6 +43,19 @@ add_test(NAME anno_cli.no_args_exits_2
     COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DEXPECT=2
             -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
 set_tests_properties(anno_cli.info_missing_file_exits_1 anno_cli.no_args_exits_2 PROPERTIES LABELS unit)
+
+# anno-cli analyse on the fixture WAV, a missing file (1) and a missing argument (2).
+add_test(NAME anno_cli.analyse_ok COMMAND anno_cli analyse "${cli_wav}")
+set_tests_properties(anno_cli.analyse_ok PROPERTIES
+    FIXTURES_REQUIRED cli_wav LABELS unit
+    PASS_REGULAR_EXPRESSION "analysed cli_test.wav: [0-9]+ notes")
+add_test(NAME anno_cli.analyse_missing_file_exits_1
+    COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DARGS=analyse$<SEMICOLON>/no/such/file.wav -DEXPECT=1
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
+add_test(NAME anno_cli.analyse_without_file_exits_2
+    COMMAND ${CMAKE_COMMAND} -DCMD=$<TARGET_FILE:anno_cli> -DARGS=analyse -DEXPECT=2
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_exit_code.cmake")
+set_tests_properties(anno_cli.analyse_missing_file_exits_1 anno_cli.analyse_without_file_exits_2 PROPERTIES LABELS unit)
 
 # anno-cli render / audition on the fixture WAV (0.1 s, 48 kHz stereo). Scenarios are written at
 # configure time so the source path is absolute.
@@ -103,3 +117,18 @@ anno_cli_exit_test(render_unknown_engine_exits_1 1
     render$<SEMICOLON>${scenario_dir}/pitch_edit.json$<SEMICOLON>--out$<SEMICOLON>${render_out}$<SEMICOLON>--engine$<SEMICOLON>magic)
 anno_cli_exit_test(render_timing_edit_exits_1 1
     render$<SEMICOLON>${scenario_dir}/timing_edit.json$<SEMICOLON>--out$<SEMICOLON>${render_out})
+anno_add_test(NAME dsp_window_fft_stft_test SOURCES dsp_window_fft_stft_test.cpp LABELS unit DEPS anno::core_dsp)
+anno_add_test(NAME dsp_filter_test SOURCES dsp_filter_test.cpp LABELS unit DEPS anno::core_dsp)
+anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight_interp_test.cpp LABELS unit DEPS anno::core_dsp)
+anno_add_test(NAME pitch_test SOURCES pitch_test.cpp LABELS unit DEPS anno::core_analysis_pitch)
+anno_add_test(NAME onsets_test SOURCES onsets_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_pitch)
+anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit DEPS anno::core_analysis_segmentation anno::core_analysis_perceived_pitch anno::core_analysis_onsets anno::core_analysis_pitch)
+anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS unit DEPS anno::core_analysis_perceived_pitch)
+anno_add_test(NAME pitch_target_test SOURCES pitch_target_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
+anno_add_test(NAME take_annotation_test SOURCES take_annotation_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
+anno_add_test(NAME activity_test SOURCES activity_test.cpp LABELS unit DEPS anno::core_analysis_activity)
+anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)
+anno_add_test(NAME voicing_probes_test SOURCES voicing_probes_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator anno::core_dsp)
+anno_add_test(NAME c4dm_pyin_test SOURCES c4dm_pyin_test.cpp LABELS unit DEPS anno::core_analysis_pitch anno_c4dm_pyin)
+anno_add_test(NAME analyse_test SOURCES analyse_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator)
+anno_add_test(NAME analysis_metrics_test SOURCES analysis_metrics_test.cpp LABELS unit DEPS anno::core_types)
