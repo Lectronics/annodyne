@@ -82,11 +82,16 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
     CHECK(json["source"]["duration_s"].get<double>() > 1.5);
     REQUIRE(json["notes"].size() == 2);
     const auto& n0 = json["notes"][0];
-    for (const char* key :
-         {"id", "start_s", "attack_end_s", "release_start_s", "end_s", "pitch_target",
-          "pitch_center_cents", "loudness_lufs", "confidence", "separation_in"}) {
+    for (const char* key : {"id", "start_s", "attack_end_s", "release_start_s", "end_s",
+                            "pitch_target", "pitch_center_cents", "loudness_lufs", "confidence",
+                            "separation_in", "harmonic_count", "sound_classes"}) {
         CHECK(n0.contains(key));
     }
+    REQUIRE(n0["sound_classes"].size() >= 1);
+    for (const char* key : {"class", "start_s", "end_s"}) {
+        CHECK(n0["sound_classes"][0].contains(key));
+    }
+    CHECK(n0["harmonic_count"].get<int>() >= 1);
     CHECK(std::abs(n0["start_s"].get<double>() - 0.2) <= 0.02);
     CHECK(std::abs(n0["pitch_target"]["target_cents"].get<double>() -
                    to_cents(Hz{262.0}, Hz{440.0}).value()) <= 10.0);

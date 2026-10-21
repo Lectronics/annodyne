@@ -1,8 +1,11 @@
 #pragma once
 
 #include "core/analysis/activity/activity.h"
+#include "core/analysis/envelope/envelope.h"
+#include "core/analysis/harmonic_noise/harmonic_noise.h"
 #include "core/analysis/loudness/loudness.h"
 #include "core/analysis/onsets/onsets.h"
+#include "core/analysis/partials/partials.h"
 #include "core/analysis/perceived_pitch/perceived_pitch.h"
 #include "core/analysis/pitch/c4dm_pyin.h"
 #include "core/analysis/pitch/pyin.h"
@@ -40,6 +43,9 @@ struct AnalyseParams {
     PitchDecompositionParams decomposition;
     PitchTargetParams pitch_target;  // ADR-0013
     LoudnessParams loudness;
+    PartialsParams partials;             // Phase 4: harmonic tracks (ADR-0016)
+    HarmonicNoiseParams harmonic_noise;  // Phase 4: noise bands and sound classes (ADR-0017)
+    EnvelopeParams envelope;             // Phase 4: spectral envelope
 };
 
 /// Runs, in order: read_mono + k_weight (once), detect pitch (params.engine: the vendored c4dm/pyin
@@ -48,8 +54,9 @@ struct AnalyseParams {
 /// NoteSpan: note_grid, measure_loudness, decompose_pitch_curve, then builds the Note with centre,
 /// drift, mod, amp and loudness filled and calls estimate_pitch_target on it (with the neighbouring
 /// spans' rough pitches and gaps, the gated pitch track and the onsets) and stores the PitchTarget;
-/// only then is the Note final (harmonics, noise and envelope stay empty until Phase 4; a Note with
-/// empty nested tracks is valid). `source_id = src.id()`; the tuning reference stays 440 Hz
+/// then analyse_partials, split_harmonic_noise (with the pitch track's voicing and second-best path
+/// on the note's frames) and estimate_envelope fill the note's harmonics, noise and envelope
+/// tracks; only then is the Note final. `source_id = src.id()`; the tuning reference stays 440 Hz
 /// (estimated in Phase 8). The result passes validate(AnalysisResult) and is returned as a shared
 /// immutable snapshot. Every per-note stage is guaranteed to succeed for a span segment_notes
 /// returned (at least 10 pitch frames, voiced); if one fails anyway the whole analysis fails with

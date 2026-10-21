@@ -296,3 +296,19 @@ TEST_CASE("bad_input_is_rejected", "[harmonic_noise]") {
                             .alternate_f0 = std::span<const Cents>(sc.alternate).first(3)};
     CHECK(code(short_alt, {}) == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("rumble_below_the_voice_does_not_lower_the_maximum_voiced_frequency",
+          "[harmonic_noise]") {
+    // Real recordings carry low-frequency rumble under the first harmonic; it is not part of the
+    // voiced range (found on the Vocadito corpus: it made 10 % of clean frames breathy).
+    auto sc = make_scene({{.begin_s = 0.1, .end_s = 1.2, .kind = Kind::vowel}});
+    for (std::size_t i = 0; i < sc.mono.size(); ++i) {
+        sc.mono[i] += 0.1F * static_cast<float>(std::sin(2.0 * std::numbers::pi * 38.0 *
+                                                         static_cast<double>(i) / k_rate));
+    }
+    const auto h = analyse_partials(sc.mono, Hz{k_rate}, sc.curves(), {}).value();
+    const auto m = measure_frames(sc.mono, Hz{k_rate}, sc.curves(), h, sc.evidence(), {}).value();
+    const auto mid = Scene::frame_at(0.6);
+    CHECK(m.mvf_hz[mid] > 1500.0);
+    CHECK(run(sc).frame_class[mid] == FrameClass::voiced);
+}

@@ -22,6 +22,8 @@ filtered over 5 frames, runs under 20 ms join their longer neighbour; plosive fr
 smoothed away. A burst is a flux peak above median + 3 MAD, 30 ms apart, with a 6 dB closure dip
 before it and a 15 point rise in the share of power above 4 kHz (this rejects vowel onsets).
 
+**Real voices (Vocadito, 35 tracks).** 81 % voiced, 18.7 % breathy, rest under 0.5 %; the breathy share comes from the MVF rule (below 2 kHz) and is a calibration item, not a verdict that the singers are breathy. Rumble under the voice is excluded from MVF and HNR.
+
 **Limits.** All thresholds are the research's starting values or guesses (see the params comments);
 they are provisional parameters for the later fuzzy layer, calibrated per singer in Phase 8. HNR
 counts window leakage as noise when f0 is below about 125 Hz (the harmonic masks cover the whole

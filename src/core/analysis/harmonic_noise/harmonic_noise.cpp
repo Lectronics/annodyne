@@ -303,15 +303,35 @@ void noise_band_power(const FrameAnalyser& a, const HarmonicTrack& h, std::size_
     }
 }
 
-/// Maximum voiced frequency: the lower edge of the first significant band that is aperiodic; the
-/// top of the analysed range when every significant band is periodic.
+/// Harmonic-to-noise ratio over the bands above `lowest_hz` (rumble under the voice is neither).
+double harmonic_to_noise_db(const std::vector<double>& edges, const std::vector<double>& total,
+                            const std::vector<double>& noise, double lowest_hz) {
+    double harm = 0.0;
+    double nz = 0.0;
+    for (std::size_t b = 0; b < total.size(); ++b) {
+        if (edges[b + 1] > lowest_hz) {
+            harm += total[b] - noise[b];
+            nz += noise[b];
+        }
+    }
+    return std::clamp(10.0 * std::log10(std::max(harm, k_tiny) / std::max(nz, k_tiny)),
+                      k_hnr_min_db, k_hnr_max_db);
+}
+
+/// Maximum voiced frequency: the lower edge of the first significant aperiodic band above
+/// `lowest_hz` (0.75 of the first harmonic); the top of the analysed range when every significant
+/// band is periodic.
 double max_voiced_frequency(const std::vector<double>& edges, const std::vector<double>& total,
-                            const std::vector<double>& noise, const HarmonicNoiseParams& p) {
+                            const std::vector<double>& noise, double lowest_hz,
+                            const HarmonicNoiseParams& p) {
     const double frame_power = std::accumulate(total.begin(), total.end(), 0.0);
     const double floor_power = frame_power * std::pow(10.0, -p.band_significance.value() / 10.0);
     for (std::size_t b = 0; b < total.size(); ++b) {
+        if (edges[b + 1] <= lowest_hz) {
+            continue;  // below the voice (rumble, DC): not part of the voiced range
+        }
         if (total[b] > floor_power && noise[b] / total[b] > p.aperiodicity_threshold) {
-            return edges[b];
+            return std::max(edges[b], lowest_hz);
         }
     }
     return edges.back();
@@ -440,13 +460,11 @@ Result<FrameMetrics> measure_frames(std::span<const float> mono, Hz sample_rate,
         const bool voiced = evidence.voicing_prob[i] >= k_voiced_probability;
         if (voiced) {
             noise_band_power(*wide, harmonics, i, edges, total, noise);
-            const double harm = std::accumulate(total.begin(), total.end(), 0.0) -
-                                std::accumulate(noise.begin(), noise.end(), 0.0);
-            const double nz = std::accumulate(noise.begin(), noise.end(), 0.0);
-            m.hnr_db[i] =
-                std::clamp(10.0 * std::log10(std::max(harm, k_tiny) / std::max(nz, k_tiny)),
-                           k_hnr_min_db, k_hnr_max_db);
-            m.mvf_hz[i] = max_voiced_frequency(edges, total, noise, params);
+            const auto first_harmonic = static_cast<double>(
+                harmonics.freq_hz.data[i * static_cast<std::size_t>(harmonics.freq_hz.cols)]);
+            const double lowest_hz = 0.75 * first_harmonic;
+            m.hnr_db[i] = harmonic_to_noise_db(edges, total, noise, lowest_hz);
+            m.mvf_hz[i] = max_voiced_frequency(edges, total, noise, lowest_hz, params);
         } else {
             m.hnr_db[i] = k_hnr_min_db;
             band_power_all(*wide, edges, total);

@@ -3,6 +3,7 @@
 #include "core/dsp/k_weight.h"
 #include "core/dsp/mono.h"
 
+#include <cmath>
 #include <utility>
 
 namespace anno {
@@ -29,6 +30,61 @@ NoteContext context_of(const std::vector<NoteSpan>& spans, std::size_t i) {
         ctx.gap_after = spans[i + 1].source_start - spans[i].source_end;
     }
     return ctx;
+}
+
+/// The pitch tracker's voicing and second-best f0 on the note's frames (the note grid is a window
+/// of the pitch grid with the same hop).
+struct NoteEvidence {
+    std::vector<double> voicing_prob;
+    std::vector<Cents> alternate_f0;  // empty when the tracker gives no usable second path
+};
+
+NoteEvidence evidence_of(const FrameGrid& note_grid, const PitchTrack& pitch) {
+    const auto first = static_cast<std::int64_t>(
+        std::llround(((note_grid.start - pitch.grid.start) / pitch.grid.hop).value()));
+    NoteEvidence e;
+    const bool has_alt = !pitch.alternates.empty();
+    bool any_alt = false;
+    for (std::int64_t i = 0; i < note_grid.n_frames; ++i) {
+        const auto k = static_cast<std::size_t>(first + i);
+        e.voicing_prob.push_back(pitch.voicing_prob[k]);
+        const Cents alt = has_alt ? pitch.alternates[0][k] : Cents{std::nan("")};
+        any_alt = any_alt || std::isfinite(alt.value());
+        e.alternate_f0.push_back(alt);
+    }
+    if (!any_alt) {
+        e.alternate_f0.clear();
+    }
+    return e;
+}
+
+/// Harmonics, noise bands and sound classes, and envelope of the note (Phase 4).
+Result<void> fill_phase4_tracks(Note& note, const PitchTrack& pitch, const MonoAudio& plain,
+                                const AnalyseParams& params) {
+    const NoteCurves curves{.grid = note.grid,
+                            .pitch_center = note.pitch_center,
+                            .pitch_drift = note.pitch_drift,
+                            .pitch_mod = note.pitch_mod};
+    auto harmonics = analyse_partials(plain.samples, plain.sample_rate, curves, params.partials);
+    if (!harmonics) {
+        return stage_error("partials", harmonics.error());
+    }
+    const NoteEvidence evidence = evidence_of(note.grid, pitch);
+    auto noise = split_harmonic_noise(
+        plain.samples, plain.sample_rate, curves, *harmonics,
+        {.voicing_prob = evidence.voicing_prob, .alternate_f0 = evidence.alternate_f0},
+        params.harmonic_noise);
+    if (!noise) {
+        return stage_error("harmonic/noise split", noise.error());
+    }
+    auto envelope = estimate_envelope(curves, *harmonics, plain.sample_rate, params.envelope);
+    if (!envelope) {
+        return stage_error("envelope", envelope.error());
+    }
+    note.harmonics = std::move(*harmonics);
+    note.noise = std::move(*noise);
+    note.envelope = std::move(*envelope);
+    return {};
 }
 
 /// One finished Note from a span, with its pitch target.
@@ -68,6 +124,9 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
         return stage_error("pitch target", target.error());
     }
     note.pitch_target = std::move(*target);
+    if (auto filled = fill_phase4_tracks(note, pitch, plain, params); !filled) {
+        return Unexpected{filled.error()};
+    }
     return note;
 }
 

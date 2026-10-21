@@ -72,6 +72,16 @@ void require_complete(const AnalysisResult& r) {
         REQUIRE(n.is_active);
         REQUIRE(n.voice == 0);
         REQUIRE(n.track_id == TrackId{"t1"});
+        // Phase 4 tracks: partials, sound classes and envelope are on the note's grid.
+        REQUIRE(n.harmonics.grid == n.grid);
+        REQUIRE(n.harmonics.freq_hz.rows == n.grid.n_frames);
+        REQUIRE(n.harmonics.freq_hz.cols >= 1);
+        REQUIRE(n.noise.grid == n.grid);
+        REQUIRE(n.noise.frame_class.size() == frames);
+        REQUIRE(n.noise.band_energy_linear.rows == n.grid.n_frames);
+        REQUIRE(n.envelope.grid == n.grid);
+        REQUIRE(n.envelope.log_mag_db.rows == n.grid.n_frames);
+        REQUIRE(n.envelope.freqs.size() >= 65);
     }
 }
 
@@ -249,4 +259,22 @@ TEST_CASE("a_sung_trill_stays_one_note_and_is_an_ornament", "[analyse][pitch_tar
     INFO("notes " << result->notes.size());
     CHECK(result->notes.size() <= 2);
     CHECK(ornaments >= 1);
+}
+
+TEST_CASE("a_clean_tone_gets_harmonics_at_its_pitch_and_the_voiced_class", "[analyse]") {
+    std::vector<double> starts;
+    const auto x = melody({note(330.0, 0.8, 0.4)}, 44100.0, starts);
+    const auto result = analyse(source_of(x, 44100.0), AnalyseParams{}).value();
+    REQUIRE(result->notes.size() == 1);
+    const Note& n = result->notes[0];
+    const auto cols = static_cast<std::size_t>(n.harmonics.freq_hz.cols);
+    const std::size_t mid = static_cast<std::size_t>(n.grid.n_frames) / 2;
+    const double f1 = static_cast<double>(n.harmonics.freq_hz.data[mid * cols]);
+    CHECK(std::abs(1200.0 * std::log2(f1 / 330.0)) < 3.0);
+    CHECK(n.harmonics.amp_linear.data[mid * cols] > 0.0F);
+    std::size_t voiced = 0;
+    for (const FrameClass c : n.noise.frame_class) {
+        voiced += c == FrameClass::voiced ? 1U : 0U;
+    }
+    CHECK(static_cast<double>(voiced) > 0.8 * static_cast<double>(n.noise.frame_class.size()));
 }
