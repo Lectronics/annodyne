@@ -170,7 +170,7 @@ TEST_CASE("harmonic_noise_and_envelope_tracks_check_their_shapes", "[analysis_ty
     NoiseTrack n;
     n.grid = grid;
     n.band_energy_linear = FrameMatrix{.rows = 2, .cols = 4, .data = std::vector<float>(8)};
-    n.frame_class.assign(2, FrameClass::breath);
+    n.frame_class.assign(2, FrameClass::breathy);
     CHECK(validate(n).has_value());
     n.frame_class.assign(3, FrameClass::breath);
     CHECK_FALSE(validate(n).has_value());

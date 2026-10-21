@@ -14,7 +14,9 @@
 
 namespace anno {
 
-enum class FrameClass { voiced, sibilant, breath, plosive, silence };
+/// voiced = modal phonation. breathy and rough (fry, growl) were added by ADR-0017; they are voiced
+/// phonation for noise gains but are routed differently by pitch edits.
+enum class FrameClass { voiced, sibilant, breath, plosive, silence, breathy, rough };
 enum class OnsetKind { attack, consonant, pitch_change, phoneme };
 
 /// Estimated fundamental per frame.

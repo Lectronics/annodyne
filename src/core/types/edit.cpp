@@ -324,7 +324,9 @@ Result<void> validate_for_add(const EditSpec& spec) {
 
 Decibels noise_gain(const NoiseGains& gains, FrameClass frame_class) noexcept {
     switch (frame_class) {
-    case FrameClass::voiced: return gains.voiced;
+    case FrameClass::voiced:
+    case FrameClass::breathy:
+    case FrameClass::rough: return gains.voiced;
     case FrameClass::sibilant: return gains.sibilant;
     case FrameClass::breath: return gains.breath;
     case FrameClass::plosive: return gains.plosive;

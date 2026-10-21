@@ -151,6 +151,9 @@ TEST_CASE("noise_gain_for_silence_is_zero_db", "[edit_types]") {
     CHECK(noise_gain(gains, FrameClass::breath) == Decibels{3});
     CHECK(noise_gain(gains, FrameClass::plosive) == Decibels{4});
     CHECK(noise_gain(gains, FrameClass::silence) == Decibels{0});
+    // ADR-0017: breathy and rough are voiced phonation and follow the voiced gain.
+    CHECK(noise_gain(gains, FrameClass::breathy) == Decibels{1});
+    CHECK(noise_gain(gains, FrameClass::rough) == Decibels{1});
 }
 
 TEST_CASE("edit_names_round_trip_for_every_enumerator", "[edit_types]") {
