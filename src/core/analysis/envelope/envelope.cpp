@@ -105,7 +105,7 @@ std::vector<double> interpolate_peaks(const std::vector<Peak>& peaks,
 class CepstralSmoother {
 public:
     static Result<CepstralSmoother> create(int n_bins, int order) {
-        const std::size_t n_bins_u = static_cast<std::size_t>(n_bins);
+        const auto n_bins_u = static_cast<std::size_t>(n_bins);
         const std::size_t n_fft = 2 * (n_bins_u - 1);
         auto fft = RealFft::create(n_fft);
         if (!fft) {
