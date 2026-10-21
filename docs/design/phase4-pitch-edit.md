@@ -155,7 +155,7 @@ Both engines return `OutputAudio` whose range equals `out_range` to the sample (
 - The residual is **not** stored in `Note` (join rule: derived data that is cheap to recompute stays derived; the cache key already covers analysis version). If measurement shows the recompute dominating render time, a later ADR can store it.
 - The engines are two classes (the interface exists for this); their shared crossfade and run-detection helpers live in `synthesis/engine` only if both need them after stage 6 (extract then, not before).
 - `target_pitch` sits in `core/tuning` (the architecture spec's name, with only the chromatic grid); `pitch_drag_edit` is separate from snapping (split function rule 5: different inputs).
-- `pitch_target_mode` is **not** here (owner, 2026-10-20): Phase 6 / ADR-0015. ADR-0013 item 6 is amended in this phase to say Phase 6.
+- `pitch_target_mode` is **not** here (owner, 2026-10-20): Phase 6 / ADR-0015. ADR-0013 item 6 is amended (done) to say Phase 6; Phase 4 decisions are ADR-0016 (written).
 
 ## Dependencies
 - `analysis/partials`: `core/types`, `core/dsp` (`stft` is not enough for the zero-padded per-harmonic windows, so it uses `core/dsp/fft`, `window`).

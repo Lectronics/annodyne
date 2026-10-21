@@ -143,7 +143,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ## Phase 6 — Expression tools and macros
 
 - `tools/pitch` (transitions), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
-- `macros/correct_pitch`, `macros/leveling`.
+- `macros/correct_pitch`, `macros/leveling`; the `pitch_target_mode` edit and ADR-0015 (moved here from Phase 4, owner 2026-10-20; ADR-0013 amended).
 - *(ADR-0008)* Breath chain (`core/dsp/dynamics`: `Compressor`, `Limiter`, `HighPass`; `render_breath_event`), the `breath`, `breath_chain` and `breath_assignment` edits and the breath macros (`features/breaths`: `BreathLevel`, `MuteSmallBreaths`, `RemoveBreaths`).
 - `core/tuning`: chromatic and scale grids, `target_pitch`.
 
