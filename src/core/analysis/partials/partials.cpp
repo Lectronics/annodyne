@@ -87,6 +87,8 @@ struct FrameSpectrum {
     std::vector<double> mag;
     double window_sum = 0.0;
     double bin_hz = 0.0;
+    std::vector<double> windowed;  // w[j] * x[centre - half + j], j = 0..win_len-1
+    double rate_hz = 0.0;
 };
 
 /// False when the window misses the signal entirely.
@@ -112,6 +114,8 @@ Result<bool> frame_spectrum(std::span<const float> mono, double rate, std::int64
         out.window_sum += w;
     }
     std::vector<double> buffer(n_fft, 0.0);
+    out.windowed.assign(static_cast<std::size_t>(win_len), 0.0);
+    out.rate_hz = rate;
     const std::int64_t half = win_len / 2;
     for (std::int64_t j = -half; j < half; ++j) {
         const std::int64_t s = centre + j;
@@ -122,6 +126,7 @@ Result<bool> frame_spectrum(std::span<const float> mono, double rate, std::int64
         const auto idx = static_cast<std::size_t>((j + n_fft_signed) % n_fft_signed);
         buffer[idx] = window[static_cast<std::size_t>(j + half)] *
                       static_cast<double>(mono[static_cast<std::size_t>(s)]);
+        out.windowed[static_cast<std::size_t>(j + half)] = buffer[idx];
     }
     out.bins.assign(n_fft / 2 + 1, {});
     fft->forward(buffer, out.bins);
@@ -139,6 +144,19 @@ struct Peak {
     double phase = 0.0;
     bool found = false;
 };
+
+/// sum_j windowed[j] * exp(-i 2 pi f (j - half) / rate): the frame's complex amplitude at f, phase
+/// relative to the frame centre.
+std::complex<double> project(const FrameSpectrum& sp, double freq_hz) {
+    const double w = 2.0 * std::numbers::pi * freq_hz / sp.rate_hz;
+    const double half = 0.5 * static_cast<double>(sp.windowed.size());
+    std::complex<double> sum{};
+    for (std::size_t j = 0; j < sp.windowed.size(); ++j) {
+        const double a = w * (static_cast<double>(j) - half);
+        sum += sp.windowed[j] * std::complex<double>{std::cos(a), -std::sin(a)};
+    }
+    return sum;
+}
 
 /// Largest peak within the sieve window around `nominal`, refined by QIFFT on the log magnitude.
 Peak find_peak(const FrameSpectrum& sp, double nominal, double halfwidth) {
@@ -166,10 +184,13 @@ Peak find_peak(const FrameSpectrum& sp, double nominal, double halfwidth) {
     const double c = std::log(std::max(sp.mag[bi + 1], k_tiny));
     const double denom = a - 2.0 * b + c;
     const double delta = denom < -k_tiny ? std::clamp(0.5 * (a - c) / denom, -0.5, 0.5) : 0.0;
-    const double log_peak = b - 0.25 * (a - c) * delta;
-    return {.freq_hz = (static_cast<double>(best) + delta) * sp.bin_hz,
-            .amp = 2.0 * std::exp(log_peak) / sp.window_sum,
-            .phase = std::arg(sp.bins[bi]),
+    const double freq = (static_cast<double>(best) + delta) * sp.bin_hz;
+    // QIFFT locates the peak; amplitude and phase come from projecting the windowed frame on that
+    // frequency (a one-bin DFT at the refined frequency), which has no interpolation bias.
+    const std::complex<double> projected = project(sp, freq);
+    return {.freq_hz = freq,
+            .amp = 2.0 * std::abs(projected) / sp.window_sum,
+            .phase = std::arg(projected),
             .found = true};
 }
 

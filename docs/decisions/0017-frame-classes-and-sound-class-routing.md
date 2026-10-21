@@ -35,3 +35,12 @@ Touches `core/types/tracks.h`, `edit.cpp` (`noise_gain`), `render_key.cpp`, JSON
 
 ## Spec updates
 Architecture spec §3 (`NoiseTrack.frame_class` literal list) is overridden: two more members.
+
+## Amendment 2026-10-21 (Phase 4, engine)
+The harmonic-noise engine shifts **all** measured harmonics of a `breathy` frame in Phase 4. The
+"harmonics below the maximum voiced frequency only" clause of item 4 needs the MVF per frame, which
+the `Note` does not store; it is deferred until the listening gate shows whether it matters (the
+noise above the harmonics is the unmoved residual either way). Engine params use a `FrameClassSet`
+(canonical set, empty set = shift nothing). The 4 ms fade is one `class_edge_fade` for every class
+boundary inside a note; the separate `consonant_fade` of the design note is dropped (a consonant is
+an unshifted class, so its boundary is a class boundary).
