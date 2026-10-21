@@ -137,6 +137,7 @@ anno_add_test(NAME chromatic_grid_test SOURCES chromatic_grid_test.cpp LABELS un
 anno_add_test(NAME main_tool_test SOURCES main_tool_test.cpp LABELS unit DEPS anno::tools_main_tool anno::core_edits)
 anno_add_test(NAME engine_support_test SOURCES engine_support_test.cpp LABELS unit DEPS anno::core_synthesis_engine)
 anno_add_test(NAME cli_engines_test SOURCES cli_engines_test.cpp LABELS unit DEPS anno::cli_commands anno::core_io nlohmann_json::nlohmann_json)
+anno_add_test(NAME pitch_checks_test SOURCES pitch_checks_test.cpp LABELS unit DEPS anno::cli_checks anno::core_analysis_orchestrator)
 anno_add_test(NAME voicing_probes_test SOURCES voicing_probes_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator anno::core_dsp)
 anno_add_test(NAME c4dm_pyin_test SOURCES c4dm_pyin_test.cpp LABELS unit DEPS anno::core_analysis_pitch anno_c4dm_pyin)
 anno_add_test(NAME analyse_test SOURCES analyse_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator)

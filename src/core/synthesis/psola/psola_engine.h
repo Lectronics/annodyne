@@ -43,6 +43,8 @@ struct PsolaEngineParams {
 ///  - Grains are read at fractional positions with Catmull-Rom interpolation, so synthesis marks
 ///    need not fall on samples. The overlap-add is divided by the sum of the grain windows (which
 ///    keeps the level across a shift); where that sum is below 1e-6 the original sample is kept.
+///  - The result then has its mean over one shifted period taken out (no effect on harmonics of
+///    the shifted pitch); without it a down shift leaves a DC offset.
 /// Unlike HarmonicNoiseEngine it moves everything inside a shifted frame, noise included; that is
 /// the comparison. A run of shifted frames is crossfaded (equal power, class_edge_fade) with the
 /// original at its inner edges; wherever the weight is 0 the engine copies the read_through_map

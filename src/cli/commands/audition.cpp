@@ -1,8 +1,11 @@
 #include "cli/commands/audition.h"
 
 #include "cli/checks/audio_checks.h"
+#include "cli/checks/pitch_checks.h"
 #include "cli/scenario/scenario.h"
+#include "core/analysis/orchestrator/analyse.h"
 #include "core/edits/dirty_regions.h"
+#include "core/edits/effective_state.h"
 #include "core/io/wav.h"
 
 #include <algorithm>
@@ -17,11 +20,7 @@ namespace anno::cli {
 
 namespace {
 
-struct CheckRow {
-    std::string name;
-    bool passed;
-    std::string measured;
-};
+using CheckRow = AuditionRow;
 
 Result<void> write_text(const std::filesystem::path& path, const std::string& text) {
     std::ofstream out{path, std::ios::binary};
@@ -115,6 +114,70 @@ struct Measurements {
     std::size_t notes_rendered = 0;
     std::string cache_id;
 };
+
+/// How far a note's vibrato must reach (cents) before its preservation is worth measuring.
+constexpr double k_min_vibrato_extent_cents = 10.0;
+
+/// The pitch-edit rows for every edited note of an analysed scenario: the render is analysed again
+/// and compared with the analysis of the source (pitch round trip, vibrato, first formant). A note
+/// the measurement cannot judge is a FAIL row: an unverified edit is not a pass.
+Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioBuffer& edited,
+                                         const PitchCheckParams& limits) {
+    std::vector<CheckRow> rows;
+    if (!run.analysis->pitch) {
+        return rows;
+    }
+    AnalyseParams params;
+    params.track = scenario_track();
+    auto again = analyse(AudioSource::from_buffer(edited), params);
+    if (!again) {
+        return Unexpected{again.error()};
+    }
+    for (const Note& note : run.analysis->notes) {
+        const Cents requested = effective_state(note, *run.edits).center - note.pitch_center;
+        if (requested == Cents{}) {
+            continue;
+        }
+        const std::string who = " (" + note.id.value + ")";
+        const auto shift = median_pitch_shift(*run.analysis, **again, note, limits);
+        rows.push_back(
+            shift
+                ? make_row("Pitch round trip" + who,
+                           std::abs((*shift - requested).value()) <= limits.pitch_roundtrip.value(),
+                           std::format("requested {:+.1f}, measured {:+.2f} cents (limit {:.1f})",
+                                       requested.value(), shift->value(),
+                                       limits.pitch_roundtrip.value()))
+                : make_row("Pitch round trip" + who, false, "too few voiced frames to measure"));
+        const Note* after = matching_note(**again, note);
+        const auto before_vibrato = vibrato_of(note, limits);
+        if (before_vibrato && before_vibrato->extent.value() >= k_min_vibrato_extent_cents) {
+            const auto after_vibrato = after ? vibrato_of(*after, limits) : std::nullopt;
+            const bool ok =
+                after_vibrato &&
+                std::abs((after_vibrato->rate - before_vibrato->rate).value()) <=
+                    limits.vibrato_rate.value() &&
+                std::abs(after_vibrato->extent.value() / before_vibrato->extent.value() - 1.0) <=
+                    limits.vibrato_extent_rel.value();
+            rows.push_back(make_row(
+                "Vibrato preservation" + who, ok,
+                after_vibrato
+                    ? std::format("rate {:.2f} -> {:.2f} Hz, extent {:.1f} -> {:.1f} cents",
+                                  before_vibrato->rate.value(), after_vibrato->rate.value(),
+                                  before_vibrato->extent.value(), after_vibrato->extent.value())
+                    : "the render has no measurable vibrato"));
+        }
+        const auto formant_before = first_formant(note);
+        const auto formant_after = after ? first_formant(*after) : std::nullopt;
+        if (formant_before && formant_after) {
+            const double change = formant_after->value() / formant_before->value() - 1.0;
+            rows.push_back(make_row(
+                "First formant" + who, std::abs(change) <= limits.formant_preservation_rel.value(),
+                std::format("{:.0f} -> {:.0f} Hz ({:+.1f} %)", formant_before->value(),
+                            formant_after->value(), 100.0 * change)));
+        }
+    }
+    return rows;
+}
 
 std::string_view verdict(bool passed) {
     return passed ? "PASS" : "FAIL";
@@ -230,6 +293,11 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
         make_row("Length", std::abs(length_diff) <= 1,
                  std::format("{} frames vs {} expected", out_audio.frame_count().value(),
                              source.frame_count().value())));
+    auto pitch = pitch_rows(*run, out_audio, PitchCheckParams{});
+    if (!pitch) {
+        return Unexpected{pitch.error()};
+    }
+    m.rows.insert(m.rows.end(), pitch->begin(), pitch->end());
     const double edited_rms = rms(out_audio);
     const double original_rms = rms(*original);
     m.match_scale = original_rms > 0.0 ? edited_rms / original_rms : 1.0;
@@ -258,7 +326,7 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
             return Unexpected{r.error()};
         }
     }
-    return AuditionSummary{.all_checks_passed = all_passed, .report = report};
+    return AuditionSummary{.all_checks_passed = all_passed, .rows = m.rows, .report = report};
 }
 
 }  // namespace anno::cli

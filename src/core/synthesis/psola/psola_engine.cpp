@@ -247,12 +247,14 @@ struct Grain {
     double synthesis_position;
     double before;
     double after;
+    double output_period;  // the shifted period at this mark, samples
 };
 
 struct Accumulator {
     std::int64_t first;  // global sample of index 0
     std::vector<double> sum;
     std::vector<double> window_sum;
+    std::vector<double> output_period;  // of the nearest grain, samples (0 where none)
 };
 
 void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
@@ -266,6 +268,9 @@ void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
         const auto idx = static_cast<std::size_t>(n - acc.first);
         acc.sum[idx] += window * x.cubic(static_cast<double>(g.analysis_mark) + u);
         acc.window_sum[idx] += window;
+        if (window >= 0.5) {
+            acc.output_period[idx] = g.output_period;
+        }
     }
 }
 
@@ -286,12 +291,44 @@ void synthesise_run(const Signal& x, const PeriodCurve& period, double ratio, do
         const double before = i > 0 ? static_cast<double>(marks[i] - marks[i - 1]) : t;
         const double after =
             i + 1 < marks.size() ? static_cast<double>(marks[i + 1] - marks[i]) : t;
-        add_grain(
-            x,
-            {.analysis_mark = marks[i], .synthesis_position = s, .before = before, .after = after},
-            acc);
-        s += period.at(s) / ratio;
+        const double output_period = period.at(s) / ratio;
+        add_grain(x,
+                  {.analysis_mark = marks[i],
+                   .synthesis_position = s,
+                   .before = before,
+                   .after = after,
+                   .output_period = output_period},
+                  acc);
+        s += output_period;
     }
+}
+
+/// The overlap-add result per sample (window-normalised) with its local mean over one shifted
+/// period taken out. Down shifts space the grains wider than the source period, and the gaps are
+/// filled from different phases of the waveform, which leaves a small constant (DC) in the run.
+/// A mean over exactly one period is zero for every harmonic of the shifted pitch, so harmonic
+/// content is untouched. Samples without a grain are 0.
+std::vector<double> run_signal(const Accumulator& acc) {
+    const std::size_t n = acc.sum.size();
+    std::vector<double> y(n, 0.0);
+    std::vector<double> prefix(n + 1, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (acc.window_sum[i] > k_min_window_sum) {
+            y[i] = acc.sum[i] / acc.window_sum[i];
+        }
+        prefix[i + 1] = prefix[i] + y[i];
+    }
+    std::vector<double> out = y;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (acc.output_period[i] < 2.0) {
+            continue;
+        }
+        const auto half = static_cast<std::size_t>(0.5 * acc.output_period[i]);
+        const std::size_t lo = i > half ? i - half : 0;
+        const std::size_t hi = std::min(n, i + half + 1);
+        out[i] = y[i] - (prefix[hi] - prefix[lo]) / static_cast<double>(hi - lo);
+    }
+    return out;
 }
 
 /// The zone [first, last) and the source read around it [ext_first, ext_last), global samples on
@@ -324,7 +361,8 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
     const auto ext_count = static_cast<std::size_t>(zone.ext_last - zone.ext_first);
     Accumulator acc{.first = zone.ext_first,
                     .sum = std::vector<double>(ext_count, 0.0),
-                    .window_sum = std::vector<double>(ext_count, 0.0)};
+                    .window_sum = std::vector<double>(ext_count, 0.0),
+                    .output_period = std::vector<double>(ext_count, 0.0)};
     const auto zone_begin = static_cast<double>(zone.first);
     const auto zone_end = static_cast<double>(zone.last);
     for (const Run& run : shifted_runs(frames)) {
@@ -339,13 +377,14 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
             synthesise_run(x, PeriodCurve{frames, run, zone.rate}, zone.ratio, left, right, acc);
         }
     }
+    const std::vector<double> y = run_signal(acc);
     const auto zone_offset = static_cast<std::size_t>(zone.first - zone.ext_first);
     for (std::size_t n = 0; n < samples.size(); ++n) {
         const std::size_t idx = n + zone_offset;
         if (w[n] > 0.0 && acc.window_sum[idx] > k_min_window_sum) {
             const double q = 0.5 * std::numbers::pi * w[n];
             samples[n] = static_cast<float>(std::cos(q) * static_cast<double>(samples[n]) +
-                                            std::sin(q) * acc.sum[idx] / acc.window_sum[idx]);
+                                            std::sin(q) * y[idx]);
         }
     }
 }

@@ -1,6 +1,7 @@
 anno_add_library(cli/checks
-    SOURCES checks/audio_checks.cpp
-    PUBLIC_DEPS anno_core_types)
+    SOURCES checks/audio_checks.cpp checks/pitch_checks.cpp
+    PUBLIC_DEPS anno_core_types
+    PRIVATE_DEPS anno_core_dsp)
 
 anno_add_library(cli/scenario
     SOURCES scenario/scenario.cpp
