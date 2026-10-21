@@ -41,9 +41,8 @@ All of these thresholds are provisional in the sense of the ROADMAP fuzzy-decisi
 namespace anno {
 struct PartialsParams {
     int max_harmonics = 60;           // 1..200; capped by Nyquist (0.45 * rate) per frame
-    double window_periods = 4.0;      // f0-adaptive analysis window length in periods, 3..8
+    double window_periods = 4.0;      // f0-adaptive window length in periods, 4..8 (Blackman-Harris)
     double fft_pad_factor = 5.0;      // zero-padding for QIFFT, >= 4 (spec B5)
-    bool slope_correction = true;     // Röbel frequency-slope bias correction
     Cents search_halfwidth{40.0};     // sieve window around k * f0, 10..100
 };
 
@@ -228,3 +227,5 @@ Consequences for this phase (tell me if you disagree before stage 2):
 4. **Routing order** is the research's: burst, fricative, breath, rough, breathy, modal; labels median-filtered over 3-5 frames, minimum segment 20 ms except bursts, class boundaries crossfaded 2-5 ms. `class_edge_fade_s` default 8 ms -> **4 ms**.
 5. **Calibration** (round-trip null-edit and +-2 semitone tests per class, tolerances in the research's last table, e.g. plosive onset within 2 ms, centroid within 5 %, modal F0 under 10 cents) become the objective checks of stages 5-9; they are the research's guesses, so they are recorded as provisional and never loosened without asking.
 6. Neural vocoders (h-NSF and similar) stay Phase 13. Not built here.
+
+- **Stage 1 result (2026-10-20):** `analyse_partials` implemented with a Blackman-Harris window (Hann leaked 3.8 cent at four periods); `window_periods` is 4..8; the `slope_correction` option was dropped because the vibrato and glide gates pass without it (see `src/core/analysis/partials/README.md`). Real-voice residual is measured at stage 4.
