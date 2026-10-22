@@ -7,10 +7,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <numbers>
 #include <random>
+#include <utility>
 #include <vector>
 
 using namespace anno;
@@ -506,4 +509,44 @@ TEST_CASE("a_large_down_shift_leaves_no_dc_offset", "[psola_engine]") {
     };
     const double before = level(fx.render(PsolaEngine{}, fx.effective(0.0)).value());
     CHECK(std::abs(20.0 * std::log10(level(out) / before)) < 1.5);
+}
+
+namespace {
+
+/// FNV-1a over the samples rounded to 1e-7 (not the bits: libm differs between platforms).
+std::uint64_t quantised_hash(std::span<const float> x) {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (const float v : x) {
+        const auto q = static_cast<std::int64_t>(std::llround(static_cast<double>(v) * 1e7));
+        for (int b = 0; b < 8; ++b) {
+            h = (h ^ ((static_cast<std::uint64_t>(q) >> (8U * static_cast<unsigned>(b))) & 0xFFU)) *
+                1099511628211ULL;
+        }
+    }
+    return h;
+}
+
+}  // namespace
+
+// Pins the engine's output so a refactor (the grain extraction, ADR-0023) can be shown to leave it
+// unchanged: recorded from the code before the extraction (2026-10-22). libm and FMA contraction
+// differ between platforms in the last bits, which rounding cannot hide for float samples, so the
+// hashes are checked on macOS (where they were recorded) only.
+TEST_CASE("psola_output_is_pinned_by_a_hash_of_the_rounded_samples", "[psola_engine]") {
+#ifdef __APPLE__
+    const Fixture fx{
+        voice([](double t) { return 220.0 + 6.0 * std::sin(2.0 * std::numbers::pi * 5.5 * t); },
+              harmonic_amps(10, 0.6))};
+    const std::array<std::pair<double, std::uint64_t>, 3> pinned = {
+        {{100.0, 0x26ad1b9c76a3b65aULL},
+         {-250.0, 0xfb1748aa2e350504ULL},
+         {600.0, 0x4f63c0cfa55e7c5dULL}}};
+    for (const auto& [cents, hash] : pinned) {
+        const auto out = fx.render(PsolaEngine{}, fx.effective(cents)).value();
+        INFO(cents << " cents");
+        CHECK(quantised_hash(out.audio.channel(0)) == hash);
+    }
+#else
+    SUCCEED("the pinned hashes are checked on macOS only");
+#endif
 }

@@ -2,6 +2,10 @@
 
 #include "core/synthesis/engine/engine_support.h"
 #include "core/synthesis/engine/source_through_map.h"
+#include "core/synthesis/grain/marks.h"
+#include "core/synthesis/grain/overlap_add.h"
+#include "core/synthesis/grain/period_curve.h"
+#include "core/synthesis/grain/signal.h"
 
 #include <algorithm>
 #include <bit>
@@ -14,10 +18,14 @@ namespace anno {
 
 namespace {
 
-constexpr double k_min_period_s = 1.0 / 2000.0;  // pitch periods are kept inside 40..2000 Hz
-constexpr double k_max_period_s = 1.0 / 40.0;
+using grain::Accumulator;
+using grain::analysis_marks;
+using grain::Grain;
+using grain::k_max_period_s;
+using grain::PeriodCurve;
+using grain::Signal;
+
 constexpr double k_context_periods = 3.0;  // source read around the zone, in longest periods
-constexpr double k_snap_halfwidth = 0.2;   // mark search window, fraction of a period
 constexpr double k_min_window_sum = 1e-6;
 constexpr int k_max_separation_cycles = 8;
 constexpr double k_margin_s = 0.1;  // how far a shifted edge frame's run continues past the note
@@ -136,174 +144,14 @@ std::vector<Run> shifted_runs(const std::vector<PitchFrame>& frames) {
     return runs;
 }
 
-/// Pitch period in samples at sample position `pos` inside `run` (cents interpolated linearly
-/// between frame centres, held outside the run's frames), kept inside the period limits.
-class PeriodCurve {
-public:
-    PeriodCurve(std::span<const PitchFrame> frames, Run run, double rate)
-        : frames_{frames}, run_{run}, rate_{rate} {}
-
-    [[nodiscard]] double at(double pos) const {
-        const PitchFrame* lo = &frames_[run_.first];
-        const PitchFrame* hi = &frames_[run_.last];
-        double cents = 0.0;
-        if (pos <= lo->position) {
-            cents = lo->cents;
-        } else if (pos >= hi->position) {
-            cents = hi->cents;
-        } else {
-            const auto begin = frames_.begin() + static_cast<std::ptrdiff_t>(run_.first);
-            const auto end = frames_.begin() + static_cast<std::ptrdiff_t>(run_.last) + 1;
-            const auto upper = std::upper_bound(
-                begin, end, pos, [](double v, const PitchFrame& f) { return v < f.position; });
-            const PitchFrame& b = *upper;
-            const PitchFrame& a = *(upper - 1);
-            const double w = (pos - a.position) / (b.position - a.position);
-            cents = a.cents + w * (b.cents - a.cents);
-        }
-        const double period = rate_ / to_hz(Cents{cents}, k_a4_standard_hz).value();
-        return std::clamp(period, k_min_period_s * rate_, k_max_period_s * rate_);
+/// The run's frames as the points of a period curve.
+std::vector<grain::CentsPoint> curve_points(std::span<const PitchFrame> frames, Run run) {
+    std::vector<grain::CentsPoint> points;
+    points.reserve(run.last - run.first + 1);
+    for (std::size_t i = run.first; i <= run.last; ++i) {
+        points.push_back({.position = frames[i].position, .cents = frames[i].cents});
     }
-
-private:
-    std::span<const PitchFrame> frames_;
-    Run run_;
-    double rate_;
-};
-
-// ---- Marks and grains
-// ------------------------------------------------------------------------------
-
-/// The source samples around the zone with a way to read them at fractional positions.
-class Signal {
-public:
-    Signal(std::span<const float> samples, std::int64_t first) : samples_{samples}, first_{first} {}
-
-    [[nodiscard]] std::int64_t first() const { return first_; }
-    [[nodiscard]] std::int64_t end() const {
-        return first_ + static_cast<std::int64_t>(samples_.size());
-    }
-
-    [[nodiscard]] double at(std::int64_t global) const {
-        const std::int64_t i = global - first_;
-        return i < 0 || std::cmp_greater_equal(i, samples_.size())
-                   ? 0.0
-                   : static_cast<double>(samples_[static_cast<std::size_t>(i)]);
-    }
-
-    /// Catmull-Rom interpolation at a fractional global sample position.
-    [[nodiscard]] double cubic(double pos) const {
-        const double floor_pos = std::floor(pos);
-        const auto i = static_cast<std::int64_t>(floor_pos);
-        const double f = pos - floor_pos;
-        const double p0 = at(i - 1);
-        const double p1 = at(i);
-        const double p2 = at(i + 1);
-        const double p3 = at(i + 2);
-        return p1 +
-               0.5 * f *
-                   (p2 - p0 +
-                    f * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + f * (3.0 * (p1 - p2) + p3 - p0)));
-    }
-
-private:
-    std::span<const float> samples_;
-    std::int64_t first_;
-};
-
-/// Analysis marks over [from, to] (fractional global samples): the first at the strongest sample
-/// of one period, each next one placed where the waveform best matches the previous mark's, within
-/// +-k_snap_halfwidth periods of one period later (the period at the previous mark), refined to a
-/// fraction of a sample. A peak pick jumps between features of a real voice and misaligns the
-/// grains it places (the hiccups, tests/audio phase 4 listening); matching the previous period
-/// keeps every mark on the same feature.
-std::vector<double> analysis_marks(const Signal& x, const PeriodCurve& period, double from,
-                                   double to) {
-    std::vector<double> marks;
-    const auto lo = static_cast<std::int64_t>(std::floor(from));
-    const auto first_hi = lo + static_cast<std::int64_t>(std::ceil(period.at(from)));
-    std::int64_t first = lo;
-    for (std::int64_t n = lo; n <= first_hi; ++n) {
-        if (x.at(n) > x.at(first)) {
-            first = n;
-        }
-    }
-    marks.push_back(static_cast<double>(first));
-    const auto similarity = [&](double prev, double candidate, std::int64_t reach) {
-        double dot = 0.0;
-        double e_prev = 0.0;
-        double e_cand = 0.0;
-        for (std::int64_t k = -reach; k <= reach; ++k) {
-            const double a = x.cubic(prev + static_cast<double>(k));
-            const double b = x.cubic(candidate + static_cast<double>(k));
-            dot += a * b;
-            e_prev += a * a;
-            e_cand += b * b;
-        }
-        return dot / std::sqrt(e_prev * e_cand + 1e-30);
-    };
-    while (true) {
-        const double prev = marks.back();
-        const double t = period.at(prev);
-        const double nominal = prev + t;
-        if (nominal > to) {
-            break;
-        }
-        const auto half = static_cast<std::int64_t>(std::ceil(k_snap_halfwidth * t));
-        const auto reach = static_cast<std::int64_t>(std::ceil(0.5 * t));
-        const auto centre = static_cast<std::int64_t>(std::llround(nominal));
-        std::int64_t best = centre;
-        double best_score = -2.0;
-        for (std::int64_t n = centre - half; n <= centre + half; ++n) {
-            const double score = similarity(prev, static_cast<double>(n), reach);
-            if (score > best_score) {
-                best_score = score;
-                best = n;
-            }
-        }
-        // Parabola through the score at best-1, best, best+1 for the fractional position.
-        const double left = similarity(prev, static_cast<double>(best - 1), reach);
-        const double right = similarity(prev, static_cast<double>(best + 1), reach);
-        const double curve = left - 2.0 * best_score + right;
-        const double offset =
-            curve < -1e-12 ? std::clamp(0.5 * (left - right) / curve, -0.5, 0.5) : 0.0;
-        marks.push_back(static_cast<double>(best) + offset);
-    }
-    return marks;
-}
-
-/// Adds one two-period Hann grain around analysis mark `a` (periods before and after it:
-/// before/after, samples) at synthesis position `s` into acc and window_sum.
-struct Grain {
-    double analysis_mark;  // fractional global sample
-    double synthesis_position;
-    double before;
-    double after;
-    double output_period;  // the shifted period at this mark, samples
-};
-
-struct Accumulator {
-    std::int64_t first;  // global sample of index 0
-    std::vector<double> sum;
-    std::vector<double> window_sum;
-    std::vector<double> window_square_sum;  // sum of the squared windows (noise power gain)
-    std::vector<double> output_period;  // of the latest grain covering the sample (0 where none)
-};
-
-void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
-    const auto lo = static_cast<std::int64_t>(std::ceil(g.synthesis_position - g.before));
-    const auto hi = static_cast<std::int64_t>(std::floor(g.synthesis_position + g.after));
-    for (std::int64_t n = std::max(lo, acc.first);
-         n <= hi && std::cmp_less(n - acc.first, acc.sum.size()); ++n) {
-        const double u = static_cast<double>(n) - g.synthesis_position;
-        const double span = u < 0.0 ? g.before : g.after;
-        const double window = 0.5 * (1.0 + std::cos(std::numbers::pi * u / span));
-        const auto idx = static_cast<std::size_t>(n - acc.first);
-        acc.sum[idx] += window * x.cubic(g.analysis_mark + u);
-        acc.window_sum[idx] += window;
-        acc.window_square_sum[idx] += window * window;
-        acc.output_period[idx] = g.output_period;  // the latest grain covering the sample
-    }
+    return points;
 }
 
 /// Mean square of the source over the cycle around each mark (a tiny floor keeps ratios finite).
@@ -431,13 +279,13 @@ void synthesise_run(const Signal& x, const PeriodCurve& period, double ratio, do
         const double before = i > 0 ? marks[i] - marks[i - 1] : t;
         const double after = i + 1 < marks.size() ? marks[i + 1] - marks[i] : t;
         const double output_period = period.at(s) / ratio;
-        add_grain(grains_from,
-                  {.analysis_mark = marks[i],
-                   .synthesis_position = s,
-                   .before = before,
-                   .after = after,
-                   .output_period = output_period},
-                  acc);
+        grain::add_grain(grains_from,
+                         {.analysis_mark = marks[i],
+                          .synthesis_position = s,
+                          .before = before,
+                          .after = after,
+                          .output_period = output_period},
+                         acc);
         s += output_period;
     }
 }
@@ -520,8 +368,8 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
                 ? zone_end
                 : std::min(frames[run.last].position + 0.5 * hop_samples, zone_end);
         if (right > left) {
-            synthesise_run(x, PeriodCurve{frames, run, zone.rate}, zone.ratio, left, right,
-                           p.separation_cycles, periodic, acc);
+            synthesise_run(x, PeriodCurve{curve_points(frames, run), zone.rate}, zone.ratio, left,
+                           right, p.separation_cycles, periodic, acc);
         }
     }
     const std::vector<double> y = run_signal(acc);
