@@ -268,8 +268,8 @@ TEST_CASE("a_clean_tone_gets_harmonics_at_its_pitch_and_the_voiced_class", "[ana
     REQUIRE(result->notes.size() == 1);
     const Note& n = result->notes[0];
     const auto cols = static_cast<std::size_t>(n.harmonics.freq_hz.cols);
-    const std::size_t mid = static_cast<std::size_t>(n.grid.n_frames) / 2;
-    const double f1 = static_cast<double>(n.harmonics.freq_hz.data[mid * cols]);
+    const auto mid = static_cast<std::size_t>(n.grid.n_frames) / 2;
+    const auto f1 = static_cast<double>(n.harmonics.freq_hz.data[mid * cols]);
     CHECK(std::abs(1200.0 * std::log2(f1 / 330.0)) < 3.0);
     CHECK(n.harmonics.amp_linear.data[mid * cols] > 0.0F);
     std::size_t voiced = 0;

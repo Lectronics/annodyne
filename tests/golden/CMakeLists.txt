@@ -1,6 +1,8 @@
 # Golden recordings (label `golden`): the committed Vocadito subset in tests/golden/vocals/vocadito
 # (audio, f0 and note CSVs; see its ATTRIBUTION.md and tests/golden/vocals/README.md).
-anno_add_test(NAME golden_vocals_test SOURCES golden_vocals_test.cpp LABELS golden
+# analyse() runs the whole analysis (pitch, onsets, partials, noise classes, envelope) on five tracks:
+# 508 s under TSan on a 4-core laptop, more than the preset's 300 s.
+anno_add_test(NAME golden_vocals_test SOURCES golden_vocals_test.cpp LABELS golden TIMEOUT 1500
               DEPS anno::core_analysis_orchestrator anno::core_io)
 target_compile_definitions(golden_vocals_test PRIVATE
     ANNO_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/vocals/vocadito")

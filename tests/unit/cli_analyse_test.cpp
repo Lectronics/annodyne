@@ -87,7 +87,7 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
                             "separation_in", "harmonic_count", "sound_classes"}) {
         CHECK(n0.contains(key));
     }
-    REQUIRE(n0["sound_classes"].size() >= 1);
+    REQUIRE_FALSE(n0["sound_classes"].empty());
     for (const char* key : {"class", "start_s", "end_s"}) {
         CHECK(n0["sound_classes"][0].contains(key));
     }

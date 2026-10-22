@@ -164,7 +164,8 @@ TEST_CASE("tool_and_raw_edits_cannot_be_mixed_and_more_drag_errors_are_named", "
         R"({"category": "pitch", "op": "add", "param": "center_offset", "value": 1, "target": {"note_id": "n"}})";
     const std::string drag =
         R"({"tool": "pitch_drag", "target": {"note_index": 0}, "offset_cents": 5})";
-    CHECK(error(R"("edits": [)" + raw + "," + drag + "]}").find("$.edits") != std::string::npos);
+    const std::string mixed = R"("edits": [)" + raw + "," + drag + "]}";
+    CHECK(error(mixed).find("$.edits") != std::string::npos);
     CHECK(
         parse(R"({"name": "x", "source": "v.wav", "analysis": "analyse", "edits": [)" + raw + "]}")
             .has_value());  // note_id raw edits are fine in analyse mode

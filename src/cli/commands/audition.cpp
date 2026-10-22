@@ -153,7 +153,7 @@ Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioB
         const Note* after = matching_note(**again, note);
         const auto before_vibrato = vibrato_of(note, limits);
         if (before_vibrato && before_vibrato->extent.value() >= k_min_vibrato_extent_cents) {
-            const auto after_vibrato = after ? vibrato_of(*after, limits) : std::nullopt;
+            const auto after_vibrato = after != nullptr ? vibrato_of(*after, limits) : std::nullopt;
             const bool ok =
                 after_vibrato &&
                 std::abs((after_vibrato->rate - before_vibrato->rate).value()) <=
@@ -169,7 +169,7 @@ Result<std::vector<CheckRow>> pitch_rows(const LoadedScenario& run, const AudioB
                     : "the render has no measurable vibrato"));
         }
         const auto formant_before = first_formant(note);
-        const auto formant_after = after ? first_formant(*after) : std::nullopt;
+        const auto formant_after = after != nullptr ? first_formant(*after) : std::nullopt;
         if (formant_before && !formant_after) {
             rows.push_back(make_row(AuditionCheck::first_formant, "First formant" + who, false,
                                     "found in the source, not measurable in the render"));

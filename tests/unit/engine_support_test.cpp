@@ -55,6 +55,7 @@ TEST_CASE("run_weights_are_one_inside_a_shifted_run_zero_outside_with_raised_cos
           "[engine_support]") {
     // Frames every 100 samples; frames 2..4 shifted. A run ends half a hop beyond its last frame.
     std::vector<RunFrame> frames;
+    frames.reserve(8);
     for (int i = 0; i < 8; ++i) {
         frames.push_back({.position = 100.0 * i, .shifted = i >= 2 && i <= 4});
     }

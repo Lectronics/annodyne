@@ -48,7 +48,7 @@ TEST_CASE("two_drags_in_a_row_land_on_the_second_target", "[main_tool]") {
     EditList edits{TrackId{"t1"}};
     for (const double target : {7100.0, 6700.0}) {
         const std::vector<EditSpec> group{
-            pitch_drag_edit(a, {NoteId{"n1"}, Cents{target}}).value()};
+            pitch_drag_edit(a, {.note = NoteId{"n1"}, .target = Cents{target}}).value()};
         edits = edits.add(group, WallTime{}).value();
     }
     const EffectiveNote eff = effective_state(a.notes[0], edits);
