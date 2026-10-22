@@ -169,6 +169,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `tools/note_assignment`: octave moves, split/merge, re-analysis with `remap_after_reanalysis`.
 - Selective reset by category.
 - *(ADR-0018)* A per-singer calibration profile (thresholds, labels) is saved with the project.
+- *(owner, 2026-10-22; `docs/design/clips-layers-and-groups.md`)* Reserve the clip/layer model: `Clip`, `Layer`, `ClipSet`, `SegmentKind::clip`, and `layers` in the project format from version 1, so Phase 12 copy/paste needs no migration. ADR "clips and layers" written with this slice.
 
 **Verify:** save → load → render is bit-identical to before saving; re-analysis keeps edits on unchanged notes; orphaned edits are reported, never dropped.
 
@@ -222,7 +223,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 - `features/multitrack` (cross-track selection, cross-track macros, quantize to reference track with DTW).
 - `features/sound_editor` (harmonic gains, spectral macros, timbre transfer).
-- `features/midi_export`, `features/clipboard` (virtual notes, harmonies).
+- `features/midi_export`, `features/clipboard` (virtual notes, harmonies): rectangle selection, paste with transposition into a new layer, group moves, layer mix in `render_region` (owner's scenario and open questions in `docs/design/clips-layers-and-groups.md`).
 
 **Exit gate:** listening sheet + structure audit #4.
 
