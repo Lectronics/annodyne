@@ -266,3 +266,119 @@ TEST_CASE("a_note_at_the_start_pushed_later_leaves_silence_before_it", "[build_t
     CHECK(out_of(m, 6.0) == 6.0);  // the fixed end
     CHECK(std::holds_alternative<GeneratedTime>(m.to_source(out(0.25))));
 }
+
+// ---- Tail policy and whole-sample shifts (ADR-0023)
+
+namespace {
+
+TimeMapBuild build_shift_tail(const std::vector<Note>& notes, const EditList& edits,
+                              double sample_rate = 0.0) {
+    return build_time_map(notes, edits,
+                          TimeMapParams{.source_end = src(6.0),
+                                        .tail = TailPolicy::shift,
+                                        .sample_rate = Hz{sample_rate}})
+        .value();
+}
+
+/// d = output - source of the warp that holds source time `s`, in samples at `rate_hz`.
+double shift_samples_at(const TimeMap& m, double s, double rate_hz) {
+    return (out_of(m, s) - s) * rate_hz;
+}
+
+}  // namespace
+
+TEST_CASE("the_default_tail_policy_keeps_the_length_and_squeezes_the_tail", "[build_time_map]") {
+    const auto kept = build_to_end(
+        notes3(), edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{2.0})}));
+    CHECK(out_of(kept.map, 6.0) == 6.0);
+    CHECK(kept.map.output_length().value() == 6.0);
+}
+
+TEST_CASE("the_shift_tail_policy_leaves_the_audio_after_the_edit_a_shifted_slope_1_warp",
+          "[build_time_map]") {
+    const auto built = build_shift_tail(
+        notes3(), edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{2.0})}));
+    const TimeMap& m = built.map;
+    // a's body doubles (0.9 s -> 1.8 s): everything after is shifted by 0.9 s, not squeezed
+    CHECK(std::abs(out_of(m, 2.0) - 2.9) < 1e-12);
+    CHECK(std::abs(out_of(m, 3.0) - 3.9) < 1e-12);
+    CHECK(std::abs(out_of(m, 6.0) - 6.9) < 1e-12);
+    CHECK(m.slope_at(*m.to_output(src(4.5))) == Ratio{1.0});
+    CHECK(std::abs(m.output_length().value() - 6.9) < 1e-12);
+    CHECK(built.repaired_notes == 0);
+}
+
+TEST_CASE("the_shift_tail_policy_with_no_timing_edit_is_still_the_exact_identity",
+          "[build_time_map]") {
+    const auto built = build_shift_tail(notes3(), EditList{TrackId{"t1"}});
+    CHECK(built.map.is_identity());
+}
+
+TEST_CASE("quantising_the_shift_makes_every_slope_1_span_a_whole_sample_shift",
+          "[build_time_map]") {
+    constexpr double k_rate = 44100.0;
+    // fractional note times: the source anchors are not on the sample grid
+    std::vector<Note> notes{make_note("a", 1.00003, 2.00007), make_note("b", 3.0, 4.0)};
+    const auto built = build_shift_tail(
+        notes, edits_of({timing("a", EditParam::length_scale, EditOp::set, Ratio{1.37})}), k_rate);
+    const TimeMap& m = built.map;
+    for (const double s : {0.5, 1.02, 3.5, 5.0}) {  // before a, a's attack, b, the tail
+        const double d = shift_samples_at(m, s, k_rate);
+        CHECK(std::abs(d - std::round(d)) < 1e-6);
+        CHECK(std::abs(m.slope_at(*m.to_output(src(s))).value() - 1.0) < 1e-9);
+    }
+    // the stretched body keeps its ratio to better than one sample over its length
+    const double body_out = out_of(m, 2.00007) - out_of(m, 1.00003 + 0.1);
+    CHECK(std::abs(body_out - (2.00007 - 1.10003) * 1.37) < 1.0 / k_rate);
+    CHECK(built.repaired_notes == 0);  // rounding alone is not a repair
+}
+
+TEST_CASE("quantising_a_pure_fractional_move_gives_a_whole_sample_shift", "[build_time_map]") {
+    constexpr double k_rate = 44100.0;
+    const auto built = build_shift_tail(
+        notes3(), edits_of({timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.1000123})}),
+        k_rate);
+    const double d = shift_samples_at(built.map, 5.5, k_rate);
+    CHECK(std::abs(d - std::round(d)) < 1e-6);
+    CHECK(std::abs(d - 0.1000123 * k_rate) <= 0.5 + 1e-9);
+}
+
+TEST_CASE("without_a_sample_rate_the_maps_are_unchanged", "[build_time_map]") {
+    const auto edits =
+        edits_of({timing("b", EditParam::onset_shift, EditOp::add, Seconds{0.1000123})});
+    const auto plain = build_shift_tail(notes3(), edits, 0.0);
+    CHECK(std::abs(out_of(plain.map, 5.5) - 5.6000123) < 1e-12);
+}
+
+TEST_CASE("quantisation_never_collapses_two_anchors_closer_than_a_sample", "[build_time_map]") {
+    constexpr double k_rate = 44100.0;
+    // a note whose attack ends 0.3 samples after its start: two anchors a third of a sample apart
+    std::vector<Note> notes{make_note("a", 1.0, 2.0)};
+    notes[0].attack_end = src(1.0 + 0.3 / k_rate);
+    const auto built = build_shift_tail(
+        notes, edits_of({timing("a", EditParam::attack_time_scale, EditOp::set, Ratio{40.0})}),
+        k_rate);
+    const auto spans = built.map.spans();
+    for (const TimeSpan& span : spans) {
+        CHECK(span.output_end >= span.output_start);
+    }
+    CHECK(built.map.output_length().value() > 6.0 - 1e-9);
+}
+
+TEST_CASE("a_push_past_the_fixed_end_cancels_the_quantisation", "[build_time_map]") {
+    constexpr double k_rate = 44100.0;
+    // The note ends 4.6 samples before the fixed end; the edit pulls its end back to within 1 ns of
+    // it, a shift of 4.6 samples, which would round up to 5 and land after the fixed end.
+    std::vector<Note> notes{make_note("a", 5.0, 6.0 - 4.6 / k_rate)};
+    const auto built =
+        build_time_map(notes,
+                       edits_of({timing("a", EditParam::onset_shift, EditOp::add, Seconds{1.0})}),
+                       TimeMapParams{.min_segment = Seconds{1e-9},
+                                     .source_end = src(6.0),
+                                     .tail = TailPolicy::keep_length,
+                                     .sample_rate = Hz{k_rate}})
+            .value();
+    CHECK(built.map.output_length().value() == 6.0);
+    CHECK(out_of(built.map, 6.0 - 4.6 / k_rate) < 6.0);
+    CHECK(built.repaired_notes == 1);  // the pull-back from the fixed end, counted as before
+}

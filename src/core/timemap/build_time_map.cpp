@@ -145,6 +145,30 @@ Result<void> check_notes(std::span<const Note> notes, const EditList& edits,
     return {};
 }
 
+/// Rounds the shift t - s of every anchor to a whole number of samples (ADR-0023), so two anchors
+/// that bound a slope-1 span (equal shift) keep equal shifts. Strictness: an output at or before
+/// the previous one takes one more sample of shift until it is later. Returns false, leaving the
+/// anchors as they were, if that would push an anchor to or past the fixed end.
+bool quantise_shifts(std::vector<Anchor>& anchors, bool fixed_end, double rate_hz) {
+    const std::vector<Anchor> before = anchors;
+    const double sample = 1.0 / rate_hz;
+    for (std::size_t k = 1; k < anchors.size(); ++k) {
+        double shift = std::round((anchors[k].t - anchors[k].s) * rate_hz) * sample;
+        double t = anchors[k].s + shift;
+        while (t <= anchors[k - 1].t) {
+            shift += sample;
+            t = anchors[k].s + shift;
+        }
+        anchors[k].t = t;
+    }
+    const bool end_moved = fixed_end && anchors.back().t != before.back().t;
+    if (end_moved) {
+        anchors = before;
+        return false;
+    }
+    return true;
+}
+
 bool is_identity(const std::vector<Anchor>& anchors) {
     return std::ranges::all_of(anchors, [](const Anchor& a) { return a.s == a.t; });
 }
@@ -168,7 +192,8 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
             append(done, desired_anchors(static_cast<int>(i), notes[i], eff), repaired);
         }
     }
-    const bool fixed_end = raw(params.source_end) > done.back().s;
+    const bool fixed_end =
+        params.tail == TailPolicy::keep_length && raw(params.source_end) > done.back().s;
     if (fixed_end) {
         done.push_back(
             {.s = raw(params.source_end), .t = raw(params.source_end), .note = k_no_note});
@@ -188,6 +213,10 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
         }
     }
     const int repaired_notes = static_cast<int>(std::ranges::count(repaired, true));
+    if (params.sample_rate.value() > 0.0) {
+        // The fixed end has shift 0, so it is unchanged; quantise_shifts refuses to move it.
+        (void)quantise_shifts(done, fixed_end, params.sample_rate.value());
+    }
     // The domain ends at the recording's end; when that is unknown (map-only use) at the last note
     // or anchor, whichever is later.
     double length = std::max(raw(params.source_end), done.back().s);

@@ -13,6 +13,13 @@
 
 namespace anno {
 
+/// What happens to the audio after the last edited anchor (ADR-0023).
+enum class TailPolicy {
+    keep_length,  // squeezed or stretched to the recording's end: the file keeps its length
+                  // (ADR-0005 §11)
+    shift         // slope 1, moved by the accumulated change: the output gets longer or shorter
+};
+
 struct TimeMapParams {
     /// Minimum output length of a segment that timing edits changed (builder policy, not a TimeMap
     /// invariant). Segments no edit touched keep their source length even when shorter.
@@ -24,6 +31,15 @@ struct TimeMapParams {
     /// tests; render_region always passes the recording's end). An anchor pushed later at source 0
     /// becomes silence before the audio (a leading insert span).
     SourceTime source_end;
+    /// Only matters when `source_end` is known. `shift` makes the tail a slope-1 warp after the
+    /// last edited anchor (the map's domain still ends at `source_end`); the default is the Flex
+    /// rule.
+    TailPolicy tail = TailPolicy::keep_length;
+    /// When above 0: the shift (output minus source time) of every anchor is rounded to a whole
+    /// number of samples at this rate, after the minimum-segment repair, so every slope-1 span is a
+    /// whole-sample shift of the source (read_through_map needs that). A stretched span's ratio
+    /// changes by under one sample over its length. 0 (default) leaves the anchors exact.
+    Hz sample_rate{0.0};
 };
 
 struct TimeMapBuild {
