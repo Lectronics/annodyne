@@ -1,4 +1,6 @@
 #include "core/analysis/onsets/onset_stages.h"
+#include "core/analysis/onsets/onsets.h"
+#include "core/analysis/orchestrator/analyse.h"
 #include "support/onset_bench.h"
 #include "support/onset_score.h"
 #include "support/synth_signals.h"
@@ -547,4 +549,74 @@ TEST_CASE("level_normalisation_makes_the_fixed_threshold_level_independent", "[o
     }
     // Without P0 the same fixed threshold loses the onsets once the level is far enough down.
     CHECK(pooled(TransientParams{}, -40.0).f_measure() < 0.2);
+}
+
+// ---- the method switch of detect_onsets / analyse() -----------------------------------------
+
+TEST_CASE("analyse_runs_the_staged_pipeline_by_default_and_onset_params_default_is_phase_3",
+          "[onset_stages]") {
+    CHECK(AnalyseParams{}.onsets.method == SpectralMethod::windowed_peaks);
+    CHECK(AnalyseParams{}.onsets.pipeline.level.has_value());
+    CHECK(OnsetParams{}.method == SpectralMethod::adaptive_threshold);
+    const OnsetParams analysis = analysis_onset_params();
+    CHECK(analysis.method == SpectralMethod::windowed_peaks);
+    CHECK(analysis.pipeline.log.log_gain == 1.0);
+    CHECK(analysis.pipeline.peaks.delta_activation == Approx(0.05));
+}
+
+TEST_CASE("detect_onsets_checks_the_shared_fields_for_both_methods_and_the_chain_for_phase_3",
+          "[onset_stages]") {
+    const auto src = AudioSource::from_buffer(to_buffer(family_a().samples, k_sr));
+    for (const SpectralMethod method :
+         {SpectralMethod::adaptive_threshold, SpectralMethod::windowed_peaks}) {
+        OnsetParams bad_step;
+        bad_step.method = method;
+        bad_step.energy_step_window = Seconds{0.0};
+        CHECK(detect_onsets(src, bad_step).error().code == ErrorCode::invalid_argument);
+        OnsetParams bad_gap;
+        bad_gap.method = method;
+        bad_gap.min_gap = Seconds{-1.0};
+        CHECK(detect_onsets(src, bad_gap).error().code == ErrorCode::invalid_argument);
+    }
+    // A Phase 3 field is checked only for the Phase 3 chain; the pipeline checks its own.
+    OnsetParams chain;
+    chain.threshold_window = Seconds{0.0};
+    CHECK(detect_onsets(src, chain).error().code == ErrorCode::invalid_argument);
+    OnsetParams pipeline = analysis_onset_params();
+    pipeline.threshold_window = Seconds{0.0};
+    CHECK(detect_onsets(src, pipeline).has_value());
+    pipeline.pipeline.peaks.delta_activation = -1.0;
+    CHECK(detect_onsets(src, pipeline).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("the_two_methods_and_the_energy_step_detector_on_the_bench_families", "[onset_stages]") {
+    // Recorded 2026-10-22 (docs/design/phase5-transient-pipeline.md, ADR-0022). The energy-step
+    // detector (legato level steps, ADR-0010a) false-fires on synthetic tremolo (family D: 23) and
+    // on noise (family F: 8) in BOTH methods; with it off both spectral chains are clean there.
+    // The pipeline finds more of the fast notes (G: 11 of 16 against 6) and one soft attack fewer
+    // than Phase 3 (B: 7 of 8 against 8).
+    const auto score = [](const Family& f, OnsetParams p, bool energy_steps) {
+        if (!energy_steps) {
+            p.energy_step_db = Decibels{200.0};
+        }
+        const auto src = AudioSource::from_buffer(to_buffer(f.samples, k_sr));
+        return score_onsets(to_seconds(detect_onsets(src, p).value()), f.truth, 0.025);
+    };
+    for (const Family& f : {family_a(), family_a0(), family_d(), family_f()}) {
+        INFO(f.name);
+        for (const OnsetParams& p : {OnsetParams{}, analysis_onset_params()}) {
+            const auto clean = score(f, p, false);
+            CHECK(std::cmp_equal(clean.tp, f.truth.size()));
+            CHECK(clean.fp == 0);
+        }
+    }
+    CHECK(score(family_b(), OnsetParams{}, false).tp == 8);
+    CHECK(score(family_b(), analysis_onset_params(), false).tp >= 7);
+    CHECK(score(family_b(), analysis_onset_params(), false).fp == 0);
+    for (const OnsetParams& p : {OnsetParams{}, analysis_onset_params()}) {
+        CHECK(score(family_d(), p, true).fp >= 10);
+        CHECK(score(family_f(), p, true).fp >= 4);
+    }
+    CHECK(score(family_g(), analysis_onset_params(), false).tp >
+          score(family_g(), OnsetParams{}, false).tp);
 }

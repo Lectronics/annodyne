@@ -13,6 +13,7 @@
 #include <future>
 #include <iomanip>
 #include <map>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
@@ -86,6 +87,24 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     sec("preroll", p.segmentation.preroll_max);
     sec("stab_min", p.segmentation.stable_min);
     get("mstr", p.segmentation.merge_onset_strength);
+    // The staged onset pipeline (ADR-0022): method=1 selects it; the rest set its parameters.
+    if (const auto it = o.find("method"); it != o.end()) {
+        p.onsets.method =
+            it->second != 0.0 ? SpectralMethod::windowed_peaks : SpectralMethod::adaptive_threshold;
+    }
+    db("estep",
+       p.onsets.energy_step_db);  // legato level steps (ADR-0010a); a huge value turns them off
+    get("pgain", p.onsets.pipeline.log.log_gain);
+    get("pdelta", p.onsets.pipeline.peaks.delta_activation);
+    sec("plag", p.onsets.pipeline.flux.lag);
+    sec("ppremax", p.onsets.pipeline.peaks.pre_max);
+    sec("ppostmax", p.onsets.pipeline.peaks.post_max);
+    sec("ppreavg", p.onsets.pipeline.peaks.pre_avg);
+    sec("ppostavg", p.onsets.pipeline.peaks.post_avg);
+    if (const auto it = o.find("plevel"); it != o.end()) {
+        p.onsets.pipeline.level =
+            it->second != 0.0 ? std::optional<LevelNormParams>{LevelNormParams{}} : std::nullopt;
+    }
     get("vfloor", p.segmentation.voiced_floor_prob);
     const auto unit = [&](const char* k, auto& q) {
         double v = q.value();

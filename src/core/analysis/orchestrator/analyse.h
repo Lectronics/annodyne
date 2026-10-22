@@ -38,7 +38,7 @@ struct AnalyseParams {
     ActivityParams activity;   // ADR-0011: silent frames are forced unvoiced before onsets
     C4dmPYinParams c4dm_pyin;  // PitchEngine::c4dm_pyin
     PYinParams pyin;           // PitchEngine::annodyne_pyin
-    OnsetParams onsets;
+    OnsetParams onsets = analysis_onset_params();  // the staged pipeline (ADR-0022)
     SegmentParams segmentation;
     PitchDecompositionParams decomposition;
     PitchTargetParams pitch_target;  // ADR-0013

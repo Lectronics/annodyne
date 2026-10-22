@@ -32,6 +32,17 @@ inline std::vector<float> voice(const F0Hz& f0_hz, const std::vector<double>& am
     return x;
 }
 
+/// The analysis the engine tests were written against: Phase 3's onset chain. analyse() now
+/// defaults to the staged onset pipeline (ADR-0022), which places this fixture's onset 0.2 ms later
+/// and so moves the note's frame grid by one frame; the engine tests should not follow that
+/// default. (The engines' vibrato-extent measure changes by about 1 % with a one-frame grid shift:
+/// recorded as an open item in docs/design/phase4-pitch-edit.md.)
+inline AnalyseParams engine_analysis_params() {
+    AnalyseParams params;
+    params.onsets = OnsetParams{};
+    return params;
+}
+
 struct Fixture {
     std::vector<float> mono;
     AudioSource src;
@@ -41,7 +52,7 @@ struct Fixture {
 
     explicit Fixture(std::vector<float> samples)
         : mono(std::move(samples)), src(AudioSource::from_buffer(to_buffer(mono, k_rate))),
-          analysis(analyse(src, AnalyseParams{}).value()),
+          analysis(analyse(src, engine_analysis_params()).value()),
           map(TimeMap::identity(Seconds{k_total_s})) {
         REQUIRE_FALSE(analysis->notes.empty());
         note = *std::max_element(
