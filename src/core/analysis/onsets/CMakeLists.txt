@@ -1,5 +1,6 @@
 anno_add_library(core/analysis/onsets
     SOURCES
+        onset_stages.cpp
         onsets.cpp
         detail/energy_step.cpp
         detail/peak_picking.cpp

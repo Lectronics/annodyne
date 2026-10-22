@@ -27,3 +27,26 @@ Phase 3 review. SuperFlux's vibrato advantage is demonstrated on +-200 cents wit
 onsets for plain flux, 0-1 here); +-300 cents defeats both. Soft attacks (a slow fade-in) are found at
 the start of the energy rise only if the rise is >= 6 dB inside the search window. Compiled with
 `-ffp-contract=off`.
+
+## Stages (Phase 5; `onset_stages.h`, design `docs/design/phase5-transient-pipeline.md`)
+
+The pipeline of `detect_onsets` is public as testable stages, following the onset research
+(`docs/design/onset-detection-research.md`): **P0** `normalise_level` (a scaled copy; peak or RMS of
+the active frames; the gain is returned) -> **P1** `band_spectrogram` (STFT magnitudes in the log-spaced
+unit-sum triangular bands of Phase 3) -> **P2** `adaptive_whiten` (optional; per-band decaying maximum;
+the form of Bock 2012 was not checked, provisional) -> **P3** `log_compress` (log(1 + gain x)) ->
+**D** `superflux` (max filter over neighbouring bands of the lagged frame) -> **K** `pick_peaks_windowed`
+(the research's pre/post max and average windows, ties to the first frame, first kept peak wins inside
+the gap) -> **L** `localise` (the Phase 3 energy-rise refinement, note ends dropped). `detect_transients`
+composes them (optionally P0 and P2); `detect_onsets` calls P1, P3, D and L with `OnsetParams` and keeps
+its own adaptive-threshold picker, so its output is **bit-identical** to Phase 3 (pinned by
+`onset_bench_test` "[onset_gate]": 40 signal / parameter combinations incl. a Vocadito recording).
+
+Measured on the research's synthetic families (`tests/support/onset_bench.h`; +-25 ms; the defaults of
+`TransientParams` were chosen on these same signals, so the numbers are optimistic): with P0 the pooled
+F is 0.887 at every level from 0 to -40 dB; without P0 the fixed threshold finds nothing at -40 dB.
+`detect_onsets` on the same set: F 0.545 at every level (its threshold is adaptive) with 23 false
+positives inside the single vibrato/tremolo note. Not yet decided: whether `analyse()` should use the
+new pipeline (needs an ADR with the Phase 3 golden numbers). Known weak cases: legato pitch changes
+(family C, 3 of 8) and fast notes (G: 11 of 16, about 23 ms early from the localiser).
+

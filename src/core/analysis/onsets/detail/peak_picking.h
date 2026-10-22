@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/analysis/onsets/onset_stages.h"
 #include "core/types/units.h"
 
 #include <cstddef>
@@ -8,11 +9,6 @@
 // Adaptive-threshold peak picking of an onset activation. Internal to core/analysis/onsets.
 
 namespace anno {
-
-struct ActivationPeak {
-    std::size_t frame = 0;
-    double strength = 0.0;  // activation / threshold, >= 1
-};
 
 struct PeakPickParams {
     Seconds hop;

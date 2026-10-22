@@ -145,3 +145,27 @@ Ports `gen.py` families A, A0, B, C, D, E, F, G. The vowel is `psola_sim.py`'s `
 
 ## Phase 4 close-out still open
 Listening sheet `docs/reviews/phase4-listening.md`, the default-engine ADR (waits for the owner's listening), `docs/reviews/phase4-review.md`, ROADMAP Phase 4 section and "Current phase". The owner asked to begin Phase 5 on 2026-10-22; the close-out is not done.
+
+## Results (2026-10-22, debug-asan; implemented in `onset_stages.{h,cpp}`)
+Built: P0-L and `detect_transients` as specified; `detect_onsets` re-pointed (P1, P3, D, L) with its own validation and picker. Tests: `onset_stages_test` (30 cases, 1161 assertions), `onset_bench_test` (bench, scorer, the bit-exact gate, baseline pins). Tests for the new stages were written after the code moved (the gate was captured first, before any change); the stage oracles are hand-computed cases.
+
+**Gate:** the 40 fingerprints of `detect_onsets` and the activation (every family, family A at -30 dB, a 12 s excerpt of Vocadito track 2, four parameter sets incl. an even filter width and plain flux) are identical before and after the refactor (FNV-1a over the doubles, `memcmp`-equivalent).
+
+**Baseline of `detect_onsets` on the bench (S4, before any claim of a gap):** family A, A0, B 8/0/0 (median +3 ms); C 2/9/6; D 1/23/0 (23 false positives inside the one note); E 3/13/5; F 8/8/0; G 6/24/10 (median -22 ms). Pooled A, A0, B, D, F, G: TP 39 FP 55 FN 10, F 0.545 at 0, -10, -20, -30 dB and 0.563 at -40 dB: level independent (adaptive threshold). So **level normalisation is not needed for `detect_onsets`**; the research's level finding concerns a fixed threshold, which the new picker has.
+
+**Sweep of the new pipeline (pooled A, A0, B, C, D, F, G; log_gain x lag x delta_activation):** best F 0.807 at log_gain 1, lag 15 ms, delta 0.02-0.05 (plateau); log_gain 1000 gives 0.62-0.78 and a 10 ms lag collapses G (1 of 16). Chosen defaults: `TransientParams.log.log_gain = 1.0`, `flux.lag = 15 ms`, `peaks.delta_activation = 0.05`. A sweep of picker window sets (LGD 30/30/100/70, CPJKU 10/50/150/0, two hybrids) moved the pooled F by at most 0.02 (best 0.825 for 10/30/100/0 and 10/50/100/70): the picker windows are not what separates this from the reference on C and G. Tuned on the signals scored: optimistic.
+
+**Level (pooled A, A0, B, D, F, G), new pipeline:** without P0 F 0.878 / 0.851 / 0.844 / 0.876 / 0.000 at 0 / -10 / -20 / -30 / -40 dB (nothing found at -40 dB); with P0 0.887 at all five. P0 is what makes the fixed threshold level independent.
+
+**Per family, new pipeline with P0 (TP/FP/FN at +-25 ms, F at +-20 ms, median offset):** A 8/0/0, 1.000, +3.0 ms; A0 8/0/0, 1.000, +3.0; B 7/0/1, 0.933, +4.0; C 3/5/5, 0.375, -13.9; D 1/0/0, 1.000, +3.8; E 8 of 8 consonant starts found (7 of 8 vowel starts, 9 extra detections are the consonants); F 8/0/0, 1.000, +3.2; G 11/5/5, 0.062, -22.9 ms.
+
+**Cross-check against the research's C++ reference** (`scripts/phase5_superflux_check.py`; its scale differs, lag set to its 10 ms): activation correlation 0.77 (A), 0.78 (A0), 0.93 (B), 0.96 (C), 0.996 (D), 0.73 (E), 0.76 (F), 0.94 (G): the same curve where the notes are soft or sustained, less so for sharp attacks (the reference uses unnormalised triangles and a symmetric Hann, 220.5-sample frames). Detections against the truth at +-25 ms: reference A, A0, B, D 8/0/0 (-5/+5 ms), C **8/0/0**, G **16/0/0**, E 8/8/0, F 8/1/0; ours A, A0, B, D, F 8/0/0, **C 2/6/6, G 1/15/15 at lag 10 ms** (11/5/5 at 15 ms). So the reference finds the legato and fast families that this pipeline does not; the picker windows are ruled out above. Suspects, untested: the filterbank normalisation (unit-sum mean against unnormalised triangle sums changes the relative weight of low and high bands and the effective log compression), the STFT frame offset and window shape. Left as an open item.
+
+## Open items after this stage
+1. C (legato) and G (fast notes) are worse than the reference's; find out whether the filterbank normalisation closes the gap.
+2. G is localised about 23 ms early by the Phase 3 refinement; the research's aubio variants are within +-13 ms.
+3. P2 (adaptive whitening) is implemented and unit-tested as a stage only; its form against Bock 2012 is unchecked, no pipeline default uses it, and the whitened path needs its own `log_gain` and a quiet-band-noise test.
+4. The `analyse()` decision (new pipeline or not) needs an ADR with the Phase 3 golden numbers at the annotators' F20 window and at +-25 ms, and a re-tune of `merge_onset_strength` (ADR-0010a), since the strength scales differ.
+5. Real material: everything above is synthetic. The Vocadito subset is the only real audio; its annotations are notes, not every consonant.
+6. The Phase 4 close-out (see above) is still open.
+

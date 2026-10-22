@@ -122,6 +122,7 @@ anno_add_test(NAME dsp_filter_test SOURCES dsp_filter_test.cpp LABELS unit DEPS 
 anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight_interp_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME pitch_test SOURCES pitch_test.cpp LABELS unit DEPS anno::core_analysis_pitch)
 anno_add_test(NAME onsets_test SOURCES onsets_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_pitch)
+anno_add_test(NAME onset_stages_test SOURCES onset_stages_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_dsp)
 anno_add_test(NAME onset_bench_test SOURCES onset_bench_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_dsp anno::core_io)
 target_compile_definitions(onset_bench_test PRIVATE ANNO_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden/vocals/vocadito")
 anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit DEPS anno::core_analysis_segmentation anno::core_analysis_perceived_pitch anno::core_analysis_onsets anno::core_analysis_pitch)

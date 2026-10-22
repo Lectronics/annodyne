@@ -4,6 +4,7 @@
 #include "support/synth_signals.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -42,7 +43,7 @@ inline std::vector<double> make_vowel(double f0_hz, double vibrato_hz, double vi
     }
     std::vector<double> source(n + 4, 0.0);
     for (int k = 1; static_cast<double>(k) < cycles.back(); ++k) {
-        const auto it = std::lower_bound(cycles.begin(), cycles.end(), static_cast<double>(k));
+        const auto it = std::ranges::lower_bound(cycles, static_cast<double>(k));
         if (it == cycles.begin() || it == cycles.end()) {
             continue;
         }
@@ -109,8 +110,14 @@ inline void place(std::vector<double>& sig, const std::vector<double>& y, double
     }
 }
 
-inline constexpr double k_pitches[] = {220.0, 247.0, 262.0, 294.0, 330.0, 294.0, 262.0, 220.0,
-                                       196.0, 220.0, 247.0, 262.0, 294.0, 330.0, 349.0, 392.0};
+inline constexpr std::array<double, 16> k_pitches = {220.0, 247.0, 262.0, 294.0, 330.0, 294.0,
+                                                     262.0, 220.0, 196.0, 220.0, 247.0, 262.0,
+                                                     294.0, 330.0, 349.0, 392.0};
+
+/// The k-th note's pitch (gen.py cycles through its 16 pitches).
+inline double pitch_of(int k) {
+    return k_pitches.at(static_cast<std::size_t>(k) % k_pitches.size());
+}
 
 /// One test signal: samples (float, peak 0.5), the truth onset times (seconds), and for family E
 /// the consonant starts too (`truth` is the vowel start there, as in gen.py).
@@ -121,7 +128,7 @@ struct Family {
     std::vector<double> consonant_truth;
 };
 
-inline Family finish(std::string name, std::vector<double> sig, std::vector<double> truth,
+inline Family finish(std::string name, const std::vector<double>& sig, std::vector<double> truth,
                      std::vector<double> consonant_truth = {}) {
     double peak = 0.0;
     for (const double v : sig) {
@@ -144,7 +151,7 @@ inline std::vector<double> sequence(int n, double dur, double gap, double attack
     std::vector<double> sig(static_cast<std::size_t>((lead + n * (dur + gap) + 0.3) * k_rate), 0.0);
     for (int k = 0; k < n; ++k) {
         const double t = lead + k * (dur + gap);
-        place(sig, make_note(k_pitches[k % 16], dur, attack, vibrato_cents), t);
+        place(sig, make_note(pitch_of(k), dur, attack, vibrato_cents), t);
         truth.push_back(t);
     }
     return sig;
@@ -153,17 +160,17 @@ inline std::vector<double> sequence(int n, double dur, double gap, double attack
 inline Family family_a() {
     std::vector<double> truth;
     auto sig = sequence(8, 0.45, 0.15, 0.005, truth);
-    return finish("A_sharp", std::move(sig), std::move(truth));
+    return finish("A_sharp", sig, std::move(truth));
 }
 inline Family family_a0() {
     std::vector<double> truth;
     auto sig = sequence(8, 0.45, 0.15, 0.005, truth, 0.0);
-    return finish("A0_sharp_novib", std::move(sig), std::move(truth));
+    return finish("A0_sharp_novib", sig, std::move(truth));
 }
 inline Family family_b() {
     std::vector<double> truth;
     auto sig = sequence(8, 0.45, 0.15, 0.080, truth);
-    return finish("B_soft80ms", std::move(sig), std::move(truth));
+    return finish("B_soft80ms", sig, std::move(truth));
 }
 inline Family family_c() {
     const double dur = 0.5;
@@ -175,7 +182,7 @@ inline Family family_c() {
     const auto nx = static_cast<std::size_t>(xf * k_rate);
     for (int k = 0; k < n; ++k) {
         const double t = lead + k * dur;
-        auto y = make_vowel(k_pitches[k % 16], 5.5, 50.0, dur + xf);
+        auto y = make_vowel(pitch_of(k), 5.5, 50.0, dur + xf);
         const std::size_t first = k > 0 ? nx : static_cast<std::size_t>(0.005 * k_rate);
         for (std::size_t i = 0; i < first; ++i) {
             y[i] *= cos_ramp(i, first);
@@ -187,12 +194,12 @@ inline Family family_c() {
         place(sig, y, t - (k > 0 ? xf : 0.0));
         truth.push_back(t);
     }
-    return finish("C_legato", std::move(sig), std::move(truth));
+    return finish("C_legato", sig, std::move(truth));
 }
 inline Family family_d() {
     auto y = make_vowel(220.0, 6.0, 100.0, 4.0);
-    const std::size_t attack = static_cast<std::size_t>(0.005 * k_rate);
-    const std::size_t release = static_cast<std::size_t>(0.04 * k_rate);
+    const auto attack = static_cast<std::size_t>(0.005 * k_rate);
+    const auto release = static_cast<std::size_t>(0.04 * k_rate);
     for (std::size_t i = 0; i < y.size(); ++i) {
         const double t = static_cast<double>(i) / k_rate;
         y[i] *= 1.0 + 0.15 * std::sin(2.0 * std::numbers::pi * 6.0 * t);
@@ -205,7 +212,7 @@ inline Family family_d() {
     }
     std::vector<double> sig(static_cast<std::size_t>(4.5 * k_rate), 0.0);
     place(sig, y, 0.2);
-    return finish("D_vib_trem", std::move(sig), {0.2});
+    return finish("D_vib_trem", sig, {0.2});
 }
 
 /// High-passed seeded noise scaled to the given peak.
@@ -236,12 +243,12 @@ inline Family family_e() {
         double tv = 0.0;
         if (k % 2 == 0) {  // plosive: a 6 ms burst then 60 ms aspiration
             auto burst = noise_hp(static_cast<std::size_t>(0.006 * k_rate), 2000.0, 0.5,
-                                  static_cast<std::uint64_t>(10 + k));
+                                  std::uint64_t{10} + static_cast<std::uint64_t>(k));
             for (std::size_t i = 0; i < burst.size(); ++i) {
                 burst[i] *= std::exp(-static_cast<double>(i) / (0.002 * k_rate));
             }
             auto asp = noise_hp(static_cast<std::size_t>(0.060 * k_rate), 1500.0, 0.06,
-                                static_cast<std::uint64_t>(30 + k));
+                                std::uint64_t{30} + static_cast<std::uint64_t>(k));
             for (std::size_t i = 0; i < asp.size(); ++i) {
                 asp[i] *= cos_ramp(i, asp.size());
             }
@@ -250,7 +257,7 @@ inline Family family_e() {
             tv = t0 + 0.066;
         } else {  // fricative: 150 ms of noise with 15 ms ramps
             auto fr = noise_hp(static_cast<std::size_t>(0.150 * k_rate), 4000.0, 0.25,
-                               static_cast<std::uint64_t>(50 + k));
+                               std::uint64_t{50} + static_cast<std::uint64_t>(k));
             const auto ramp = static_cast<std::size_t>(0.015 * k_rate);
             for (std::size_t i = 0; i < ramp; ++i) {
                 fr[i] *= cos_ramp(i, ramp);
@@ -259,7 +266,7 @@ inline Family family_e() {
             place(sig, fr, t0);
             tv = t0 + 0.150;
         }
-        auto vowel = make_note(k_pitches[k % 16], 0.4, 0.010);
+        auto vowel = make_note(pitch_of(k), 0.4, 0.010);
         for (double& v : vowel) {
             v *= 0.5;
         }
@@ -267,7 +274,7 @@ inline Family family_e() {
         truth_c.push_back(t0);
         truth_v.push_back(tv);
     }
-    return finish("E_consonants", std::move(sig), std::move(truth_v), std::move(truth_c));
+    return finish("E_consonants", sig, std::move(truth_v), std::move(truth_c));
 }
 
 inline Family family_f() {
@@ -281,7 +288,7 @@ inline Family family_f() {
 inline Family family_g() {
     std::vector<double> truth;
     auto sig = sequence(16, 0.11, 0.015, 0.005, truth);
-    return finish("G_fast_8perSec", std::move(sig), std::move(truth));
+    return finish("G_fast_8perSec", sig, std::move(truth));
 }
 
 /// The families of the research's pooled level test (A, A0, B, D, F, G).
