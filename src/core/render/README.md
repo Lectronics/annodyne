@@ -19,8 +19,11 @@ References: architecture spec §4.6, §5.5, §5.6; ADR-0002, ADR-0006.
 Time (ADR-0008): `render_region` walks TimeMap spans (`RenderInputs::time_map`, or built from the
 edits): slope-1 warps copy shifted source samples, inserts are digital silence, cuts have no output.
 The cache key includes the whole map.
-Known limitations: a warp with slope != 1 or a fractional-sample shift returns `not_implemented`
-(stretching is Phase 6; layout solving, Phase 5); timing edits without a supplied map likewise; the cache locks and allocates, so it is not real-time safe (Phase 9); notes are
+Stretching (ADR-0023): a slope != 1 warp is part of the unedited base, rendered by `stretch_span` (mono
+only); a note whose edits are only timing edits is part of that base. An edited note (pitch, level,
+formant) whose zone meets a stretched warp is `not_implemented`, naming the note. With no supplied map
+the map is built with `TailPolicy::shift` and whole-sample shifts.
+Known limitations: a fractional-sample shift on a slope-1 warp returns `not_implemented`; the cache locks and allocates, so it is not real-time safe (Phase 9); notes are
 monophonic (Phase 11); the crossfade default `equal_power` overshoots by up to +3 dB for correlated
 signals (listening decision at Phase 4); `-ffp-contract=off` makes results reproducible per build,
 not across platforms.

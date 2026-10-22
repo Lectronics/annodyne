@@ -20,6 +20,11 @@ namespace anno {
 /// Phase 4 engines realise).
 [[nodiscard]] bool only_pitch_edited(const EffectiveNote& e);
 
+/// True when every effective value is neutral except the timing ones (`onset_shift`,
+/// `length_scale`, `handles`, `attack_time_scale`): such a note is rendered by the TimeMap alone
+/// (ADR-0023). `center` must equal `note_center` within k_neutral_snap_offset.
+[[nodiscard]] bool only_timing_edited(const EffectiveNote& e, Cents note_center);
+
 /// Whole samples d such that output sample n plays source sample n - d over the whole zone.
 /// Errors: not_implemented (messages start with `engine`) when the zone is not inside one slope-1
 /// warp span of the map with a whole-sample shift. Pure; thread-safe.

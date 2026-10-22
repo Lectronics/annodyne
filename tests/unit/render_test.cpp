@@ -205,7 +205,9 @@ TEST_CASE("bad_inputs_are_reported_with_the_documented_codes", "[render]") {
     CHECK(code(f.inputs(), before) == ErrorCode::out_of_range);
 }
 
-TEST_CASE("timing_edits_are_not_implemented_even_for_a_far_region", "[render]") {
+// The fixture is stereo and stretching is mono only (ADR-0023; mono: render_stretch_test.cpp), so a
+// timing edit that stretches is refused even for a region far from the note.
+TEST_CASE("a_stretching_timing_edit_on_a_stereo_source_is_not_implemented", "[render]") {
     const Fixture f =
         make_fixture(two_notes())
             .with_edits(edits_of({make_spec("b", EditCategory::time, EditParam::onset_shift,

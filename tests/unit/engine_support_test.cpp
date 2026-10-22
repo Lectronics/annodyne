@@ -21,6 +21,26 @@ TEST_CASE("only_pitch_edited_allows_center_and_onset_shift_only", "[engine_suppo
     CHECK_FALSE(only_pitch_edited(e));
 }
 
+TEST_CASE("only_timing_edited_allows_the_timing_fields_and_a_neutral_centre", "[engine_support]") {
+    const Cents centre{6900.0};
+    EffectiveNote e;
+    e.center = centre;
+    CHECK(only_timing_edited(e, centre));
+    e.onset_shift = Seconds{0.2};
+    e.length_scale = Ratio{1.5};
+    e.attack_time_scale = Ratio{2.0};
+    CHECK(only_timing_edited(e, centre));
+    e.center = centre + Cents{1.0};
+    CHECK_FALSE(only_timing_edited(e, centre));
+    e.center = centre;
+    e.formant_offset = Cents{10.0};
+    CHECK_FALSE(only_timing_edited(e, centre));
+    e = {};
+    e.center = centre;
+    e.gain = Decibels{1.0};
+    CHECK_FALSE(only_timing_edited(e, centre));
+}
+
 TEST_CASE("hex64_is_sixteen_lowercase_digits", "[engine_support]") {
     CHECK(hex64(0) == "0000000000000000");
     CHECK(hex64(0xDEADBEEF12345678ULL) == "deadbeef12345678");

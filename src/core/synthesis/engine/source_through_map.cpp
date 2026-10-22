@@ -15,8 +15,9 @@ Result<std::int64_t> warp_shift(const TimeSpan& span, Hz rate) {
     const Seconds source_len = span.source_end - span.source_start;
     const Seconds output_len = span.output_end - span.output_start;
     if (std::abs((output_len - source_len).value()) > k_length_tolerance_s) {
-        return fail(ErrorCode::not_implemented,
-                    "read_through_map: a warp with slope != 1 needs stretching (Phase 6)");
+        return fail(
+            ErrorCode::not_implemented,
+            "read_through_map: a warp with slope != 1 needs stretching (stretch_span, ADR-0023)");
     }
     const Seconds shift = (span.output_start - OutputTime{}) - (span.source_start - SourceTime{});
     const double samples = shift.value() * rate.value();

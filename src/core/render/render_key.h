@@ -2,6 +2,7 @@
 
 #include "core/render/blend_plan.h"
 #include "core/synthesis/engine/synthesis_engine.h"
+#include "core/synthesis/stretch/stretch.h"
 #include "core/types/analysis_result.h"
 #include "core/types/effective_note.h"
 #include "core/types/note.h"
@@ -34,6 +35,9 @@ struct RenderKeyInputs {
     std::span<const EditedNote> edited;
     std::span<const Ramp> ramps;
     const TimeMap* time_map = nullptr;  // never null; the whole map is part of the key (ADR-0008)
+    /// The settings of the stretched base (ADR-0023); null hashes as "none", for callers whose map
+    /// has no stretched span.
+    const StretchParams* stretch = nullptr;
 };
 
 /// 128-bit content fingerprint of every field of a Note (two independent 64-bit FNV-style streams).

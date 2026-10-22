@@ -22,7 +22,8 @@ namespace anno {
 /// and its output length must equal its source length (within 1e-9 s): output sample i reads source
 /// sample i - d. Only spans meeting the range are examined.
 /// Errors: not_implemented (a span meeting the range is a warp with slope != 1 or a fractional
-/// shift; Phase 5's layout solver must produce whole-sample shifts, stretching is Phase 6);
+/// shift; build_time_map with a sample rate produces whole-sample shifts, and stretched warps are
+/// rendered by stretch_span, ADR-0023);
 /// out_of_range (the range leaves [0, output frames], or a warp would read outside the recording);
 /// invalid_argument (map.source_length() differs from the source's duration by more than half a
 /// sample, or begin/count is negative).

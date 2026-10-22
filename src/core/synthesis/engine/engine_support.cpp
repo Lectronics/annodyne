@@ -33,6 +33,15 @@ bool only_pitch_edited(const EffectiveNote& e) {
            e.attack_time_scale == Ratio{1.0};
 }
 
+bool only_timing_edited(const EffectiveNote& e, Cents note_center) {
+    return std::abs((e.center - note_center).value()) <= k_neutral_snap_offset &&
+           e.mod_scale == Ratio{1.0} && e.drift_scale == Ratio{1.0} &&
+           e.transition_in_scale == Ratio{1.0} && e.transition_out_scale == Ratio{1.0} &&
+           e.formant_offset == Cents{} && e.gain == Decibels{} &&
+           e.within_note_flatten == Ratio{} && e.fade_in == Seconds{} && e.fade_out == Seconds{} &&
+           e.noise_gain == NoiseGains{};
+}
+
 Result<std::int64_t> zone_shift(const TimeMap& map, Hz rate, OutputRange zone,
                                 std::string_view engine) {
     for (const TimeSpan& span : map.spans()) {
