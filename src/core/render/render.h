@@ -36,7 +36,7 @@ struct RenderParams {
     Seconds crossfade_length{0.010};
     FadeShape crossfade_shape = FadeShape::equal_power;
     RenderCache* cache = nullptr;  // optional, not owned
-    StretchParams stretch;  // settings of the stretched base (ADR-0023); part of the cache key
+    StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
 };
 
 /// Renders [region) of the track's output. The result's buffer is the request snapped to whole
