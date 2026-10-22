@@ -8,7 +8,7 @@ namespace anno::stretch_detail {
 namespace {
 
 double raw_seconds(SourceTime t) {
-    return t.unchecked_since_origin().value();
+    return (t - SourceTime{}).value();
 }
 
 /// The active note holding source time `t_s`, or nullptr. Notes are sorted by start (mono).

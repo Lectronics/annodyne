@@ -24,10 +24,10 @@ bool finite_positive(double v) {
 }
 
 double raw(OutputTime t) {
-    return t.unchecked_since_origin().value();
+    return (t - OutputTime{}).value();
 }
 double raw(SourceTime t) {
-    return t.unchecked_since_origin().value();
+    return (t - SourceTime{}).value();
 }
 
 Result<SpanGeometry> make_geometry(const TimeSpan& span, double rate_hz,
