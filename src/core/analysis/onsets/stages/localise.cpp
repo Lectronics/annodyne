@@ -33,6 +33,36 @@ double energy_db(std::span<const float> x, std::int64_t n, std::int64_t w) {
                     10.0 * std::log10(sum / static_cast<double>(hi - lo) + 1e-10));
 }
 
+/// The energy extremes of the search region [lo, hi] around `centre`.
+struct Region {
+    double floor_db = 1e9;      // quietest point at or before the centre
+    std::int64_t floor_at = 0;  // the LAST such point
+    double top_db = -1e9;       // loudest point
+    double start_db = -1e9;     // loudest point in the first quarter of the region
+    double end_db = -1e9;       // loudest point in the last quarter
+};
+
+Region measure_region(std::span<const float> x, std::int64_t lo, std::int64_t hi,
+                      std::int64_t centre, std::int64_t w) {
+    Region r;
+    r.floor_at = lo;
+    for (std::int64_t n = lo; n <= hi; ++n) {
+        const double e = energy_db(x, n, w);
+        if (n <= centre && e <= r.floor_db) {
+            r.floor_db = e;
+            r.floor_at = n;
+        }
+        r.top_db = std::max(r.top_db, e);
+        if (n - lo <= (hi - lo) / 4) {
+            r.start_db = std::max(r.start_db, e);
+        }
+        if (hi - n <= (hi - lo) / 4) {
+            r.end_db = std::max(r.end_db, e);
+        }
+    }
+    return r;
+}
+
 /// The sample where the energy rises through the halfway point (in dB) between the quietest point
 /// before `centre` and the loudest point after it, searched within +-`radius` samples; `centre`
 /// itself if there is no clear rise. Empty if the signal is clearly louder before `centre` than
@@ -43,31 +73,16 @@ std::optional<Refined> refine_to_energy_rise(std::span<const float> x, std::int6
     const std::int64_t lo = std::max<std::int64_t>(0, centre - radius);
     const std::int64_t hi =
         std::min<std::int64_t>(static_cast<std::int64_t>(x.size()) - 1, centre + radius);
-    double floor_db = 1e9;
-    double top_db = -1e9;
-    double start_db = -1e9;  // loudest point in the first quarter of the region
-    double end_db = -1e9;    // loudest point in the last quarter
-    for (std::int64_t n = lo; n <= hi; ++n) {
-        const double e = energy_db(x, n, w);
-        if (n <= centre) {
-            floor_db = std::min(floor_db, e);
-        }
-        top_db = std::max(top_db, e);
-        if (n - lo <= (hi - lo) / 4) {
-            start_db = std::max(start_db, e);
-        }
-        if (hi - n <= (hi - lo) / 4) {
-            end_db = std::max(end_db, e);
-        }
-    }
-    if (start_db - end_db >= p.end_drop.value()) {
+    const Region r = measure_region(x, lo, hi, centre, w);
+    if (r.start_db - r.end_db >= p.end_drop.value()) {
         return std::nullopt;
     }
-    if (top_db - floor_db < p.min_rise.value()) {
+    if (r.top_db - r.floor_db < p.min_rise.value()) {
         return Refined{.sample = centre, .rose = false};
     }
-    const double halfway = floor_db + 0.5 * (top_db - floor_db);
-    for (std::int64_t n = lo; n <= hi; ++n) {
+    const double halfway = r.floor_db + 0.5 * (r.top_db - r.floor_db);
+    const std::int64_t from = p.scan == LocaliseScan::from_quietest_point ? r.floor_at : lo;
+    for (std::int64_t n = from; n <= hi; ++n) {
         if (energy_db(x, n, w) >= halfway) {
             return Refined{.sample = n, .rose = true};
         }

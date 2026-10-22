@@ -31,7 +31,14 @@ struct BandSpectrogram {
 /// finite.
 [[nodiscard]] Result<void> validate(const BandSpectrogram& spec);
 
+/// How each triangular filter is scaled. `unit_sum`: weights sum to 1, so a band value is the MEAN
+/// magnitude under the filter (Phase 3). `unit_peak`: the triangle's peak is 1, so a band value is
+/// the weighted SUM of magnitudes and wide (high-frequency) filters weigh more (the research's
+/// reference SuperFlux).
+enum class FilterNorm { unit_sum, unit_peak };
+
 struct BandParams {
+    FilterNorm filter_norm = FilterNorm::unit_sum;
     Seconds window{
         0.043};          // Hann window; n_fft = the power of two nearest to window * rate (>= 256)
     Seconds hop{0.005};  // rounded to whole samples; the result carries the actual hop

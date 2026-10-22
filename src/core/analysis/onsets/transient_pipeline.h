@@ -32,7 +32,7 @@ struct TransientParams {
                                          // whitened path needs its own value
     FluxParams flux;
     WindowedPeakParams peaks;
-    LocaliseParams localise;
+    LocaliseParams localise = {.scan = LocaliseScan::from_quietest_point};
 };
 
 /// The pipeline on a mono signal: P0 (if set) -> P1 -> P2 (if set) -> P3 -> D -> K -> L. Returns

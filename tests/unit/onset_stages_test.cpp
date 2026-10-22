@@ -468,6 +468,35 @@ TEST_CASE("localise_drops_a_note_end_and_leaves_a_steady_signal_at_the_frame_tim
     CHECK(out[0].sample == 22050);
 }
 
+TEST_CASE("localise_starts_its_scan_at_the_quietest_point_not_in_a_neighbours_release_tail",
+          "[onset_stages]") {
+    // Note 1 ends 0.15 s with a 40 ms cosine release; a 15 ms gap; note 2 starts at 0.165 s with a
+    // 5 ms attack. The coarse peak is 5 ms late. Scanning from the window start finds the release
+    // tail already above the halfway level and reports it as the onset, 20 ms early.
+    std::vector<float> x(17640, 0.0F);
+    const auto sine = [](std::size_t i) {
+        return 0.5 * std::sin(2.0 * std::numbers::pi * 440.0 * static_cast<double>(i) / k_sr);
+    };
+    for (std::size_t i = 2205; i < 6615; ++i) {  // 0.05 .. 0.15 s
+        const std::size_t from_end = 6615 - i;
+        const double release = from_end < 1764 ? cos_ramp(from_end, 1764) : 1.0;
+        x[i] = static_cast<float>(sine(i) * release);
+    }
+    const std::size_t start = 7276;  // 0.165 s
+    for (std::size_t i = start; i < x.size(); ++i) {
+        const double ramp = i - start < 220 ? cos_ramp(i - start, 220) : 1.0;
+        x[i] = static_cast<float>(sine(i) * ramp);
+    }
+    const PeakList peak = peak_at(0.170);
+    const auto window_start = localise(x, Hz{k_sr}, peak, {}).value();
+    const auto quietest =
+        localise(x, Hz{k_sr}, peak, {.scan = LocaliseScan::from_quietest_point}).value();
+    REQUIRE(window_start.size() == 1);
+    REQUIRE(quietest.size() == 1);
+    CHECK(window_start[0].sample < static_cast<std::int64_t>(start) - 441);       // > 10 ms early
+    CHECK(std::abs(quietest[0].sample - static_cast<std::int64_t>(start)) < 44);  // within 1 ms
+}
+
 TEST_CASE("localise_rejects_bad_parameters_and_a_peak_beyond_the_signal", "[onset_stages]") {
     const auto x = onset_signal(22050, 220);
     CHECK(localise(x, Hz{k_sr}, peak_at(5.0), {}).error().code == ErrorCode::invalid_argument);
@@ -520,17 +549,24 @@ TEST_CASE("the_pipeline_finds_soft_attacks_and_consonant_starts", "[onset_stages
     CHECK(consonants.tp == 8);  // every consonant start; the vowels come with extra detections
 }
 
-TEST_CASE("legato_and_fast_notes_are_the_recorded_weak_cases", "[onset_stages]") {
-    // C (pitch changes at constant level) and G (8 notes per second) are not solved by spectral
-    // flux alone; the numbers are pinned so a regression shows and an improvement is noticed.
-    const auto c = run_pipeline(family_c(), normalised());
-    CHECK(c.tp >= 3);
-    CHECK(c.fp <= 5);
+TEST_CASE("legato_and_fast_notes_are_found_once_localisation_starts_at_the_quietest_point",
+          "[onset_stages]") {
+    // Recorded 2026-10-22. The detection was always right (every onset of C and G at the frame
+    // time); the localiser scanned from the start of its window and took the previous note's
+    // release tail for the onset (G: 11 of 16, about 23 ms early; C: 3 of 8).
     const auto g = run_pipeline(family_g(), normalised());
-    CHECK(g.tp >= 10);
-    CHECK(g.fp <= 6);
-    // Known issue: the localiser puts G's onsets about 23 ms early (research: +7 ms for aubio).
-    CHECK(g.median_offset_s() > -0.030);
+    CHECK(g.tp == 16);
+    CHECK(g.fp == 0);
+    CHECK(std::abs(g.median_offset_s()) < 0.006);
+    // C (pitch changes at constant level, 20 ms cross-fades): the detection sits at the start of
+    // the cross-fade, about 14 ms before the truth, which is the end of it.
+    const auto c = run_pipeline(family_c(), normalised());
+    CHECK(c.tp >= 7);
+    CHECK(c.fp <= 1);
+    // The old scan, for the record.
+    auto old_scan = normalised();
+    old_scan.localise.scan = LocaliseScan::from_window_start;
+    CHECK(run_pipeline(family_g(), old_scan).tp <= 12);
 }
 
 TEST_CASE("level_normalisation_makes_the_fixed_threshold_level_independent", "[onset_stages]") {

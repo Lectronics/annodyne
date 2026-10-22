@@ -37,18 +37,17 @@ unit-sum triangular bands of Phase 3) -> **P2** `adaptive_whiten` (optional; per
 the form of Bock 2012 was not checked, provisional) -> **P3** `log_compress` (log(1 + gain x)) ->
 **D** `superflux` (max filter over neighbouring bands of the lagged frame) -> **K** `pick_peaks_windowed`
 (the research's pre/post max and average windows, ties to the first frame, first kept peak wins inside
-the gap) -> **L** `localise` (the Phase 3 energy-rise refinement, note ends dropped). `detect_transients`
+the gap) -> **L** `localise` (the Phase 3 energy-rise refinement, note ends dropped; the pipeline scans from the quietest point before the peak, so a neighbouring note's release tail is not taken for the onset). `detect_transients`
 composes them (optionally P0 and P2); `detect_onsets` calls P1, P3, D and L with `OnsetParams` and keeps
 its own adaptive-threshold picker, so its output is **bit-identical** to Phase 3 (pinned by
 `onset_bench_test` "[onset_gate]": 40 signal / parameter combinations incl. a Vocadito recording).
 
-Measured (ADR-0022, `docs/design/phase5-transient-pipeline.md`): on the 35 tuning tracks the pipeline and the
-Phase 3 chain are equal within noise (onset F20 0.588 / 0.596 against 0.582 / 0.587), on the 5 held-out tracks the
-pipeline is slightly better (F20 0.570 / 0.549 against 0.552 / 0.528, APC 0.586 against 0.552). `analyse()` uses the
-pipeline (`analysis_onset_params()`); `OnsetParams{}` is the Phase 3 chain. On the research's synthetic families
-(parameters chosen on them: optimistic) the pipeline finds more fast notes and one soft attack fewer; the false
-positives on synthetic tremolo and noise come from the energy-step detector, which both methods run. Known weak
-cases: legato pitch changes (bench C, 3 of 8) and fast notes (G: 11 of 16, about 23 ms early from the localiser).
+Measured (ADR-0022, `docs/design/phase5-transient-pipeline.md`): the pipeline gains about +0.03 onset F20 over the
+Phase 3 chain on both the 35 tuning tracks (0.612 / 0.622 against 0.582 / 0.587) and the 5 held-out tracks (0.585 /
+0.569 against 0.552 / 0.528), with note pitch and APC equal or slightly better. `analyse()` uses the pipeline
+(`analysis_onset_params()`); `OnsetParams{}` is the Phase 3 chain. On the research's synthetic families (parameters
+chosen on them: optimistic) the spectral part finds every fast note (G 16 of 16) and 7 of 8 legato changes; the
+false positives on synthetic tremolo and noise come from the energy-step detector, which both methods run.
 
 Layout: `stages/` holds one file pair per stage group (`band_spectrogram`, `level_norm`, `spectral_flux` = whitening,
 log, SuperFlux, `peak_pick`, `localise`), `transient_pipeline` composes them, `onset_stages.h` includes all of them;

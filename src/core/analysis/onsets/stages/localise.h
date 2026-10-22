@@ -18,7 +18,14 @@
 
 namespace anno {
 
+/// Where the search for the halfway crossing starts. `from_window_start` (Phase 3): at the start of
+/// the +-search window, so in a dense passage the first sample above the halfway level can be the
+/// PREVIOUS note's release tail. `from_quietest_point`: at the quietest point before the peak, i.e.
+/// the energy must rise through the halfway point after its valley (fast notes, legato).
+enum class LocaliseScan { from_window_start, from_quietest_point };
+
 struct LocaliseParams {
+    LocaliseScan scan = LocaliseScan::from_window_start;
     Seconds search{0.025};         // +- around the peak
     Seconds energy_window{0.002};  // short-window energy
     Decibels min_rise{6.0};        // a smaller rise leaves the frame time

@@ -19,8 +19,9 @@ struct Filter {
     std::vector<double> weights;  // for bins first, first + 1, ...
 };
 
-/// Log-spaced triangular filters over FFT bins (centres on distinct bins), unit sum each.
-std::vector<Filter> log_filterbank(const BandParams& p, double bin_hz, int n_bins, double rate) {
+/// The FFT bins of the filter centres: log-spaced from f_min, one per distinct bin; a spectrum too
+/// coarse for k_min_bands of them falls back to a linear split.
+std::vector<int> filter_centres(const BandParams& p, double bin_hz, int n_bins, double rate) {
     const double fmax = std::min(p.f_max.value(), k_fmax_nyquist_share * rate);
     std::vector<int> centres;
     for (int k = 0;; ++k) {
@@ -34,34 +35,52 @@ std::vector<Filter> log_filterbank(const BandParams& p, double bin_hz, int n_bin
             centres.push_back(bin);
         }
     }
-    if (static_cast<int>(centres.size()) <
-        k_min_bands) {  // very coarse spectrum: fall back to a linear split
+    if (static_cast<int>(centres.size()) < k_min_bands) {
         centres.clear();
         for (int b = 1; b < n_bins - 1; b += std::max(1, (n_bins - 2) / 16)) {
             centres.push_back(b);
         }
     }
+    return centres;
+}
+
+/// The triangle of centre i: rising from the previous centre (or one bin below the first) to the
+/// centre and falling to the next one (or one bin above the last); weights up to 1 at the centre.
+Filter triangle(const std::vector<int>& centres, std::size_t i, int n_bins) {
+    const int left = i == 0 ? centres[i] - 1 : centres[i - 1];
+    const int right = i + 1 == centres.size() ? centres[i] + 1 : centres[i + 1];
+    Filter f{.first = static_cast<std::size_t>(std::max(0, left)),
+             .centre_bin = static_cast<std::size_t>(centres[i]),
+             .weights = {}};
+    for (int b = std::max(0, left); b <= std::min(n_bins - 1, right); ++b) {
+        const double w = b <= centres[i]
+                             ? static_cast<double>(b - left) / std::max(1, centres[i] - left)
+                             : static_cast<double>(right - b) / std::max(1, right - centres[i]);
+        f.weights.push_back(std::max(0.0, w));
+    }
+    return f;
+}
+
+/// Log-spaced triangular filters over FFT bins (centres on distinct bins), scaled per `norm`.
+/// A filter whose weights sum to 0 is dropped.
+std::vector<Filter> log_filterbank(const BandParams& p, double bin_hz, int n_bins, double rate) {
+    const std::vector<int> centres = filter_centres(p, bin_hz, n_bins, rate);
     std::vector<Filter> bank;
     for (std::size_t i = 0; i < centres.size(); ++i) {
-        const int left = i == 0 ? centres[i] - 1 : centres[i - 1];
-        const int right = i + 1 == centres.size() ? centres[i] + 1 : centres[i + 1];
-        Filter f{.first = static_cast<std::size_t>(std::max(0, left)),
-                 .centre_bin = static_cast<std::size_t>(centres[i]),
-                 .weights = {}};
+        Filter f = triangle(centres, i, n_bins);
         double sum = 0.0;
-        for (int b = std::max(0, left); b <= std::min(n_bins - 1, right); ++b) {
-            const double w = b <= centres[i]
-                                 ? static_cast<double>(b - left) / std::max(1, centres[i] - left)
-                                 : static_cast<double>(right - b) / std::max(1, right - centres[i]);
-            f.weights.push_back(std::max(0.0, w));
-            sum += std::max(0.0, w);
+        for (const double w : f.weights) {
+            sum += w;
         }
-        if (sum > 0.0) {
+        if (!(sum > 0.0)) {
+            continue;
+        }
+        if (p.filter_norm == FilterNorm::unit_sum) {
             for (double& w : f.weights) {
                 w /= sum;
             }
-            bank.push_back(std::move(f));
         }
+        bank.push_back(std::move(f));
     }
     return bank;
 }

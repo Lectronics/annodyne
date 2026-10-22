@@ -132,7 +132,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 **Goal:** move and stretch notes cleanly.
 
-- *(started 2026-10-22)* Onset pipeline as testable stages in `analysis/onsets` (`onset_stages.h`: level normalisation, band spectrogram, adaptive whitening, log compression, SuperFlux, windowed peak picking, localisation; `detect_onsets` bit-identical) with the research's test bench; design `docs/design/phase5-transient-pipeline.md`; `analyse()` uses it (ADR-0022, proposed). Open: legato/fast-note detection, energy-step false positives on synthetic tremolo/noise, real-data testing.
+- *(started 2026-10-22)* Onset pipeline as testable stages in `analysis/onsets` (`onset_stages.h`: level normalisation, band spectrogram, adaptive whitening, log compression, SuperFlux, windowed peak picking, localisation; `detect_onsets` bit-identical) with the research's test bench; design `docs/design/phase5-transient-pipeline.md`; `analyse()` uses it (ADR-0022, proposed). Legato/fast-note gap closed (the localiser took a neighbour's release tail for the onset). Open: energy-step false positives on synthetic tremolo/noise, real-data testing.
 - TimeMap-driven rendering: note-aware stretching with consonant/attack protection; `synthesis/transient` for attacks.
 - `tools/time` (moves, lengths, handles), `tools/attack_speed`, `tools/note_separation`.
 - `macros/quantize_time` (grid), with perceptual onsets.
