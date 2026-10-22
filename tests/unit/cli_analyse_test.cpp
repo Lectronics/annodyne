@@ -112,6 +112,24 @@ TEST_CASE("the_pitch_track_is_left_out_unless_asked_for", "[cli_analyse]") {
     CHECK_FALSE(nlohmann::json::parse(read_all(*args.json)).contains("pitch"));
 }
 
+TEST_CASE("analyse_takes_the_onset_method_and_defaults_to_the_pipeline", "[cli_analyse]") {
+    const Fixture f;
+    const auto onsets_of = [&](std::optional<SpectralMethod> method) {
+        cli::AnalyseArgs args;
+        args.wav = f.wav;
+        args.json = f.dir / "m.json";
+        args.onset_method = method;
+        REQUIRE(cli::run_analyse(args).has_value());
+        return nlohmann::json::parse(read_all(*args.json))["onsets"];
+    };
+    const auto pipeline = onsets_of(SpectralMethod::windowed_peaks);
+    CHECK(onsets_of(std::nullopt) == pipeline);  // the default is the pipeline
+    const auto phase3 = onsets_of(SpectralMethod::adaptive_threshold);
+    CHECK(phase3.is_array());
+    CHECK(pipeline.size() >= 2);  // the two tones
+    CHECK(phase3.size() >= 2);
+}
+
 TEST_CASE("analyse_writes_csv_and_an_svg_with_one_rect_per_note", "[cli_analyse]") {
     const Fixture f;
     cli::AnalyseArgs args;
