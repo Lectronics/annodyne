@@ -42,11 +42,15 @@ composes them (optionally P0 and P2); `detect_onsets` calls P1, P3, D and L with
 its own adaptive-threshold picker, so its output is **bit-identical** to Phase 3 (pinned by
 `onset_bench_test` "[onset_gate]": 40 signal / parameter combinations incl. a Vocadito recording).
 
-Measured on the research's synthetic families (`tests/support/onset_bench.h`; +-25 ms; the defaults of
-`TransientParams` were chosen on these same signals, so the numbers are optimistic): with P0 the pooled
-F is 0.887 at every level from 0 to -40 dB; without P0 the fixed threshold finds nothing at -40 dB.
-`detect_onsets` on the same set: F 0.545 at every level (its threshold is adaptive) with 23 false
-positives inside the single vibrato/tremolo note. Not yet decided: whether `analyse()` should use the
-new pipeline (needs an ADR with the Phase 3 golden numbers). Known weak cases: legato pitch changes
-(family C, 3 of 8) and fast notes (G: 11 of 16, about 23 ms early from the localiser).
+Measured (ADR-0022, `docs/design/phase5-transient-pipeline.md`): on the 35 tuning tracks the pipeline and the
+Phase 3 chain are equal within noise (onset F20 0.588 / 0.596 against 0.582 / 0.587), on the 5 held-out tracks the
+pipeline is slightly better (F20 0.570 / 0.549 against 0.552 / 0.528, APC 0.586 against 0.552). `analyse()` uses the
+pipeline (`analysis_onset_params()`); `OnsetParams{}` is the Phase 3 chain. On the research's synthetic families
+(parameters chosen on them: optimistic) the pipeline finds more fast notes and one soft attack fewer; the false
+positives on synthetic tremolo and noise come from the energy-step detector, which both methods run. Known weak
+cases: legato pitch changes (bench C, 3 of 8) and fast notes (G: 11 of 16, about 23 ms early from the localiser).
 
+Layout: `stages/` holds one file pair per stage group (`band_spectrogram`, `level_norm`, `spectral_flux` = whitening,
+log, SuperFlux, `peak_pick`, `localise`), `transient_pipeline` composes them, `onset_stages.h` includes all of them;
+`detail/` holds the Phase 3 glue (`spectral_onsets` method switch, `merge_onsets`, `energy_step`, `pitch_change`,
+`peak_picking` = `pick_peaks_adaptive`, `onset_params_check`).

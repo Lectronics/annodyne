@@ -1,9 +1,15 @@
 anno_add_library(core/analysis/onsets
     SOURCES
-        onset_stages.cpp
+        stages/band_spectrogram.cpp
+        stages/level_norm.cpp
+        stages/localise.cpp
+        stages/peak_pick.cpp
+        stages/spectral_flux.cpp
+        transient_pipeline.cpp
         onsets.cpp
         detail/energy_step.cpp
         detail/merge_onsets.cpp
+        detail/onset_params_check.cpp
         detail/peak_picking.cpp
         detail/pitch_change.cpp
         detail/spectral_onsets.cpp

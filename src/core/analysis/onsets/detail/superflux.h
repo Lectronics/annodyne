@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/analysis/onsets/onset_stages.h"
 #include "core/analysis/onsets/onsets.h"
+#include "core/analysis/onsets/stages/spectral_flux.h"
 #include "core/types/result.h"
 
 #include <span>
 
 // The SuperFlux onset activation of detect_onsets: the stages P1 (band_spectrogram), P3
-// (log_compress) and D (superflux) of onset_stages.h run with the OnsetParams. Internal to
+// (log_compress) and D (superflux) of the stages run with the OnsetParams. Internal to
 // core/analysis/onsets.
 
 namespace anno {

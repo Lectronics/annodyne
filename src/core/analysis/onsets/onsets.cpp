@@ -2,6 +2,7 @@
 
 #include "core/analysis/onsets/detail/energy_step.h"
 #include "core/analysis/onsets/detail/merge_onsets.h"
+#include "core/analysis/onsets/detail/onset_params_check.h"
 #include "core/analysis/onsets/detail/pitch_change.h"
 #include "core/analysis/onsets/detail/spectral_onsets.h"
 #include "core/dsp/mono.h"
@@ -25,6 +26,9 @@ double voicing_at(const PitchTrack& pitch, SourceTime t) {
 }
 
 Result<std::vector<RawOnset>> read_and_detect(const AudioSource& src, const OnsetParams& params) {
+    if (auto r = check_onset_params(params); !r) {
+        return Unexpected{r.error()};
+    }
     auto mono = read_mono(src);
     if (!mono) {
         return Unexpected{mono.error()};
@@ -55,6 +59,16 @@ Result<std::vector<RawOnset>> read_and_detect(const AudioSource& src, const Onse
 }
 
 }  // namespace
+
+OnsetParams analysis_onset_params() {
+    OnsetParams params;
+    params.method = SpectralMethod::windowed_peaks;
+    params.pipeline.level = LevelNormParams{};
+    params.pipeline.log.log_gain = 1.0;
+    params.pipeline.peaks.delta_activation =
+        0.05;  // 0.07 misses the soft attacks of bench family B
+    return params;
+}
 
 Result<OnsetList> detect_onsets(const AudioSource& src, const OnsetParams& params) {
     auto onsets = read_and_detect(src, params);

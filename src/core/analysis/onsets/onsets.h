@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/analysis/onsets/onset_stages.h"
+#include "core/analysis/onsets/transient_pipeline.h"
 #include "core/types/audio_source.h"
 #include "core/types/result.h"
 #include "core/types/tracks.h"
@@ -44,6 +44,11 @@ struct OnsetParams {
     Decibels energy_step_db{3.5};
     Decibels energy_step_strength_db{2.0};
 };
+
+/// The onset parameters analyse() runs with (ADR-0022): `windowed_peaks` with level normalisation
+/// (P0), log gain 1, a 15 ms lag and delta_activation 0.05, the rest of the pipeline at its
+/// defaults. `OnsetParams{}` stays the Phase 3 chain (`adaptive_threshold`). Pure.
+[[nodiscard]] OnsetParams analysis_onset_params();
 
 /// Spectral onsets (SuperFlux; Bock & Widmer 2013): log-filterbank STFT, frequency max filter over
 /// the reference frame, positive lagged difference averaged over the bands, adaptive-threshold peak
