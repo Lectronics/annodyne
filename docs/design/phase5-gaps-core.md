@@ -27,7 +27,7 @@ struct GapRegion {
 };
 
 struct Gap {
-    SegmentId id;                     // kind gap; value "gap:<before>|<after>" (see below)
+    SegmentId id;                     // kind gap; length-prefixed id derived from before/after (below)
     SourceTime start;
     SourceTime end;                   // end > start
     std::vector<GapRegion> regions;   // contiguous, in order, covering [start, end] exactly
@@ -54,13 +54,14 @@ public:
     /// The segment holding `t`; a boundary belongs to the later segment (right-continuous), the
     /// source end to the last. Pre: 0 <= t <= source_end (asserted in debug, clamped in release).
     const Segment& at(SourceTime t) const noexcept;  // the last segment holds source_end
+    SourceRange range_of(const Segment&) const noexcept;  // a gap segment has no bounds without the timeline
     const Gap* gap_before(const NoteId&) const noexcept;  // nullptr if none
     const Gap* gap_after(const NoteId&) const noexcept;
     SourceTime source_end() const noexcept;
 };
 ```
 
-`make` returns `invalid_argument` for a hole, an overlap, a zero-length segment or region, regions that do not tile their gap, duplicate ids, a gap whose `before`/`after` do not name its neighbours, a gap index out of range, or a gap id whose kind is not gap.
+`make` returns `invalid_argument` for a gap whose id differs from the length-prefixed id derived from its `before`/`after`, a hole, an overlap, a zero-length segment or region, regions that do not tile their gap, duplicate ids, a gap whose `before`/`after` do not name its neighbours, a gap index out of range, or a gap id whose kind is not gap.
 
 ```cpp
 // core/types/noise_floor.h
@@ -85,7 +86,7 @@ inline constexpr Decibels k_gap_mute_db{-120.0};
 
 **Gap ids.** `SegmentId{gap, "gap:" + <len>:<before> + <len>:<after>}`: each side length-prefixed (`5:n0001`, empty side `0:`), so no note id text can make two different pairs collide (`gap:0:5:n0001` leading, `gap:5:n00090:` trailing, `gap:0:0:` for a recording with no note). **Remap does not parse the text:** `EditList::retargeted` gets an overload taking the old and the new `SegmentTimeline` besides the `NoteIdMap`: a gap edit follows the new gap whose neighbours are the images of the old gap's neighbours (a split note: the last child is the gap's `before`, the first child its `after`); a merged-away or vanished gap orphans its edits (`orphaned_segment_ids`). Re-analysis changes note ids often (they are time-derived), so this is the main path, not an edge case (slice 3 tests: split, merge, a pair that would collide without the prefix, a note-only remap that leaves gap ids alone).
 
-**`AnalysisResult`** gains `std::optional<SegmentTimeline> timeline` and `std::optional<NoiseFloor> noise_floor` (empty by default: every existing construction stays valid). `analyse()` leaves both empty (no error) for non-melodic algorithms and when active notes overlap; a present timeline that disagrees with `notes` fails `validate`. `validate(AnalysisResult)` additionally requires, when present, that every active note is exactly one note segment with the note's range, that the floor grid is valid and its curves match the grid, and the floor's bands are ascending and equal in size. Only `is_active` notes partition the timeline (ghost candidates do not). **No `version` bump** (fields are added, no existing output changes); the fingerprint and JSON outputs gain the new fields and are re-baselined deliberately in slice 5.
+**`AnalysisResult`** gains `std::optional<SegmentTimeline> timeline` and `std::optional<NoiseFloor> noise_floor` (empty by default: every existing construction stays valid). `analyse()` leaves both empty (no error) for non-melodic algorithms and when active notes overlap; a present timeline that disagrees with `notes` fails `validate`. `validate(AnalysisResult)` additionally requires (and the new fields serialise only when present, so outputs of untouched paths do not change; a stale timeline, notes rebuilt without it, fails validate: the producers that rebuild it are `analyse()` and the remap), when present, that every active note is exactly one note segment with the note's range, that the floor grid is valid and its curves match the grid, and the floor's bands are ascending and equal in size. Only `is_active` notes partition the timeline (ghost candidates do not). **No `version` bump** (fields are added, no existing output changes); the fingerprint and JSON outputs gain the new fields and are re-baselined deliberately in slice 5.
 
 ## Public functions
 
@@ -105,7 +106,7 @@ struct NoiseFloorParams {
 /// checked. Curve: at frame i the `percentile_prob` quantile of `activity.level` over the frames
 /// within window/2 of i that lie outside every active note; a window with no such frame takes the
 /// nearest estimate on either side, else the global `activity.noise_floor`. Frames at digital
-/// silence are clamped at the activity stage's absolute floor. Spectrum: over the frames that
+/// silence are clamped at the activity stage's `k_level_floor_db` (-120 dBFS). Spectrum: over the frames that
 /// supplied the curve's estimates, the mean power per log-spaced band (its own 25 ms frames, same
 /// hop), in RMS dBFS; it is a mean, not a percentile, and not summable to the curve (band-limited,
 /// different statistic).
@@ -150,7 +151,7 @@ Inputs are spans of notes, not `AnalysisResult` (the outputs are stored in it), 
 /// Folds the `gap` edits that target `gap` in seq order up to the undo cursor.
 [[nodiscard]] EffectiveGap effective_gap(const SegmentId& gap, const EditList&);
 ```
-A gain within `k_neutral_snap_offset` of 0 dB folds to `is_edited == false`. **Target-kind rule (ADR-0024), exactly:** the category -> allowed `SegmentKind` table is `gap` -> gap; `layout` -> none yet (any target refused except as below); every other category -> note. The rule applies to `segment_ids` **and** `orphaned_segment_ids`, to every op **including reset** (a note-category reset on a gap id is refused, symmetric), and a mixed-kind target is refused. The only exception is a parameterless reset of `gap`/`layout`, which keeps passing with any target as today (`edit_types_test`: "the_new_categories_accept_only_a_parameterless_reset" is rewritten to use gap ids for `gap`); `edit_list_test` "gap_targets_pass_through_retargeting_unchanged" is rewritten (it builds a pitch edit with a mixed note+gap target: `retargeted` does not validate, so it builds the `Edit` directly). `tests/support/random_scenarios.h::random_spec` skips `gap_gain` for note targets. `EditParam::gap_gain` is appended last (`k_edit_param_count` 19 -> 20; the table is positional), one name row, one `offset_row(gap_gain, gap, decibels, k_gap_mute_db, +24)`. The fold: `effective_gap` shares `edits/detail/fold` with `effective_state` (set/add/reset, snap, undo cursor; the second consumer, not a copy), and clamps `gap_gain` to [`k_gap_mute_db`, +24] after folding (an `add` after a mute stays at the mute). The neutral snap is the double `k_neutral_snap_offset` (1e-9 dB).
+A gain within `k_neutral_snap_offset` of 0 dB folds to `is_edited == false`. **Target-kind rule (ADR-0024), exactly:** the category -> allowed `SegmentKind` table is `gap` -> gap; `layout` -> none yet (any target refused except as below); every other category -> note. The rule applies to `segment_ids` **and** `orphaned_segment_ids`, to every op **including reset** (a note-category reset on a gap id is refused, symmetric), and a mixed-kind target is refused. The only exception is a parameterless reset of `gap`/`layout`, which keeps passing with any target as today (`edit_types_test`: "the_new_categories_accept_only_a_parameterless_reset" is rewritten to use gap ids for `gap`); `edit_list_test` "gap_targets_pass_through_retargeting_unchanged" is rewritten (it builds a pitch edit with a mixed note+gap target: `retargeted` does not validate, so it builds the `Edit` directly). `tests/support/random_scenarios.h::random_spec` skips `gap_gain` for note targets. `EditParam::gap_gain` is appended last (`k_edit_param_count` 19 -> 20; the table is positional), one name row, one `offset_row(gap_gain, gap, decibels, k_gap_mute_db, +24)`. The fold: **slice 3b (own commit, no behaviour change, `effective_state_test`, random-scenario and audio contract tests pass unchanged) moves `Fold`, `apply`, `apply_reset` into `edits/detail/fold`; the note-specific clamps in `finish` stay in `effective_state`** (`effective_state` stays bit-identical because `targets()` filters by note id and the kind rule forbids gap targets on note edits). `effective_gap` asserts `gap.kind == SegmentKind::gap` and shares `edits/detail/fold` with `effective_state` (set/add/reset, snap, undo cursor; the second consumer, not a copy), and clamps `gap_gain` to [`k_gap_mute_db`, +24] once after folding, as `finish` does for the note parameters (so set -120 then add +6 gives -114 dB, **not** muted; the test records it). The neutral snap is the double `k_neutral_snap_offset` (1e-9 dB).
 
 ### The gate: a gain curve on the finished base (`core/render`, slice 7)
 
@@ -160,7 +161,7 @@ The gate is **not** a replacement signal. It is a per-sample gain applied **afte
 struct GateParams { Seconds gate_fade{0.005}; };
 /// The gain, one per output sample of `range`, of the gap edits that apply there: 1 outside every
 /// gated region; inside a `silence` region of a gap with `EffectiveGap::is_edited` the linear gain
-/// of `gain` (exactly 0 at k_gap_mute_db), ramping from 1 to that gain over `gate_fade` at a region
+/// of `gain` (exactly 0 at k_gap_mute_db), ramping linearly in gain from 1 to that gain over `gate_fade` at a region
 /// edge that borders an ungated neighbour (a note, a tail or a protected_preroll region), never into
 /// the neighbour; no ramp between two gated regions or at the recording's start or end. A region
 /// shorter than 2 x gate_fade ramps over half its length each side. Region boundaries are the gap's
@@ -174,12 +175,13 @@ struct GateParams { Seconds gate_fade{0.005}; };
 
 - **Order and overlap.** The gate multiplies the already-blended base inside a gated region's output range. A note's blend margin (up to 20 ms) that falls inside a gap is gated like the rest of the gap; the gain never reaches into a note. A gate on a silence region adjacent to an edited neighbour is therefore tested (below).
 - **`render_region` changes** (ADR-0024 lists them): `RenderParams` gains `GateParams gate`; `RenderKeyInputs` gains `gates` (for every gap edit meeting the region: the region boundaries as output samples, the `EffectiveGap`, `gate_fade`) and `k_key_format_version` becomes 4; `RenderResult` gains `gaps_rendered` (ids) and `passthrough` is `notes_rendered.empty() && gaps_rendered.empty()`; the `Plan` gains the gate list. **A gap edit whose id is not in `analysis->timeline`, or any gap edit when the timeline is absent, is an `invalid_argument` naming the id** (an orphaned gap edit, `orphaned_segment_ids`, is ignored as for notes).
-- **`dirty_regions`** gains a parameter, the `SegmentTimeline`: a gap-gain change dirties the gap's source range (gain does not move time); a timing change keeps its origin-to-end rule. A public-API change, listed in ADR-0024.
+- **`dirty_regions`** gains a parameter, the `SegmentTimeline`: a gap-gain change dirties the gap's source range (gain does not move time); a timing change keeps its origin-to-end rule. Shape: `DirtyParams` gains `const SegmentTimeline* timeline = nullptr` (existing callers compile unchanged); a gap edit with a null timeline or an id not in it is `invalid_argument` (as `render_region`), orphaned gap edits are ignored, a gap-gain change dirties `[gap.start, gap.end]` (which contains the gated output); `cli/commands/audition.cpp` passes `analysis->timeline`. A public-API change, listed in ADR-0024.
+- **The gate is skipped, not multiplied by 1.0f,** where no edit applies (rule 5 holds trivially).
 - **No `synthesis/gap` target** (the kernel has one consumer and is not an engine): `gate_curve` lives in `core/render/gate.{h,cpp}`. `macros/strip_silence` (gate mode) and `tools/gap` (gain, mute gesture) write `gap_gain` edits only.
 
 ## Slices (one concern per commit group)
 
-1. This note and ADR-0024 reviewed (round 3 if findings remain). 2. Types and validation (`segments.h`, `noise_floor.h`, `effective_gap.h`, `AnalysisResult` fields, `validate`). 3. Edit parameter `gap_gain`, target-kind rule, shared fold, `effective_gap`, `remap` with timelines. 4. `estimate_noise_floor`. 5. `build_segment_timeline` (silence regions), wired into `analyse()`, fixtures re-baselined. 6. Tail and `protected_preroll` regions. 7. The gate: `gate_curve`, `render_region`/key/result/`dirty_regions` changes, `macros/strip_silence` (gate) and `tools/gap` (gain, mute), scenario JSON gap target, audition scenario. Slice 8 (shift-first layout) follows with its own note.
+1. This note and ADR-0024 reviewed (round 3: approved with fixes, applied). 2. Types and validation (`segments.h`, `noise_floor.h`, `effective_gap.h`, `AnalysisResult` fields, `validate`). 3. Edits, four commits: 3a `gap_gain` + target-kind rule + rewritten tests; 3b fold extraction (no behaviour change); 3c `effective_gap`; 3d `retargeted`/`remap` with timelines (an absent old or new timeline orphans all gap edits; `RemapResult::report` gains gap entries; first test: gap edits survive when only note ids change). 4. `estimate_noise_floor`. 5. `build_segment_timeline` (silence regions), wired into `analyse()`, fixtures re-baselined. 6. Tail and `protected_preroll` regions. 7. The gate, five commits: 7a `gate_curve` alone on a synthetic map; 7b render integration (`RenderParams::gate`, `Plan`, `RenderKeyInputs::gates` appended last, key v4, `gaps_rendered`, `passthrough`); 7c `dirty_regions`; 7d `macros/strip_silence` (gate) and `tools/gap`; 7e scenario JSON gap target and the audition scenario. Slice 8 (shift-first layout) follows with its own note.
 
 ## Deferred (not in this note)
 
