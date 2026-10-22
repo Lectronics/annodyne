@@ -30,7 +30,7 @@ TEST_CASE("the_psola_engine_reports_its_identity_and_a_key_that_follows_its_sett
     p.shifted_classes = FrameClassSet{FrameClass::voiced};
     const PsolaEngine d{p};
     CHECK(a.name() == "psola");
-    CHECK(a.version() == 1);
+    CHECK(a.version() == 2);
     CHECK(a.settings_key() == PsolaEngine{}.settings_key());
     CHECK(a.settings_key() != b.settings_key());
     CHECK(a.settings_key() != c.settings_key());
@@ -109,8 +109,8 @@ TEST_CASE("a_psola_shifted_note_comes_out_at_the_requested_pitch_within_three_ce
 
 TEST_CASE("psola_keeps_the_level_across_a_shift", "[psola_engine]") {
     const Fixture fx{voice([](double) { return 330.0; }, harmonic_amps(8, 0.5))};
-    const std::size_t a = static_cast<std::size_t>(0.5 * k_rate);
-    const std::size_t b = static_cast<std::size_t>(1.1 * k_rate);
+    const auto a = static_cast<std::size_t>(0.5 * k_rate);
+    const auto b = static_cast<std::size_t>(1.1 * k_rate);
     const auto level = [&](const OutputAudio& o) {
         const std::vector<float> v(o.audio.channel(0).begin() + static_cast<std::ptrdiff_t>(a),
                                    o.audio.channel(0).begin() + static_cast<std::ptrdiff_t>(b));
@@ -146,6 +146,9 @@ TEST_CASE("psola_vibrato_extent_survives_a_shift", "[psola_engine]") {
 }
 
 TEST_CASE("psola_keeps_the_first_formant_where_it_was", "[psola_engine]") {
+    // 110 Hz so that after +700 cents the harmonics (165 Hz apart) sample a 150 Hz wide formant;
+    // at 165 Hz the spacing was 247 Hz, and the nearest harmonic (741 Hz) alone put the estimate
+    // 5.9 % off with any engine. Formant drift of real voices is a Phase 6 item (ROADMAP).
     const auto env_db = [](double f) {
         const auto bump = [&](double c, double w, double h) {
             const double x = (f - c) / w;
@@ -156,9 +159,9 @@ TEST_CASE("psola_keeps_the_first_formant_where_it_was", "[psola_engine]") {
     };
     std::vector<double> amps;
     for (int k = 1; k <= 40; ++k) {
-        amps.push_back(0.05 * std::pow(10.0, env_db(165.0 * k) / 20.0));
+        amps.push_back(0.05 * std::pow(10.0, env_db(110.0 * k) / 20.0));
     }
-    const Fixture fx{voice([](double) { return 165.0; }, amps)};
+    const Fixture fx{voice([](double) { return 110.0; }, amps)};
     const double shift = 700.0;
     const auto out = fx.render(PsolaEngine{}, fx.effective(shift)).value();
     const auto h = remeasure(fx, out, shift);
@@ -358,9 +361,25 @@ TEST_CASE("the_psola_margin_after_the_last_frame_continues_the_edit_for_a_bounde
     }
 }
 
-TEST_CASE("psola_moves_the_noise_inside_a_shifted_frame_and_keeps_the_timing", "[psola_engine]") {
+namespace {
+
+/// RMS of the second difference: above about 8 kHz it is noise only (the test voices end at
+/// 2.6 kHz), so it follows the noise bed and not the harmonics.
+double high_band_rms(std::span<const float> v) {
+    double energy = 0.0;
+    for (std::size_t i = 2; i < v.size(); ++i) {
+        const double d = static_cast<double>(v[i]) - 2.0 * static_cast<double>(v[i - 1]) +
+                         static_cast<double>(v[i - 2]);
+        energy += d * d;
+    }
+    return std::sqrt(energy / static_cast<double>(v.size()));
+}
+
+}  // namespace
+
+TEST_CASE("psola_keeps_the_noise_level_and_the_timing_inside_a_shifted_frame", "[psola_engine]") {
     auto x = voice([](double) { return 330.0; }, harmonic_amps(8, 0.5));
-    add_white_noise(x, 25.0, 3);
+    add_white_noise(x, 12.0, 3);
     for (std::size_t i = 0; i < x.size(); ++i) {  // keep the leading and trailing silence silent
         const double t = static_cast<double>(i) / k_rate;
         if (t < 0.15 || t > 1.45) {
@@ -368,15 +387,23 @@ TEST_CASE("psola_moves_the_noise_inside_a_shifted_frame_and_keeps_the_timing", "
         }
     }
     const Fixture fx{x};
+    const auto a = static_cast<std::size_t>(0.6 * k_rate);
+    const std::span<const float> s(x.data() + a, 8000);
+    // Overlap-adding unrelated noise grains lowers the noise by several dB (the noise bed that
+    // dropped when listening); separating the periodic part keeps it.
+    for (const double shift : {300.0, -300.0, 700.0}) {
+        const auto out = fx.render(PsolaEngine{}, fx.effective(shift)).value();
+        const std::span<const float> o(out.audio.channel(0).data() + a, 8000);
+        INFO("shift " << shift);
+        CHECK(std::abs(20.0 * std::log10(high_band_rms(o) / high_band_rms(s))) < 1.5);
+        const auto plain =
+            fx.render(PsolaEngine{{.separation_cycles = 0}}, fx.effective(shift)).value();
+        const std::span<const float> p(plain.audio.channel(0).data() + a, 8000);
+        CHECK(std::abs(20.0 * std::log10(high_band_rms(p) / high_band_rms(s))) >
+              std::abs(20.0 * std::log10(high_band_rms(o) / high_band_rms(s))) + 1.0);
+    }
     const auto out = fx.render(PsolaEngine{}, fx.effective(300.0)).value();
-    // The noise differs from the original (PSOLA re-spaces everything), the energy stays.
-    const std::size_t a = static_cast<std::size_t>(0.6 * k_rate);
-    const std::vector<float> o(out.audio.channel(0).begin() + static_cast<std::ptrdiff_t>(a),
-                               out.audio.channel(0).begin() + static_cast<std::ptrdiff_t>(a) +
-                                   8000);
-    const std::vector<float> s(x.begin() + static_cast<std::ptrdiff_t>(a),
-                               x.begin() + static_cast<std::ptrdiff_t>(a) + 8000);
-    CHECK(std::abs(20.0 * std::log10(rms(o) / rms(s))) < 1.5);
+    const std::span<const float> o(out.audio.channel(0).data() + a, 8000);
     CHECK(std::memcmp(o.data(), s.data(), o.size() * sizeof(float)) != 0);
     // Timing: the note's onset (first sample above 5 % of the peak) moves by less than a period.
     const auto onset = [](std::span<const float> v) {
@@ -392,6 +419,16 @@ TEST_CASE("psola_moves_the_noise_inside_a_shifted_frame_and_keeps_the_timing", "
         return 0.0;
     };
     CHECK(std::abs(onset(out.audio.channel(0)) - onset(x)) < k_rate / 330.0);
+}
+
+TEST_CASE("bad_separation_cycles_are_invalid_arguments", "[psola_engine]") {
+    const Fixture fx{voice([](double) { return 330.0; }, harmonic_amps(8, 0.5))};
+    for (const int cycles : {-1, 9}) {
+        CHECK(fx.render(PsolaEngine{{.separation_cycles = cycles}}, fx.effective(100.0))
+                  .error()
+                  .code == ErrorCode::invalid_argument);
+    }
+    CHECK(PsolaEngine{{.separation_cycles = 2}}.settings_key() != PsolaEngine{}.settings_key());
 }
 
 TEST_CASE("psola_rejects_a_non_finite_center_a_ragged_class_track_and_a_reversed_range",
@@ -420,6 +457,7 @@ TEST_CASE("a_large_down_shift_leaves_no_dc_offset", "[psola_engine]") {
     // Before the one-period local mean was taken out, -700 cents on a rich voice left -58.5 dBFS
     // of DC in the audition scenario (limit -60). Random harmonic phases: a zero-phase sum is a
     // pulse train.
+    // NOLINTNEXTLINE(bugprone-random-generator-seed): a fixed seed keeps the test deterministic
     std::mt19937 rng{7};
     std::uniform_real_distribution<double> phase{0.0, 2.0 * std::numbers::pi};
     std::vector<double> phases(30);

@@ -19,13 +19,16 @@ constexpr double k_max_period_s = 1.0 / 40.0;
 constexpr double k_context_periods = 3.0;  // source read around the zone, in longest periods
 constexpr double k_snap_halfwidth = 0.2;   // mark search window, fraction of a period
 constexpr double k_min_window_sum = 1e-6;
+constexpr int k_max_separation_cycles = 8;
 constexpr double k_margin_s = 0.1;  // how far a shifted edge frame's run continues past the note
 
 Result<void> check_params(const PsolaEngineParams& p) {
     if (!std::isfinite(p.class_edge_fade.value()) || p.class_edge_fade.value() < 0.0 ||
-        !std::isfinite(p.max_shift.value()) || p.max_shift.value() <= 0.0) {
+        !std::isfinite(p.max_shift.value()) || p.max_shift.value() <= 0.0 ||
+        p.separation_cycles < 0 || p.separation_cycles > k_max_separation_cycles) {
         return fail(ErrorCode::invalid_argument,
-                    "PsolaEngine: class_edge_fade must be >= 0 and max_shift finite and > 0");
+                    "PsolaEngine: class_edge_fade must be >= 0, max_shift finite and > 0 and "
+                    "separation_cycles in 0..8");
     }
     return {};
 }
@@ -208,34 +211,63 @@ private:
     std::int64_t first_;
 };
 
-/// Analysis marks over [from, to]: the first at the strongest sample of one period, each next one
-/// a period later (the period at the previous mark) snapped to the strongest sample within
-/// +-k_snap_halfwidth periods.
-std::vector<std::int64_t> analysis_marks(const Signal& x, const PeriodCurve& period, double from,
-                                         double to) {
-    std::vector<std::int64_t> marks;
-    const auto strongest = [&](std::int64_t lo, std::int64_t hi) {
-        std::int64_t best = lo;
-        for (std::int64_t n = lo; n <= hi; ++n) {
-            if (x.at(n) > x.at(best)) {
-                best = n;
-            }
-        }
-        return best;
-    };
-    const double first_period = period.at(from);
+/// Analysis marks over [from, to] (fractional global samples): the first at the strongest sample
+/// of one period, each next one placed where the waveform best matches the previous mark's, within
+/// +-k_snap_halfwidth periods of one period later (the period at the previous mark), refined to a
+/// fraction of a sample. A peak pick jumps between features of a real voice and misaligns the
+/// grains it places (the hiccups, tests/audio phase 4 listening); matching the previous period
+/// keeps every mark on the same feature.
+std::vector<double> analysis_marks(const Signal& x, const PeriodCurve& period, double from,
+                                   double to) {
+    std::vector<double> marks;
     const auto lo = static_cast<std::int64_t>(std::floor(from));
-    marks.push_back(strongest(lo, lo + static_cast<std::int64_t>(std::ceil(first_period))));
+    const auto first_hi = lo + static_cast<std::int64_t>(std::ceil(period.at(from)));
+    std::int64_t first = lo;
+    for (std::int64_t n = lo; n <= first_hi; ++n) {
+        if (x.at(n) > x.at(first)) {
+            first = n;
+        }
+    }
+    marks.push_back(static_cast<double>(first));
+    const auto similarity = [&](double prev, double candidate, std::int64_t reach) {
+        double dot = 0.0;
+        double e_prev = 0.0;
+        double e_cand = 0.0;
+        for (std::int64_t k = -reach; k <= reach; ++k) {
+            const double a = x.cubic(prev + static_cast<double>(k));
+            const double b = x.cubic(candidate + static_cast<double>(k));
+            dot += a * b;
+            e_prev += a * a;
+            e_cand += b * b;
+        }
+        return dot / std::sqrt(e_prev * e_cand + 1e-30);
+    };
     while (true) {
-        const auto prev = static_cast<double>(marks.back());
+        const double prev = marks.back();
         const double t = period.at(prev);
         const double nominal = prev + t;
         if (nominal > to) {
             break;
         }
         const auto half = static_cast<std::int64_t>(std::ceil(k_snap_halfwidth * t));
+        const auto reach = static_cast<std::int64_t>(std::ceil(0.5 * t));
         const auto centre = static_cast<std::int64_t>(std::llround(nominal));
-        marks.push_back(strongest(centre - half, centre + half));
+        std::int64_t best = centre;
+        double best_score = -2.0;
+        for (std::int64_t n = centre - half; n <= centre + half; ++n) {
+            const double score = similarity(prev, static_cast<double>(n), reach);
+            if (score > best_score) {
+                best_score = score;
+                best = n;
+            }
+        }
+        // Parabola through the score at best-1, best, best+1 for the fractional position.
+        const double left = similarity(prev, static_cast<double>(best - 1), reach);
+        const double right = similarity(prev, static_cast<double>(best + 1), reach);
+        const double curve = left - 2.0 * best_score + right;
+        const double offset =
+            curve < -1e-12 ? std::clamp(0.5 * (left - right) / curve, -0.5, 0.5) : 0.0;
+        marks.push_back(static_cast<double>(best) + offset);
     }
     return marks;
 }
@@ -243,7 +275,7 @@ std::vector<std::int64_t> analysis_marks(const Signal& x, const PeriodCurve& per
 /// Adds one two-period Hann grain around analysis mark `a` (periods before and after it:
 /// before/after, samples) at synthesis position `s` into acc and window_sum.
 struct Grain {
-    std::int64_t analysis_mark;
+    double analysis_mark;  // fractional global sample
     double synthesis_position;
     double before;
     double after;
@@ -266,31 +298,128 @@ void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
         const double span = u < 0.0 ? g.before : g.after;
         const double window = 0.5 * (1.0 + std::cos(std::numbers::pi * u / span));
         const auto idx = static_cast<std::size_t>(n - acc.first);
-        acc.sum[idx] += window * x.cubic(static_cast<double>(g.analysis_mark) + u);
+        acc.sum[idx] += window * x.cubic(g.analysis_mark + u);
         acc.window_sum[idx] += window;
         acc.output_period[idx] = g.output_period;  // the latest grain covering the sample
     }
 }
 
+/// Mean square of the source over the cycle around each mark (a tiny floor keeps ratios finite).
+std::vector<double> cycle_energies(const Signal& x, const std::vector<double>& marks,
+                                   const std::vector<double>& periods) {
+    std::vector<double> energy(marks.size(), 0.0);
+    for (std::size_t j = 0; j < marks.size(); ++j) {
+        const auto from = static_cast<std::int64_t>(std::llround(marks[j] - 0.5 * periods[j]));
+        const auto to = static_cast<std::int64_t>(std::llround(marks[j] + 0.5 * periods[j]));
+        double sum = 0.0;
+        for (std::int64_t n = from; n < to; ++n) {
+            sum += x.at(n) * x.at(n);
+        }
+        energy[j] = sum / std::max<double>(1.0, static_cast<double>(to - from)) + 1e-12;
+    }
+    return energy;
+}
+
+/// The marks' own spacing: the distance between the neighbours on each side over the steps.
+std::vector<double> mark_periods(const std::vector<double>& marks) {
+    std::vector<double> periods(marks.size(), 0.0);
+    for (std::size_t j = 0; j < marks.size(); ++j) {
+        const std::size_t a = j > 0 ? j - 1 : 0;
+        const std::size_t b = j + 1 < marks.size() ? j + 1 : marks.size() - 1;
+        periods[j] = (marks[b] - marks[a]) / static_cast<double>(b - a);
+    }
+    return periods;
+}
+
+/// Writes into `periodic` (samples from global `first`) the periodic part of the source around
+/// each analysis mark: the average of the same point of up to `cycles` cycles on each side, Hann
+/// weighted, and by how close the cycle's energy is to the centre cycle's (smaller over larger),
+/// each neighbour being scaled to the centre cycle's level, so an attack, a decay or a neighbouring
+/// sound does not smear the level. The point is the offset from the mark, scaled by the ratio of
+/// the local periods, so the cycles line up on the mark's feature through a changing pitch (the
+/// marks already follow the waveform). Whatever does not repeat from cycle to cycle is left out
+/// and stays in the source.
+void average_cycles(const Signal& x, const std::vector<double>& marks, int cycles,
+                    std::int64_t first, std::vector<float>& periodic) {
+    const std::size_t count = marks.size();
+    if (count < 2) {
+        return;
+    }
+    const std::vector<double> periods = mark_periods(marks);
+    const std::vector<double> energy = cycle_energies(x, marks, periods);
+    const auto average_at = [&](std::size_t i, double n) {
+        const double u = n - marks[i];
+        double sum = 0.0;
+        double weights = 0.0;
+        for (int k = -cycles; k <= cycles; ++k) {
+            const auto j = static_cast<std::int64_t>(i) + k;
+            if (j < 0 || std::cmp_greater_equal(j, count)) {
+                continue;
+            }
+            const auto ju = static_cast<std::size_t>(j);
+            const double w = 0.5 * (1.0 + std::cos(std::numbers::pi * k / (cycles + 1))) *
+                             std::min(energy[ju], energy[i]) / std::max(energy[ju], energy[i]);
+            const double level = std::sqrt(energy[i] / energy[ju]);  // to the centre cycle's level
+            sum += w * level * x.cubic(marks[ju] + u * periods[ju] / periods[i]);
+            weights += w;
+        }
+        return sum / weights;
+    };
+    const auto end = static_cast<std::int64_t>(periodic.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        const double lo = i > 0 ? 0.5 * (marks[i - 1] + marks[i]) : marks[i] - 0.5 * periods[i];
+        const double hi =
+            i + 1 < count ? 0.5 * (marks[i] + marks[i + 1]) : marks[i] + 0.5 * periods[i];
+        const auto begin = std::max(static_cast<std::int64_t>(std::ceil(lo)), first);
+        for (std::int64_t n = begin; static_cast<double>(n) < hi && n - first < end; ++n) {
+            periodic[static_cast<std::size_t>(n - first)] =
+                static_cast<float>(average_at(i, static_cast<double>(n)));
+        }
+    }
+}
+
+/// Gain for what the periodic average leaves out. For white noise of unit power the average
+/// (Hann weights w_k, a = w_0 / sum w, b = sum w^2 / (sum w)^2) holds a fraction b of the power and
+/// is correlated with the sample itself by a, so the remainder x - average has power 1 - 2a + b,
+/// and the re-spaced average brings back about b. This gain makes the two add up to the original
+/// power. It is exact for stationary noise and 1 for no separation.
+double remainder_gain(int cycles) {
+    if (cycles <= 0) {
+        return 1.0;
+    }
+    double sum = 0.0;
+    double sum_squares = 0.0;
+    for (int k = -cycles; k <= cycles; ++k) {
+        const double w = 0.5 * (1.0 + std::cos(std::numbers::pi * k / (cycles + 1)));
+        sum += w;
+        sum_squares += w * w;
+    }
+    const double a = 1.0 / sum;
+    const double b = sum_squares / (sum * sum);
+    return std::sqrt((1.0 - b) / (1.0 - 2.0 * a + b));
+}
+
 /// Re-spaces the grains of one run: synthesis marks one shifted period apart from `from`, each
 /// taking the nearest analysis mark.
 void synthesise_run(const Signal& x, const PeriodCurve& period, double ratio, double from,
-                    double to, Accumulator& acc) {
-    const std::vector<std::int64_t> marks =
+                    double to, int cycles, std::vector<float>& periodic, Accumulator& acc) {
+    const std::vector<double> marks =
         analysis_marks(x, period, from - period.at(from), to + period.at(to));
+    if (cycles > 0) {
+        average_cycles(x, marks, cycles, acc.first, periodic);
+    }
+    const Signal grains_from{periodic, acc.first};
     double s = from - period.at(from) / ratio;
     std::size_t i = 0;
     while (s <= to + period.at(to)) {
-        while (i + 1 < marks.size() && std::abs(static_cast<double>(marks[i + 1]) - s) <=
-                                           std::abs(static_cast<double>(marks[i]) - s)) {
+        while (i + 1 < marks.size() && std::abs(marks[i + 1] - s) <= std::abs(marks[i] - s)) {
             ++i;
         }
-        const double t = period.at(static_cast<double>(marks[i]));
-        const double before = i > 0 ? static_cast<double>(marks[i] - marks[i - 1]) : t;
-        const double after =
-            i + 1 < marks.size() ? static_cast<double>(marks[i + 1] - marks[i]) : t;
+        const double t = period.at(marks[i]);
+        const double before = i > 0 ? marks[i] - marks[i - 1] : t;
+        const double after = i + 1 < marks.size() ? marks[i + 1] - marks[i] : t;
         const double output_period = period.at(s) / ratio;
-        add_grain(x,
+        add_grain(grains_from,
                   {.analysis_mark = marks[i],
                    .synthesis_position = s,
                    .before = before,
@@ -361,6 +490,12 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
                     .sum = std::vector<double>(ext_count, 0.0),
                     .window_sum = std::vector<double>(ext_count, 0.0),
                     .output_period = std::vector<double>(ext_count, 0.0)};
+    std::vector<float> periodic(
+        ext_count);  // the source until a run replaces it by its periodic part
+    for (std::size_t i = 0; i < ext_count; ++i) {
+        periodic[i] = static_cast<float>(x.at(zone.ext_first + static_cast<std::int64_t>(i)));
+    }
+    const double rest_gain = remainder_gain(p.separation_cycles);
     const auto zone_begin = static_cast<double>(zone.first);
     const auto zone_end = static_cast<double>(zone.last);
     for (const Run& run : shifted_runs(frames)) {
@@ -372,7 +507,8 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
                 ? zone_end
                 : std::min(frames[run.last].position + 0.5 * hop_samples, zone_end);
         if (right > left) {
-            synthesise_run(x, PeriodCurve{frames, run, zone.rate}, zone.ratio, left, right, acc);
+            synthesise_run(x, PeriodCurve{frames, run, zone.rate}, zone.ratio, left, right,
+                           p.separation_cycles, periodic, acc);
         }
     }
     const std::vector<double> y = run_signal(acc);
@@ -381,8 +517,11 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
         const std::size_t idx = n + zone_offset;
         if (w[n] > 0.0 && acc.window_sum[idx] > k_min_window_sum) {
             const double q = 0.5 * std::numbers::pi * w[n];
+            // What the periodic average left out (zero wherever it was not computed) stays.
+            const double rest = rest_gain * (x.at(zone.first + static_cast<std::int64_t>(n)) -
+                                             static_cast<double>(periodic[idx]));
             samples[n] = static_cast<float>(std::cos(q) * static_cast<double>(samples[n]) +
-                                            std::sin(q) * y[idx]);
+                                            std::sin(q) * (y[idx] + rest));
         }
     }
 }
@@ -393,9 +532,10 @@ PsolaEngine::PsolaEngine(PsolaEngineParams params) : params_{params} {}
 
 std::string PsolaEngine::settings_key() const {
     const auto pattern = [](double v) { return hex64(std::bit_cast<std::uint64_t>(v)); };
-    return "v1;classes=" + hex64(params_.shifted_classes.bits()) +
+    return "v2;classes=" + hex64(params_.shifted_classes.bits()) +
            ";fade=" + pattern(params_.class_edge_fade.value()) +
-           ";max_shift=" + pattern(params_.max_shift.value());
+           ";max_shift=" + pattern(params_.max_shift.value()) +
+           ";sep=" + std::to_string(params_.separation_cycles);
 }
 
 Result<OutputAudio> PsolaEngine::render_note(const AudioSource& src, const Note& note,
