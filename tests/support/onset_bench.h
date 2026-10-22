@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -280,7 +281,10 @@ inline Family family_e() {
 inline Family family_f() {
     std::vector<double> truth;
     auto sig = sequence(8, 0.45, 0.15, 0.005, truth);
-    std::vector<float> noisy(sig.begin(), sig.end());
+    std::vector<float> noisy;
+    noisy.reserve(sig.size());
+    std::ranges::transform(sig, std::back_inserter(noisy),
+                           [](double v) { return static_cast<float>(v); });
     add_white_noise(noisy, 30.0, 11);
     return finish("F_sharp_noise30dB", std::vector<double>(noisy.begin(), noisy.end()),
                   std::move(truth));

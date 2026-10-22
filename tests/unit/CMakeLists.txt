@@ -123,8 +123,12 @@ anno_add_test(NAME dsp_resample_kweight_interp_test SOURCES dsp_resample_kweight
 anno_add_test(NAME pitch_test SOURCES pitch_test.cpp LABELS unit DEPS anno::core_analysis_pitch)
 anno_add_test(NAME onsets_test SOURCES onsets_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_pitch)
 anno_add_test(NAME onset_stages_test SOURCES onset_stages_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_analysis_orchestrator anno::core_dsp)
-anno_add_test(NAME onset_bench_test SOURCES onset_bench_test.cpp LABELS unit DEPS anno::core_analysis_onsets anno::core_dsp anno::core_io)
+# The bit-exact gate runs 40 detections on 12 s of audio: over 300 s under TSan on macos-15.
+anno_add_test(NAME onset_bench_test SOURCES onset_bench_test.cpp LABELS unit TIMEOUT 1500 DEPS anno::core_analysis_onsets anno::core_dsp anno::core_io)
 target_compile_definitions(onset_bench_test PRIVATE ANNO_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden/vocals/vocadito")
+if(MSVC)
+    target_compile_definitions(onset_bench_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit DEPS anno::core_analysis_segmentation anno::core_analysis_perceived_pitch anno::core_analysis_onsets anno::core_analysis_pitch)
 anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS unit DEPS anno::core_analysis_perceived_pitch)
 anno_add_test(NAME pitch_target_test SOURCES pitch_target_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)

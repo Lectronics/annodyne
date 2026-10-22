@@ -70,8 +70,9 @@ Result<PeakList> pick_peaks_windowed(const Activation& activation,
     PeakList out{.hop = activation.hop, .peaks = {}};
     std::int64_t last = -1;
     bool have_last = false;
-    for (std::int64_t i = 0; i < static_cast<std::int64_t>(a.size()); ++i) {
-        const double v = a[static_cast<std::size_t>(i)];
+    for (std::size_t index = 0; index < a.size(); ++index) {
+        const auto i = static_cast<std::int64_t>(index);
+        const double v = a[index];
         if (!(v > 0.0) || !is_window_maximum(a, i, w)) {
             continue;
         }
