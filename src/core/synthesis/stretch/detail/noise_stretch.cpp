@@ -1,0 +1,63 @@
+#include "core/synthesis/stretch/detail/noise_stretch.h"
+
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+
+namespace anno::stretch_detail {
+
+namespace {
+
+/// splitmix64: a well-mixed 64-bit hash of the seed and two counters.
+std::uint64_t mix(std::uint64_t seed, std::uint64_t a, std::uint64_t b) {
+    std::uint64_t z = seed + 0x9e3779b97f4a7c15ULL * (a + 1) + 0xbf58476d1ce4e5b9ULL * (b + 1);
+    z = (z ^ (z >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27U)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31U);
+}
+
+/// Uniform in [-1, 1) from the top 53 bits of a hash.
+double signed_unit(std::uint64_t h) {
+    return static_cast<double>(h >> 11U) / 4503599627370496.0 - 1.0;
+}
+
+}  // namespace
+
+std::vector<double> synthesise_noise(const grain::Signal& x, const SpanGeometry& g,
+                                     std::int64_t begin, std::int64_t end, const StretchParams& p) {
+    std::vector<double> out(static_cast<std::size_t>(end - begin), 0.0);
+    const auto length = std::max<std::int64_t>(
+        4, 2 * std::llround(0.5 * p.noise_grain.value() * g.rate_hz));  // even
+    const double hop = static_cast<double>(length) / 2.0;
+    const double half = hop;
+    const auto k_lo = static_cast<std::int64_t>(
+                          std::floor((static_cast<double>(begin) - g.out_start - half) / hop)) -
+                      1;
+    const auto k_hi = static_cast<std::int64_t>(
+                          std::ceil((static_cast<double>(end) - g.out_start + half) / hop)) +
+                      1;
+    for (std::int64_t k = k_lo; k <= k_hi; ++k) {
+        const double centre = g.out_start + static_cast<double>(k) * hop;
+        const double jitter = p.noise_jitter_hop_fraction * hop *
+                              signed_unit(mix(p.noise_seed, static_cast<std::uint64_t>(g.first),
+                                              static_cast<std::uint64_t>(k)));
+        // Whole-sample reads: an interpolated read at a random fraction low-passes white noise.
+        const auto source_centre =
+            static_cast<std::int64_t>(std::llround(g.source_at(centre) + jitter));
+        const auto centre_sample = static_cast<std::int64_t>(std::llround(centre));
+        const auto n_lo =
+            std::max<std::int64_t>(begin, static_cast<std::int64_t>(std::ceil(centre - half)));
+        const auto n_hi =
+            std::min<std::int64_t>(end, static_cast<std::int64_t>(std::ceil(centre + half)));
+        for (std::int64_t n = n_lo; n < n_hi; ++n) {
+            const double u = static_cast<double>(n) - centre;
+            const double window =
+                std::sin(std::numbers::pi * (u + half) / static_cast<double>(length));
+            out[static_cast<std::size_t>(n - begin)] +=
+                window * x.at(source_centre + (n - centre_sample));
+        }
+    }
+    return out;
+}
+
+}  // namespace anno::stretch_detail
