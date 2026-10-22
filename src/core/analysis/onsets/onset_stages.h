@@ -212,7 +212,13 @@ struct TransientParams {
     LocaliseParams localise;
 };
 
-/// P0 (if set) -> P1 -> P2 (if set) -> P3 -> D -> K -> L on the mono mix of `src`. Output: kind
+/// The pipeline on a mono signal: P0 (if set) -> P1 -> P2 (if set) -> P3 -> D -> K -> L. Returns
+/// the localised onsets sorted by time (the outcome tells whether the energy really rose). The
+/// samples that L reads are the normalised ones when P0 is set. Errors: those of the stages.
+[[nodiscard]] Result<std::vector<LocalisedOnset>>
+transient_onsets(std::span<const float> mono, Hz rate, const TransientParams& params);
+
+/// transient_onsets on the mono mix of `src`. Output: kind
 /// attack, strength from K, sorted by time. An empty or too short source gives an empty list.
 /// Errors: those of the stages.
 [[nodiscard]] Result<OnsetList> detect_transients(const AudioSource& src,

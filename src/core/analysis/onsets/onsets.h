@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/analysis/onsets/onset_stages.h"
 #include "core/types/audio_source.h"
 #include "core/types/result.h"
 #include "core/types/tracks.h"
@@ -10,7 +11,17 @@
 
 namespace anno {
 
+/// How the spectral onsets are found: `adaptive_threshold` is the Phase 3 chain (activation ->
+/// adaptive local-mean threshold -> refinement); `windowed_peaks` is the staged pipeline of
+/// onset_stages.h (`OnsetParams::pipeline`: level normalisation, windowed peak picking, ...).
+enum class SpectralMethod { adaptive_threshold, windowed_peaks };
+
 struct OnsetParams {
+    SpectralMethod method = SpectralMethod::adaptive_threshold;
+    // Used when method == windowed_peaks (it carries its own window, hop, lag, thresholds and
+    // refinement); the fields below it still govern the energy steps, the pitch changes, the merge
+    // and, for adaptive_threshold, the whole spectral chain.
+    TransientParams pipeline;
     Seconds hop{0.005};     // rounded to whole samples; onset times use the actual hop
     Seconds window{0.043};  // STFT window; n_fft = the power of two nearest to window * rate
     int filterbank_bands_per_octave = 24;  // log-spaced triangular filters (SuperFlux), from 30 Hz

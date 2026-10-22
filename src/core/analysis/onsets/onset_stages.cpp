@@ -440,21 +440,18 @@ Result<std::vector<LocalisedOnset>> localise(std::span<const float> mono, Hz rat
     return out;
 }
 
-Result<OnsetList> detect_transients(const AudioSource& src, const TransientParams& params) {
-    auto mono = read_mono(src);
-    if (!mono) {
-        return Unexpected{mono.error()};
-    }
-    std::vector<float> samples = std::move(mono->samples);
-    const Hz rate = mono->sample_rate;
+Result<std::vector<LocalisedOnset>> transient_onsets(std::span<const float> mono, Hz rate,
+                                                     const TransientParams& params) {
+    std::vector<float> normalised;
     if (params.level) {
-        auto normalised = normalise_level(samples, rate, *params.level);
-        if (!normalised) {
-            return Unexpected{normalised.error()};
+        auto level = normalise_level(mono, rate, *params.level);
+        if (!level) {
+            return Unexpected{level.error()};
         }
-        samples = std::move(normalised->samples);
+        normalised = std::move(level->samples);
+        mono = normalised;
     }
-    auto bands = band_spectrogram(samples, rate, params.bands);
+    auto bands = band_spectrogram(mono, rate, params.bands);
     if (!bands) {
         return Unexpected{bands.error()};
     }
@@ -476,11 +473,23 @@ Result<OnsetList> detect_transients(const AudioSource& src, const TransientParam
     if (!peaks) {
         return Unexpected{peaks.error()};
     }
-    auto onsets = localise(samples, rate, *peaks, params.localise);
+    auto onsets = localise(mono, rate, *peaks, params.localise);
     if (!onsets) {
         return Unexpected{onsets.error()};
     }
     std::ranges::stable_sort(*onsets, {}, [](const LocalisedOnset& o) { return o.time; });
+    return onsets;
+}
+
+Result<OnsetList> detect_transients(const AudioSource& src, const TransientParams& params) {
+    auto mono = read_mono(src);
+    if (!mono) {
+        return Unexpected{mono.error()};
+    }
+    auto onsets = transient_onsets(mono->samples, mono->sample_rate, params);
+    if (!onsets) {
+        return Unexpected{onsets.error()};
+    }
     OnsetList list;
     for (const LocalisedOnset& o : *onsets) {
         list.times.push_back(o.time);

@@ -3,8 +3,10 @@ anno_add_library(core/analysis/onsets
         onset_stages.cpp
         onsets.cpp
         detail/energy_step.cpp
+        detail/merge_onsets.cpp
         detail/peak_picking.cpp
         detail/pitch_change.cpp
+        detail/spectral_onsets.cpp
         detail/superflux.cpp
     PUBLIC_DEPS anno::core_types
     PRIVATE_DEPS anno::core_dsp)
