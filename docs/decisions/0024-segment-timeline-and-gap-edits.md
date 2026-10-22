@@ -1,7 +1,7 @@
 # ADR-0024: Segment timeline types and the gap gain edit
 
 - **Date:** 2026-10-22
-- **Status:** proposed 2026-10-22 (owner chose the core subset of the gap work for Phase 5); structure review round 2 pending
+- **Status:** proposed 2026-10-22 (owner chose the core subset of the gap work for Phase 5); structure review round 2 answered in revision 2
 - **Phase:** 5
 - **Amends:** ADR-0008 (§1, §6: the timeline lives in `core/types`; gap ids; `AnalysisResult` gains `timeline` and `noise_floor`); ADR-0005 (record: new `EditParam` and a target-kind rule)
 
@@ -12,8 +12,9 @@ ADR-0008 decided that a track's source time is a partition into note and gap seg
 1. **New types in `core/types`:** `GapRegionKind {tail, silence, noise}`, `GapRegion`, `Gap`, `Segment`, `SegmentTimeline` (class with the partition invariant), `NoiseFloor`, `EffectiveGap`, `k_gap_mute_db`. A gap's id is `SegmentId{gap, "gap:<before>|<after>"}`.
 2. **`AnalysisResult`** gains `std::optional<SegmentTimeline> timeline` and `std::optional<NoiseFloor> noise_floor`, empty by default. No `version` bump; outputs that serialise the analysis gain the fields.
 3. **One new edit parameter:** `EditParam::gap_gain`, category `gap`, `ValueKind::decibels`, neutral 0 dB, range [`k_gap_mute_db`, +24 dB], ops set and add and reset. **Mute is `gap_gain` at `k_gap_mute_db`** (exactly silent), not a flag. Gate semantics: `silence` and `noise` regions change by the gain, `tail` regions and notes do not.
-4. **Target-kind rule in `validate(EditSpec)`:** categories `gap` target gap segment ids only; every other existing category targets note ids only (reset of `gap`/`layout` aside as the code already allows). This is new: today nothing rejects a gap id on a note edit.
-5. **`render_gap` is a free function** in `core/synthesis/gap` (as `stretch_span`, ADR-0023), called by `render_region` for the gaps with an edit.
+4. **Target-kind rule in `validate(EditSpec)`** (exact table in the design note): `gap` -> gap ids, `layout` -> none yet, every other category -> note ids; applies to `segment_ids` and `orphaned_segment_ids` and to every op including reset, mixed targets refused; the one exception is a parameterless reset of `gap`/`layout`. Two existing tests are rewritten (named in the note).
+5. **The gate is a gain curve** (`gate_curve`, `core/render/gate`) applied after `render_unedited` and `blend`: it works for any slope, needs no zone and no new engine target. A gap edit with no matching gap in the timeline (or no timeline) is `invalid_argument`. `RenderKeyInputs.gates`, key version 4, `RenderResult.gaps_rendered`, `passthrough` over notes and gaps, `RenderParams.gate`, and `dirty_regions` taking the `SegmentTimeline` are the public changes.
+5a. **Gap ids** are length-prefixed (`gap:<len>:<before><len>:<after>`); remap uses the old and new timelines, not the text. `GapRegionKind` is `{tail, protected_preroll, silence}`; the gate leaves `tail` and `protected_preroll` untouched.
 6. **Deferred and not decided here:** layout and ripple (own note and ADR amending ADR-0023 §3), room tone, tighten/remove, breath types and detection, `layout`/`breath*` edit params.
 
 ## Alternatives considered
