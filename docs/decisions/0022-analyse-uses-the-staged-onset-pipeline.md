@@ -1,7 +1,7 @@
 # ADR-0022: analyse() finds spectral onsets with the staged pipeline
 
 - **Date:** 2026-10-22
-- **Status:** proposed 2026-10-22 (owner: "Lets use analyse() with the new pipeline"); structure review round 1 answered in this revision; the owner's acceptance pending
+- **Status:** accepted 2026-10-22 (owner: "I do want to go with the new pipeline as the default"); proposed the same day on the owner's request "Lets use analyse() with the new pipeline"; structure review round 1 answered
 - **Phase:** 5
 - **Amends:** ADR-0010a (the onset strength scale and the energy-step finding, below)
 
