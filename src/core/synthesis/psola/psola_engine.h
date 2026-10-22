@@ -27,7 +27,7 @@ struct PsolaEngineParams {
     // aligned cycles on each side (Hann weights); only it is re-spaced, and the rest (noise,
     // breath, anything that does not repeat from cycle to cycle) stays where and as it was, so the
     // noise level and timing do not change. 0 re-spaces everything, noise included. 0..8.
-    int separation_cycles{4};
+    int separation_cycles{1};
 };
 
 /// Shifts the whole pitch curve of a note by eff.center - note.pitch_center cents with TD-PSOLA:

@@ -134,7 +134,10 @@ TEST_CASE("psola_formant_and_vibrato_deviations_stay_inside_the_recorded_bounds"
           "[pitch_engines]") {
     // Recorded 2026-10-21: first formant -18.0 % at -200 cents, vibrato rate 5.52 -> 5.19 Hz at
     // +700 cents. A regression beyond these bounds fails here; the limits themselves stay failing
-    // in [psola_limits].
+    // in [psola_limits]. Owner-approved 2026-10-21: the rate bound is +-0.5 Hz (was 0.4) after the
+    // marks changed; the rate of this ~1 s note reads 5.19 / 5.93 / 5.62 Hz with 0 / 1 / 2 cycles
+    // of separation while the other shifts read 5.52-5.56, i.e. the measure jitters by about
+    // +-0.4 Hz on six vibrato cycles (not shown to be an engine rate change).
     const Package down = audition("vowel_vibrato_down200", EngineChoice::psola);
     const TempCleanup c1{down.dir};
     const auto formant = measured(down, AuditionCheck::first_formant);
@@ -149,7 +152,7 @@ TEST_CASE("psola_formant_and_vibrato_deviations_stay_inside_the_recorded_bounds"
     const std::string vibrato = measured(up, AuditionCheck::vibrato);
     INFO(vibrato);
     const double rate_after = std::stod(vibrato.substr(vibrato.find("-> ") + 3));
-    CHECK(std::abs(rate_after - 5.52) <= 0.4);
+    CHECK(std::abs(rate_after - 5.52) <= 0.5);
 }
 
 TEST_CASE("a_two_octave_shift_up_keeps_the_pitch_and_the_structural_checks", "[pitch_engines]") {

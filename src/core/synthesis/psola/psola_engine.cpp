@@ -286,6 +286,7 @@ struct Accumulator {
     std::int64_t first;  // global sample of index 0
     std::vector<double> sum;
     std::vector<double> window_sum;
+    std::vector<double> window_square_sum;  // sum of the squared windows (noise power gain)
     std::vector<double> output_period;  // of the latest grain covering the sample (0 where none)
 };
 
@@ -300,6 +301,7 @@ void add_grain(const Signal& x, const Grain& g, Accumulator& acc) {
         const auto idx = static_cast<std::size_t>(n - acc.first);
         acc.sum[idx] += window * x.cubic(g.analysis_mark + u);
         acc.window_sum[idx] += window;
+        acc.window_square_sum[idx] += window * window;
         acc.output_period[idx] = g.output_period;  // the latest grain covering the sample
     }
 }
@@ -378,15 +380,14 @@ void average_cycles(const Signal& x, const std::vector<double>& marks, int cycle
     }
 }
 
-/// Gain for what the periodic average leaves out. For white noise of unit power the average
-/// (Hann weights w_k, a = w_0 / sum w, b = sum w^2 / (sum w)^2) holds a fraction b of the power and
-/// is correlated with the sample itself by a, so the remainder x - average has power 1 - 2a + b,
-/// and the re-spaced average brings back about b. This gain makes the two add up to the original
-/// power. It is exact for stationary noise and 1 for no separation.
-double remainder_gain(int cycles) {
-    if (cycles <= 0) {
-        return 1.0;
-    }
+/// The Hann average's share of the power of white noise: `own` = w_0 / sum w (how much the average
+/// follows the centre sample) and `power` = sum w^2 / (sum w)^2 (the average's own noise power).
+struct AverageNoise {
+    double own = 1.0;
+    double power = 1.0;
+};
+
+AverageNoise average_noise(int cycles) {
     double sum = 0.0;
     double sum_squares = 0.0;
     for (int k = -cycles; k <= cycles; ++k) {
@@ -394,9 +395,20 @@ double remainder_gain(int cycles) {
         sum += w;
         sum_squares += w * w;
     }
-    const double a = 1.0 / sum;
-    const double b = sum_squares / (sum * sum);
-    return std::sqrt((1.0 - b) / (1.0 - 2.0 * a + b));
+    return {.own = 1.0 / sum, .power = sum_squares / (sum * sum)};
+}
+
+/// Gain for what the periodic average leaves out. For white noise of unit power the remainder
+/// x - average has power 1 - 2 own + power. The re-spaced average brings back power * lambda, where
+/// lambda = sum w_g^2 / (sum w_g)^2 of the grain windows at the sample (the overlap-add of
+/// unrelated noise keeps only that share; it depends on the shift). The gain makes the two add up
+/// to the original power; exact for stationary noise, 1 for no separation.
+double remainder_gain(const AverageNoise& noise, double lambda) {
+    const double remainder = 1.0 - 2.0 * noise.own + noise.power;
+    if (remainder <= 1e-9) {
+        return 1.0;
+    }
+    return std::sqrt(std::max(0.0, 1.0 - noise.power * lambda) / remainder);
 }
 
 /// Re-spaces the grains of one run: synthesis marks one shifted period apart from `from`, each
@@ -489,13 +501,14 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
     Accumulator acc{.first = zone.ext_first,
                     .sum = std::vector<double>(ext_count, 0.0),
                     .window_sum = std::vector<double>(ext_count, 0.0),
+                    .window_square_sum = std::vector<double>(ext_count, 0.0),
                     .output_period = std::vector<double>(ext_count, 0.0)};
     std::vector<float> periodic(
         ext_count);  // the source until a run replaces it by its periodic part
     for (std::size_t i = 0; i < ext_count; ++i) {
         periodic[i] = static_cast<float>(x.at(zone.ext_first + static_cast<std::int64_t>(i)));
     }
-    const double rest_gain = remainder_gain(p.separation_cycles);
+    const AverageNoise noise = average_noise(p.separation_cycles);
     const auto zone_begin = static_cast<double>(zone.first);
     const auto zone_end = static_cast<double>(zone.last);
     for (const Run& run : shifted_runs(frames)) {
@@ -518,8 +531,11 @@ void respace_zone(const Signal& x, const Note& note, const Zone& zone, const Pso
         if (w[n] > 0.0 && acc.window_sum[idx] > k_min_window_sum) {
             const double q = 0.5 * std::numbers::pi * w[n];
             // What the periodic average left out (zero wherever it was not computed) stays.
-            const double rest = rest_gain * (x.at(zone.first + static_cast<std::int64_t>(n)) -
-                                             static_cast<double>(periodic[idx]));
+            const double lambda =
+                acc.window_square_sum[idx] / (acc.window_sum[idx] * acc.window_sum[idx]);
+            const double rest =
+                remainder_gain(noise, lambda) * (x.at(zone.first + static_cast<std::int64_t>(n)) -
+                                                 static_cast<double>(periodic[idx]));
             samples[n] = static_cast<float>(std::cos(q) * static_cast<double>(samples[n]) +
                                             std::sin(q) * (y[idx] + rest));
         }
