@@ -1,9 +1,9 @@
 # Design note: Pinned markers and the absorb-first layout (Phase 5, slice 8)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 2 (owner's answers 2026-10-22; answers structure review round 1: B1-B7, S1-S10)
+- **Status:** draft, revision 3 (owner's answers 2026-10-22; answers structure review rounds 1 and 2)
 - **Spec sections:** architecture spec §2, §5.4; ADR-0005 §16; ADR-0008 §4, §5; ADR-0023 §3, §3a, §7; ADR-0025 (proposed with this note); `phase5-gaps-core.md` (`SegmentTimeline`, `Gap`, `GapRegion`); `phase5-time-tools.md`; `silence-and-gaps.md` §1.2-1.4 (replaced for Phase 5 by this note).
-- **Folders / CMake targets:** `src/core/timemap` (layer 3: `layout.h/.cpp`, `layout_markers.cpp`, `build_layout_map.cpp`), `src/core/types` (`LayoutMode` only, because `RenderParams` holds it), `src/core/render` (the splice, `render_unedited`).
+- **Folders / CMake targets:** `src/core/timemap` (layer 3: `layout.h/.cpp`, `layout_markers.cpp`, `build_layout_map.cpp`), `src/core/timemap/detail` (shared anchor helpers), `src/core/render` (the splice, `render_unedited`).
 
 ## The model (the owner's)
 
@@ -17,91 +17,94 @@ Every timing edit places **markers**: pinned positions, each a source time with 
 ## Modes
 
 ```cpp
+// core/timemap/layout.h
 enum class LayoutMode {
-    absorb_then_stretch,   // DEFAULT. The gap next to the edit takes the change; the rest of the
-                           // interval is stretched up to the pinned markers (Flex). Nothing moves
-                           // beyond the next marker.
-    absorb_then_ripple,    // The gap takes what it can; the rest shifts everything after the
-                           // interval (the tail is shifted, ADR-0023 TailPolicy::shift).
-    ripple,                // Gaps are never touched; every change shifts everything after.
-    stretch                // Today's builder, unchanged (Flex without absorbing).
+    absorb_then_stretch,   // DEFAULT: the gap takes the change first, the rest of the interval is
+                           // stretched between the markers (Flex)
+    stretch                // today's builder, unchanged (Flex without absorbing)
+};
+struct LayoutParams {
+    LayoutMode mode = LayoutMode::absorb_then_stretch;
+    Seconds min_gap{0.020};       // a cut never leaves a gap shorter than this
+    Seconds splice_fade{0.005};   // crossfade at a cut / fade at an insert (round 1: one name)
+    Seconds note_margin{0.010};   // the renderer's crossfade_length: a cut never lands within
+                                  // note_margin + splice_fade of a note edge
 };
 ```
 
-`LayoutMode` lives in `core/types/layout_mode.h` (so `RenderParams` can hold it); everything else is in `core/timemap`.
+`RenderParams` holds a `LayoutParams` (the whole struct is hashed into the cache key, so `splice_fade`, `min_gap` and `note_margin` are covered). **The ripple modes are deferred** (review B7): with absolute markers a ripple has no coherent meaning (an edited marker cannot both keep its requested time and be pushed). If the owner wants them, they need relative markers or a plain "shift the rest of the file" tail; that is a decision for the owner, recorded in the open questions. `TimeMapParams::tail` is ignored by the layout path: both modes use a fixed end (below).
 
-**Without a timeline** (`analysis->timeline` empty) the mode is ignored: `stretch` is used, except `ripple` and `absorb_then_ripple`, which become the pure shift (`TailPolicy::shift`: it needs no gaps); `RenderResult::layout_mode_used` says which ran. Tested.
+**Without a timeline** the mode is ignored and `stretch` runs (the Phase 1 builder); `RenderResult::layout_mode_used` says which ran. Tested.
 
-## Derivation of the markers (the table; sign convention: a marker is an absolute output time)
+## Markers
 
-For a note with effective `onset_shift = d`, `attack_time_scale = a`, `length_scale = l`, handles `h_i` (source, output):
+```cpp
+enum class MarkerKind { origin, note_start, attack_end, handle, note_end, end };
+struct LayoutMarker {
+    MarkerKind kind = MarkerKind::origin;
+    SourceTime source;
+    OutputTime output;          // absolute, requested
+    std::size_t note = k_no_note;   // index into the notes span (origin and end: none)
+};
+struct LayoutMarkers {
+    std::vector<LayoutMarker> markers;  // sorted, merged, includes origin and end
+    std::vector<bool> repaired;         // per note: a request that was changed (counted once per note)
+};
+/// Pre: notes sorted by start. Errors: invalid_argument as build_time_map's check_notes (notes of
+/// another track, overlapping, unsorted, ending after source_end).
+[[nodiscard]] Result<LayoutMarkers> layout_markers(std::span<const Note>, const EditList&,
+                                                   SourceTime source_end);
+```
 
-| Marker | Source time | Output time |
-|---|---|---|
-| start | `start` | `start + d` |
-| attack end | `attack_end` | `attack_end + d + (attack_end - start)(a - 1)` |
-| handle i | `h_i.source` (strictly inside the body) | `h_i.output` (absolute) |
-| end | `end` | `end + d + attack_extra + (end - attack_end)(l - 1)` |
-
-This is `desired_anchors` in `build_time_map.cpp` unchanged, so every existing tool and test keeps its meaning (`onset_shift` stays "play d later than analysed", the Time Tool contract of `phase5-time-tools.md`). A handle set before a move stays where it is (absolute) and the conflict is repaired and counted, as today. Coincident markers (zero-length attack or body, a handle at the attack end, legato note end = next note start) keep the **later output** (as `append` does); the sort key is (source time, note index, kind rank start < attack end < handle < end), a total order. `solve_layout` checks that every marker's note is in the timeline with the same range, else `invalid_argument`.
+The derivation table is `desired_anchors` unchanged (below). `layout_markers` also does what `build_time_map` does before it repairs: it adds the **origin marker (0, 0)** and the **end marker (source_end, source_end)** (the fixed end: the layout path always keeps the recording's length), merges coincident markers (later output wins; a differing output marks the note repaired, as `append` does) and sorts by (source, note index, kind rank). Only notes with a timing edit make markers (as `has_timing_edit`). The shared pieces (`check_notes`, `enforce_min_segments`, `quantise_shifts`, the `Anchor` merge) move out of the anonymous namespace of `build_time_map.cpp` into `core/timemap/detail/anchors.h/.cpp` in slice 8b as a **no-behaviour-change refactor** (the Phase 1 tests are the guard).
 
 ## The solver
 
-```cpp
-struct LayoutParams {
-    LayoutMode mode = LayoutMode::absorb_then_stretch;
-    Seconds min_gap{0.020};      // a cut never leaves a gap shorter than its protected regions + this
-    Seconds splice_fade{0.005};  // crossfade at a cut (and fade at an insert), see "Rendering"
-};
-```
-(`TimeMapParams` keeps `min_segment`, `tail`, `sample_rate`, `source_end`; the layout entry point takes both structs; `LayoutParams` has no sample rate of its own.)
+**Order of operations (a constraint):** (1) markers merged; (2) Phase 1 repair `enforce_min_segments` on the marker outputs (min_segment push, pull back from the fixed end, fall back to the unedited timeline if impossible); (3) `quantise_shifts` (whole-sample shifts, strictness push); (4) the interval solve below. Only after 3 are `Δ` and the cut/insert lengths derived, so they are whole sample counts.
 
-```cpp
-/// Per interval between consecutive markers.
-struct IntervalPlan {
-    SourceRange source;          // between the two markers
-    OutputRange output;          // requested: the markers' output times
-    std::optional<GapEdit> gap;  // the cut or insert that absorbs the change
-    double residual_slope;       // output / source length of the audio that is NOT the gap edit's
-};
-struct GapEdit {
-    std::size_t gap;             // index into SegmentTimeline::gaps()
-    bool cut;                    // true: source removed; false: output inserted
-    SourceTime at;               // cut: the removed source range starts here; insert: the position
-    Seconds length;              // whole samples at the sample rate
-};
-struct Layout {
-    std::vector<IntervalPlan> intervals;
-    int repaired = 0;            // requests that could not be honoured exactly
-};
+For consecutive markers `L, R` with `shift(m) = out(m) - src(m)`, source length `S = src(R) - src(L)`, `Δ = shift(R) - shift(L)` (the requested output length is `S + Δ`):
 
-/// The markers of the active notes' timing edits (derivation table), sorted by the total key.
-[[nodiscard]] std::vector<LayoutMarker> layout_markers(std::span<const Note>, const EditList&);
-
-/// Intervals, gap edits and residual slopes.
-[[nodiscard]] Result<Layout> solve_layout(const SegmentTimeline&, std::span<const LayoutMarker>,
-                                          const LayoutParams&, const TimeMapParams&);
-
-/// The map: warps, cuts, inserts; every slope-1 span a whole-sample shift.
-[[nodiscard]] Result<TimeMapBuild> build_layout_map(const SegmentTimeline&, const Layout&,
-                                                    const TimeMapParams&);
-
-/// markers -> solve -> map; mode `stretch` is build_time_map unchanged (bit-identical).
-[[nodiscard]] Result<TimeMapBuild> build_layout_time_map(std::span<const Note>, const SegmentTimeline&,
-                                                         const EditList&, const LayoutParams&,
-                                                         const TimeMapParams&);
-```
-
-`build_time_map(notes, edits, params)` (Phase 1) stays and is what `stretch` and every caller without a timeline use. The new entry point has its own name (no overload).
-
-**Per interval** `[m_k, m_k+1]` with source length `S` and requested output length `L = out(m_k+1) - out(m_k)`; `Δ = L - S`:
 1. `Δ == 0`: slope 1, nothing to do.
-2. **The absorbing gap** is the gap adjacent to the **edited** marker of the interval: for a marker that is a note's start, the gap before it; for a note's end, the gap after it; for a handle (inside a note) none. Only that one gap (owner: first gap only). If the interval has no such gap (legato; the recording's first note has no gap before it only if it starts at 0), the whole `Δ` goes to the residual stretch. A **leading** gap before the first note and a **trailing** gap after the last are real timeline gaps; a note at source 0 with a requested later start gets an insert **inside nothing**: it is a virtual leading gap (insert only, at source 0), the same as today's leading insert span.
-3. `Δ < 0` (shorten): cut `min(-Δ, room)`: only the longest `silence` region of the gap may be cut, never `tail` or `protected_preroll`; the cut is centred in it; `room = silence_length - min_gap - 2 * splice_fade`, so the crossfade zone stays inside the silence (no cut if `room <= 0`). `Δ > 0` (lengthen): an insert of `Δ` at the centre of the silence region (silence length unlimited; at a virtual gap, at its edge).
-4. What the gap could not take, `Δ' = Δ - absorbed`, is the **residual**: the other audio of the interval (unedited notes and non-absorbing gaps) gets slope `residual_slope = (S_other + Δ') / S_other` (Flex). `S_other` = the interval's source length minus the gap edit's cut range (for a cut) or the whole length (insert: the insert is extra output). If `residual_slope` falls outside `[min_slope, max_slope]` of `StretchParams` (0.25..4) or `S_other` is below `min_segment`, the request is repaired by the Phase 1 rules (`enforce_min_segments` push/pull, fall back to the unedited timeline) and `repaired` counts it.
-5. `absorb_then_ripple` / `ripple`: the interval after the last marker (and each interval's leftover) is not stretched: the unabsorbed `Δ'` becomes a shift of everything after the interval (the next markers' output times move by `Δ'`... only the markers that are **not pinned by an edit** move; an edited marker keeps its requested time), which is the shifted tail of ADR-0023 made local.
+2. **Which gap absorbs (deterministic, one gap only).** In this order, the first that exists: (a) `L` is a `note_end` and a gap follows it in the timeline (the gap after `L`); (b) `L` is the `origin` and the first segment is a gap (the leading gap); (c) `R` is a `note_start` and a gap precedes it; (d) `R` is the `end` and the last segment is a gap (the trailing gap); else none. A gap belongs to exactly one interval (markers sit on note boundaries). If the chosen gap has no `silence` region, it absorbs nothing. A note at source 0 moved later has no leading gap in the timeline: the origin interval has no absorbing gap and the whole Δ is residual (today's leading insert span for a gap-less start is kept as the Phase 1 does; not "an insert inside a note").
+3. **Worked table** (notes A, B, C; gaps g0 leading, gA after A, gB after B, gC trailing; `Δ` is the interval's):
 
-**Whole samples (B6).** The marker output times are quantised as `build_time_map` does (the shift `t - s` of every anchor rounded to a whole sample, after the repair), so `Δ` between two markers is a whole number of samples **exactly**; the cut and insert lengths are `Δ` (whole), never a carried remainder; the residual stretch absorbs only what the gap could not take, and when the gap takes all, every note in the interval is slope 1 with a whole-sample shift. `sample_rate == 0` (exact arithmetic) is allowed for tests. A cut's source endpoints may lie between samples; only its length is whole. The strictness push of `quantise_shifts` applies to the marker times as before.
+| Edit | Interval | Absorbing gap | Result |
+|---|---|---|---|
+| A moved later by d | origin -> A.start (Δ = +d) | (b) g0 (inserts d) | A keeps slope 1, shifted; A.end -> next marker unchanged unless A has an end marker |
+| A.length +d (end marker) | A.end -> end (Δ = -d: A.end now has shift +d, the fixed end 0) | (a) gA | gA is cut by d (if room), else B and C are squished |
+| C moved earlier by d | previous marker (A.end or origin) -> C.start (Δ = -d) | (a) gA if the left marker is A.end, else (c) gB | B stays slope 1 if gA absorbs everything; the cut is in gA, B and gB shift earlier together |
+| A moved +d and C moved -d | A.end -> C.start (Δ = -2d) | (a) gA | gA cuts what it can, the rest squishes B and gB |
+| unedited B between A.end and C.start | same | (a) gA first, gB is never used | per the rule: one gap |
+
+4. **Cut or insert.** `Δ < 0`: cut. The cut lies in the **longest `silence` region** of the gap (ties: the earliest), centred; `room = floor_to_samples(silence_length - min_gap - 2 * (note_margin + splice_fade))`; `cut = min(-Δ, room)` in whole samples; no cut if `room < 1` sample. `Δ > 0`: an insert of `Δ` (whole samples) at the same centre; no insert if the gap has no `silence` region. A cut shorter than `splice_fade` gets a crossfade of its own length (minimum one sample). `GapEdit` carries `Samples length`, the source endpoints as `SourceTime`, and is the authority from which the spans are built.
+5. **Span order inside the interval (slope-1 remnants).** Absorbing gap after `L` (a, b): `[gap's left remnant][cut/insert][gap's right remnant][other audio, stretched to end at R]`; absorbing gap before `R` (c, d): `[other audio, stretched][gap's left remnant][cut/insert][gap's right remnant pinned to R]`. The remnants (every region of the gap, `tail` and `protected_preroll` included) are slope 1 and whole-sample shifted: the left remnant of (a) has `shift(L)`, the right remnant `shift(L) - cut` (or `+ insert`); the remnants of (c, d) are pinned to `shift(R)`. `S_other = S - gap source length` (unedited notes and the interval's other gaps only). The other audio gets `slope = (S_other + Δ_rest) / S_other` where `Δ_rest = Δ + cut` (or `- insert`) is what the gap did not take; it is exactly 1 when the gap took everything.
+6. **Repair (a single pass in source order, deterministic).** If `S_other == 0` and `Δ_rest != 0`, or the slope leaves `[0.25, 4]`, or `S_other < min_segment` (the interval cannot give what is asked), the **right marker's** output is moved to the nearest feasible value (its shift becomes `shift(L) + the largest |Δ| the interval can take`), the owning note is marked repaired, and the next interval sees the changed marker. If the right marker is the fixed end (its shift cannot move), the whole timeline falls back to the unedited layout and every note is marked repaired (as Phase 1). `Layout::repaired` is **per note** (the same unit as `TimeMapBuild::repaired_notes`); `stretch` mode returns the Phase 1 builder's value unchanged. The causality property (changing a marker leaves the layout before the previous marker identical) holds except when step 2's pull-back from the fixed end or the fallback fires; the test says so.
+
+```cpp
+struct GapEdit {
+    std::size_t gap;           // index into SegmentTimeline::gaps()
+    bool cut;                  // true: source removed; false: output inserted
+    SourceTime at;             // cut: the removed source range starts here; insert: the position
+    Samples length;            // whole samples (authority for the spans)
+};
+struct IntervalPlan {
+    SourceTime from, to;       // the markers' source times
+    std::optional<GapEdit> gap;
+    double residual_slope;     // of the other audio; 1 when the gap took everything
+};
+struct Layout { std::vector<IntervalPlan> intervals; std::vector<bool> repaired; };
+
+[[nodiscard]] Result<Layout> solve_layout(const SegmentTimeline&, const LayoutMarkers&,
+                                          const LayoutParams&, const TimeMapParams&);
+[[nodiscard]] Result<TimeMapBuild> build_layout_map(const SegmentTimeline&, const LayoutMarkers&,
+                                                    const Layout&, const TimeMapParams&);
+/// markers -> solve -> map; mode `stretch` is build_time_map unchanged (bit-identical).
+[[nodiscard]] Result<TimeMapBuild> build_layout_time_map(std::span<const Note>,
+                                                         const SegmentTimeline&, const EditList&,
+                                                         const LayoutParams&, const TimeMapParams&);
+```
+
+`solve_layout` checks that every marker's note is in the timeline with the same range (`invalid_argument`); `build_layout_map` checks that cuts and inserts lie inside gap `silence` regions (so the comment in `time_map.h` is corrected: only `build_layout_map` checks it). `sample_rate == 0` (exact arithmetic) is allowed for tests: lengths are then `Seconds`-exact and `Samples` is not used.
 
 ## Rendering (B7)
 
@@ -112,14 +115,15 @@ struct Layout {
 
 ## Consequences
 
-- `render_region` uses `build_layout_time_map` when `analysis->timeline` exists (mode from `RenderParams::layout`, hashed into the cache key; key version 5); otherwise as today. `RenderResult` gains `layout_mode_used` and the repaired count maps `Layout::repaired` into `repaired_notes` (one per repaired request).
-- **`dirty_regions`** stays an over-approximation computed from effective states and the timeline (it cannot run the solver: layer 2 below layer 3): from the gap before the earliest changed note (less the margin) to the end for the carry modes; origin-to-end for `stretch`. The cache key, not `dirty_regions`, decides block reuse (it hashes the whole map), so a mode change invalidates through the key.
-- **ADR-0025** supersedes: ADR-0008 §4's fallback order (absorb first, then Flex stretch over the **whole interval between markers**, not the "second handle at the next transient"; that rule is retired), ADR-0005 §16 for the default mode (Flex remains as `stretch` and as the fallback), and the "ripple bounded by anchors" wording of ADR-0008 §5 (the ripple modes here are local to the interval); it keeps ADR-0023 §3/§3a.
+- `render_region` uses `build_layout_time_map` when `analysis->timeline` exists (`RenderParams::layout` is a `LayoutParams`, hashed whole into the cache key: key version "the next one after ADR-0024's slices land", 5 if ADR-0024's 4 is in); otherwise as today. `RenderResult` gains `layout_mode_used`; `repaired_notes` is the per-note count.
+- **`dirty_regions` keeps the origin-to-end rule** for any timing change until slice 8h proves a narrower one safe (a stretched interval reaches back to the previous marker and repair can cascade both ways); the cache key decides block reuse.
+- **The insert is plain digital zeros** with a fade until room tone (slice 9): audible as a noise-floor dropout; the audition package must flag it.
+- **ADR-0025** supersedes ADR-0008 §4's fallback order and its transient-handle rule, ADR-0005 §16 for the default mode (Flex stays as `stretch` and as the fallback) and the "ripple bounded by anchors" wording of ADR-0008 §5; it keeps ADR-0023 §3/§3a. The ADR numbers are added to those ADRs' status lines when 0025 is accepted.
 
 ## Split / join decisions
 
 - **Three functions** (markers, solve, map): edits in, arithmetic, spans out (split rules 2 and 4).
-- **Types in `core/timemap`** except `LayoutMode` (needed by `RenderParams`); no speculative `gap_target` marker kind yet.
+- **All layout types in `core/timemap`** (`RenderParams` holds a `LayoutParams`; layer 4 may include layer 3); no speculative `gap_target` marker kind yet.
 - **A new entry-point name** (`build_layout_time_map`), not an overload.
 - **One absorbing gap per interval** (owner), so the solver has no search; a second gap could join later without a type change.
 
@@ -132,9 +136,11 @@ struct Layout {
 
 ## Slices
 
-8a this note + ADR-0025 reviewed (round 2); 8b types and `layout_markers`; 8c `solve_layout` for `absorb_then_stretch`/`stretch`, `sample_rate` 0; 8d whole-sample arithmetic and property tests; 8e `build_layout_map` + `render_region` wiring (key version 5, `RenderParams::layout`); 8f splice and insert fades in `render_unedited` (audio-verifier); 8g the ripple modes; 8h `dirty_regions` (with the ADR-0024 timeline parameter).
+8a this note + ADR-0025 reviewed (round 2); 8b types and `layout_markers`; 8c `solve_layout` for `absorb_then_stretch`/`stretch`, `sample_rate` 0; 8d whole-sample arithmetic and property tests; 8e `build_layout_map` + `render_region` wiring (key version 5, `RenderParams::layout`); 8f splice and insert fades in `render_unedited` (audio-verifier); 8g (deferred: ripple modes, pending the owner); 8h `dirty_regions` (with the ADR-0024 timeline parameter). 8b needs only the markers and the detail refactor; 8c needs the table above; 8d the whole-sample property tests; 8f the splice (B2, B6 settled above).
 
 ## Open questions
+
+0. **Ripple modes** (`absorb_then_ripple`, `ripple`): deferred. With absolute markers they need a definition: either only "shift the rest of the file" (the existing `TailPolicy::shift`) or relative markers. Owner to decide.
 
 1. Where in the silence to cut (centred now; the quietest frame once the floor curve is used, slice 9).
 2. A second absorbing gap (the one on the other side of a long note) is not used now.
