@@ -53,6 +53,7 @@ private:
     std::uint64_t hash_ = 1469598103934665603ULL;
 };
 
+#ifdef __APPLE__
 std::uint64_t fingerprint(const OnsetList& list) {
     Fingerprint h;
     for (std::size_t i = 0; i < list.times.size(); ++i) {
@@ -62,7 +63,9 @@ std::uint64_t fingerprint(const OnsetList& list) {
     }
     return h.value();
 }
+#endif
 
+#ifdef __APPLE__
 std::uint64_t fingerprint(const Activation& a) {
     Fingerprint h;
     h.add(a.hop.value());
@@ -71,6 +74,7 @@ std::uint64_t fingerprint(const Activation& a) {
     }
     return h.value();
 }
+#endif
 
 std::vector<double> times_of(const OnsetList& list) {
     std::vector<double> t;

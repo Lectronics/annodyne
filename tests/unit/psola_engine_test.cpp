@@ -513,6 +513,7 @@ TEST_CASE("a_large_down_shift_leaves_no_dc_offset", "[psola_engine]") {
 
 namespace {
 
+#ifdef __APPLE__
 /// FNV-1a over the samples rounded to 1e-7 (not the bits: libm differs between platforms).
 std::uint64_t quantised_hash(std::span<const float> x) {
     std::uint64_t h = 1469598103934665603ULL;
@@ -525,6 +526,7 @@ std::uint64_t quantised_hash(std::span<const float> x) {
     }
     return h;
 }
+#endif
 
 }  // namespace
 
