@@ -1,7 +1,7 @@
 # Design note: Clips, layers, selections and groups (copy / paste / harmonise)
 
 - **Phase:** data model reserved in 7 (project file format); render, `features/clipboard`, selection queries in 12; drawing and gestures in 10
-- **Status:** draft, revision 1 (owner's scenario 2026-10-22). Not yet structure-reviewed; no ADR yet (to be written with the Phase 7 model, see "Where it goes").
+- **Status:** draft, revision 2 (owner's scenario and decisions 2026-10-22). Not yet structure-reviewed; no ADR yet (to be written with the Phase 7 model, see "Where it goes").
 - **Spec sections:** architecture spec §6 (tool table: "Copy/paste adds virtual notes"), `annodyne-features.md` §21, ADR-0008 (`EditTarget`, `SegmentId`), ADR-0025 (pinned markers; this note reuses them for group moves), `phase5-layout.md`.
 - **Folders / CMake targets:** `src/core/types` (`Clip`, `Layer`, ids), `src/core/render` (layer mix), `src/features/clipboard` (paste, selection, grouping; layer 6, reads analysis and returns edits), UI only draws.
 
@@ -39,7 +39,7 @@ Moving a group of main-layer notes by one delta is one `note_move_edit` per note
 | `LayerId`, `ClipId` | struct | non-empty value; `ClipId` is a `SegmentId` kind (`SegmentKind::clip`) so `EditTarget` addresses it | caller | value |
 | `Clip` | struct | `source` names a real note of the track's analysis; `placement` is an output time | `ClipSet` | value |
 | `Layer` | struct | unique id; clips ordered by id | `ClipSet` | value |
-| `ClipSet` | class | ids unique across layers; every clip's source exists in the analysis it is validated against | project | `shared_ptr<const>` |
+| `ClipSet` | class | store of clips by id, outside the `EditList`; ids unique across layers; every clip's source exists in the analysis it is validated against; rebuilt by replaying the log | project | `shared_ptr<const>` |
 | `NoteSelection` | struct | sorted unique ids | UI | value |
 | `PasteParams` | struct | see below | caller | value |
 
@@ -60,6 +60,8 @@ struct PasteParams {
     Cents transpose{0.0};     // chromatic cents; 0 = no pitch change (a plain copy)
     Seconds offset{0.0};      // placement shift of the whole selection
     bool keep_formants = true;// the copy keeps the original timbre (no chipmunk); spec §21
+    // Decision 1: replaces `transpose` once Phase 8 exists: {scale degrees + scale} or {cents}.
+    // Decision 5: humanise {pitch_cents_rms, timing_ms_rms, seed}, default off.
 };
 ```
 
@@ -89,7 +91,7 @@ struct PasteParams {
 ## Effect on audio
 
 - Adds sound: the sum of clip renders on top of the main layer. Only the mix is new; a clip is rendered by the existing engines (PSOLA for pitch, level, formant), so no new DSP in the first version.
-- **Same pitch and same time = a loud double.** An exact copy at 0 cents and 0 offset adds the same wave to itself (+6 dB, no width). Real doubles drift in pitch and timing. A later optional `humanise` (small random pitch and timing offsets per clip) can address this; it is out of scope for the first version.
+- **Same pitch and same time = a loud double.** An exact copy at 0 cents and 0 offset adds the same wave to itself (+6 dB, no width). Real doubles drift in pitch and timing. `humanise` (decision 5) gives each clip a small seeded random pitch and timing offset to address this.
 - **Sums can exceed full scale.** The core renders in float and does not limit; the level checker flags it, and the layer gain is the user's control. (A limiter is a host/output stage, not core.)
 - Objective checks: main layer unchanged when the clip set is empty (bit-exact); a clip's pitch = source + transposition within 10 cents (the Phase 4 check); linearity (render with the layer = render without + the layer alone, to float rounding); placement is sample exact; no click at clip edges; a muted layer = no layer. The human listening checks: that the harmony sounds like a second singer, not a chipmunk (formants), which cannot be judged without a person.
 
@@ -122,14 +124,15 @@ The ADR for the model (call it "clips and layers") is written with the Phase 7 s
 - Contract: empty clip set renders bit-exactly; edit-list `EditTarget` addressing a clip; cache key changes with the clip set.
 - Audio: harmony scenario (copy a three-note phrase, +400 cents, +0.25 s, lengthen the last original note): objective checks above and an `audition/` package for a human.
 
-## Open questions (owner)
+## Decisions (owner, 2026-10-22)
 
-1. **Diatonic vs chromatic "3rd".** Chromatic (a fixed 3 or 4 semitones, simple) or diatonic (follows the key: major or minor third by scale degree, needs Phase 8 key)? I suggest both, chromatic first.
-2. **Zero transposition.** I read "zero would do nothing" as "no pitch change", so paste still makes the (loud) double. Should it instead do nothing at all?
-3. **Selection policy.** Any overlap with the rectangle, or fully inside? Suggestion: any overlap, with a modifier for fully inside.
-4. **Are clips edits or a separate set?** I suggest edits in the `EditList` (a `clip` category with create and delete), so undo, redo and persistence are the one mechanism. It needs an ADR.
-5. **Do you want auto-humanise for doubles** (small pitch/timing drift) as a paste option?
-6. **Words.** Groups by silence are available. Real word grouping needs an alignment model; Phase 13?
+1. **Interval = a scale, default the global key.** `PasteParams` takes a `TransposeSpec`: `{scale_degrees, scale}` (diatonic: "a 3rd" is major or minor by the scale) or `{cents}` (chromatic, "dumb" shifts). The scale defaults to the global key (Phase 8) and the user can switch it to chromatic. Until Phase 8 only the chromatic form exists.
+2. **Zero transposition still creates a clip** (a copy with no pitch change).
+3. **Rectangle selection: any note the rectangle touches.**
+4. **Clip creation is an edit** (`clip_create`, `clip_delete`) so undo, redo and the edit log are the one mechanism. The edit holds only the `ClipId`, its layer and its initial placement. **The clip data (source note, per-clip state) lives in a `ClipSet` store keyed by id**, outside the `EditList`, so the list stays small. A clip's later changes (move, pitch, level) are ordinary edits targeting its `ClipId`. Replaying the log rebuilds the `ClipSet`; the store is a cache of that replay, not a second source of truth (an ADR must say which wins on disagreement: the log).
+5. **Humanise for doubles: yes.** `PasteParams::humanise {pitch_cents_rms, timing_ms_rms, seed}`; each clip gets a small seeded random pitch and onset offset (optionally slow drift across the note). The seed is stored with the clip, so a render is repeatable and cacheable. Default off.
+6. **Export each clip (or layer) as its own file: yes.** `export_layer`/`export_clip` render the clip alone through the same path as the mix (so the file is exactly what the mix contains, before summing) and write it with `core/io`; the feature only chooses what to export and where. Phase 12 with `midi_export`.
+7. **Word grouping: decided in Phase 13.**
 
 ## Review log
 

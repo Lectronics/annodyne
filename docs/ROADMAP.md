@@ -223,7 +223,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 - `features/multitrack` (cross-track selection, cross-track macros, quantize to reference track with DTW).
 - `features/sound_editor` (harmonic gains, spectral macros, timbre transfer).
-- `features/midi_export`, `features/clipboard` (virtual notes, harmonies): rectangle selection, paste with transposition into a new layer, group moves, layer mix in `render_region` (owner's scenario and open questions in `docs/design/clips-layers-and-groups.md`).
+- `features/midi_export`, `features/clipboard` (virtual notes, harmonies): rectangle selection, paste with transposition (scale-aware, chromatic option) into a new layer, humanise for doubles, export of a clip or layer as its own file, group moves, layer mix in `render_region` (owner's scenario and open questions in `docs/design/clips-layers-and-groups.md`).
 
 **Exit gate:** listening sheet + structure audit #4.
 
