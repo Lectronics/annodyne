@@ -65,11 +65,13 @@ struct LayoutMarkers {
 [[nodiscard]] Result<LayoutMarkers> layout_markers(std::span<const Note> notes,
                                                    const EditList& edits, SourceTime source_end);
 
-/// A cut (source removed) or an insert (silence added) inside one gap's `silence` region.
+/// A cut (source removed) inside one gap's `silence` region, or the hold of a growing interval's
+/// gap: the gap stays at slope 1 and the other audio is stretched; `length` is then 0, or the part
+/// of the growth the audio could not take (silence inserted at `at`).
 struct GapEdit {
     std::size_t gap = 0;  // index into SegmentTimeline::gaps()
-    bool cut = true;      // true: [at, at + length] of the source is removed; false: `length`
-                          // seconds of silence are inserted at `at`
+    bool cut = true;      // true: [at, at + length] of the source is removed; false: hold, plus
+                          // `length` seconds of silence inserted at `at`
     SourceTime at;
     Seconds length{0.0};  // a whole number of samples when TimeMapParams::sample_rate > 0
 };

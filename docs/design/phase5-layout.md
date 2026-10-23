@@ -20,6 +20,7 @@ Where this block and the text below differ, this block wins (ADR-0025 revision 2
 
 - `GapEdit.length` is `Seconds` (exact when `sample_rate` is 0, an integral sample count otherwise), not `Samples`; `at` is rounded to a sample when a rate is given. `IntervalPlan` carries `out_from`/`out_to` (absolute, after repair) so `build_layout_map` needs no second pass; `Layout::fell_back` says the unedited layout was used.
 - A gap that cannot take anything (no `silence` region, or a cut with no room) is not an edit: the whole interval, gap included, is stretched by one slope. With an edit the gap's remnants keep slope 1 and only the rest is stretched.
+- **Growth (owner, 2026-10-23):** when an interval gets longer, the audio is stretched and the gap's silence is held at slope 1 (not stretched, nothing inserted); silence is inserted only for what the stretched audio cannot take (slope above 4, or no other audio in the interval). A shrinking interval cuts the gap first, then squishes the rest. Insertion is therefore a last resort, not the first move.
 - `stretch` mode runs the same marker repair but no gap and no slope limit.
 - The shift grid (8d) replaces `sample_rate` as the whole-sample source.
 - Rule order follows ADR-0025 literally: for an interval that starts at the origin the leading gap absorbs (rule b) even when the right marker is a later note, so an unedited note between moves with it. The worked table's third row ("else gB") reads the other way; this is an open question for the owner.

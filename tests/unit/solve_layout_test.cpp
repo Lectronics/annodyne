@@ -244,20 +244,36 @@ TEST_CASE("the_gap_before_the_right_marker_absorbs_when_the_left_note_end_has_no
     check_conserved(layout, f.timeline);
 }
 
-TEST_CASE("a_note_after_the_first_pulls_from_the_leading_gap_when_the_interval_starts_at_origin",
-          "[solve_layout]") {
-    // ADR-0025 decision 3: the rule order is (a) after a note end, (b) the leading gap, (c) the gap
-    // before the right marker. Moving b later with a unedited therefore inserts at the start.
+TEST_CASE("growth_stretches_the_audio_and_holds_the_silence_at_slope_one", "[solve_layout]") {
+    // b moves 0.25 later with a unedited: the interval origin..b.start (3 s) holds g0 (1 s) as
+    // silence at slope 1 and stretches the other 2 s (a and gA) by 0.25; nothing is inserted.
     const auto f = fixture3();
     const Layout layout = solve(f, edits_of({shift_of("b", 0.25)}));
     const IntervalPlan& first = layout.intervals.front();
     REQUIRE(first.gap);
     CHECK(first.gap->gap == 0);
     CHECK(!first.gap->cut);
-    // the interval origin..b.start is 3 s, the gap 1 s: a and gA are the other audio; the gap took
-    // all
-    CHECK(near(first.residual_slope, 1.0));
+    CHECK(first.gap->length.value() == 0.0);
+    CHECK(near(first.residual_slope, 2.25 / 2.0));
     check_conserved(layout, f.timeline);
+}
+
+TEST_CASE("growth_the_audio_cannot_take_lengthens_the_silence", "[solve_layout]") {
+    // Only 0.1 s of audio beside a 1 s gap: the audio takes 3 x 0.1 (slope 4), the gap the rest.
+    const auto f = fixture_of({make_note("a", 1.0, 1.1), make_note("b", 2.0, 3.0)}, 4.0);
+    const Layout layout = solve(f, edits_of({shift_of("a", 0.5)}));
+    const IntervalPlan& lead = layout.intervals.front();  // origin..a.start: a gap only
+    REQUIRE(lead.gap);
+    CHECK(near(lead.gap->length.value(), 0.5));
+    CHECK(near(lead.residual_slope, 1.0));
+    check_conserved(layout, f.timeline);
+    const auto tight = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)}, 4.0);
+    const Layout spill = solve(tight, edits_of({shift_of("b", 1.0)}));
+    // the interval a.. b.start has 0.2 s of gap and no other audio before it
+    for (const IntervalPlan& i : spill.intervals) {
+        CHECK(i.residual_slope <= k_max_layout_slope + 1e-9);
+    }
+    check_conserved(spill, tight.timeline);
 }
 
 TEST_CASE("stretch_mode_never_uses_a_gap", "[solve_layout]") {

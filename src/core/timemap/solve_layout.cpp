@@ -188,7 +188,9 @@ std::optional<GapEdit> gap_edit(const Context& c, std::size_t index, double delt
         edit.length = Seconds{length};
         edit.at = source_at(on_grid(c, centre - length / 2.0));
     } else {
-        edit.length = Seconds{delta_s};
+        // Growth stretches the audio and holds the silence (slope 1): length 0 until solve_interval
+        // finds the audio cannot take it all.
+        edit.length = Seconds{0.0};
         edit.at = source_at(on_grid(c, centre));
     }
     return edit;
@@ -232,12 +234,21 @@ Solved solve_interval(const Context& c, const LayoutMarker& left, const LayoutMa
     }
     double other_s = span_s;
     double rest_s = delta_s;
-    if (const auto index = absorbing_gap((*c.timeline), left, right)) {
+    if (const auto index = absorbing_gap(*c.timeline, left, right)) {
         plan.gap = gap_edit(c, *index, delta_s);
         if (plan.gap) {
-            const Gap& gap = (*c.timeline).gaps()[*index];
+            const Gap& gap = c.timeline->gaps()[*index];
             other_s = span_s - (seconds_of(gap.end) - seconds_of(gap.start));
-            rest_s = plan.gap->cut ? delta_s + plan.gap->length.value() : 0.0;
+            if (plan.gap->cut) {
+                rest_s = delta_s + plan.gap->length.value();
+            } else {
+                // Only if the audio cannot take the growth does the silence lengthen.
+                const double fits_s = other_s >= std::max(c.min_segment_s, k_same_length_s)
+                                          ? on_grid(c, (k_max_layout_slope - 1.0) * other_s, true)
+                                          : 0.0;
+                plan.gap->length = Seconds{std::max(0.0, delta_s - fits_s)};
+                rest_s = delta_s - plan.gap->length.value();
+            }
         }
     }
     if (stretch_fits(c, other_s, rest_s)) {
