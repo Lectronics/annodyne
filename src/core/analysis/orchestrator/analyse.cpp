@@ -10,7 +10,8 @@ namespace anno {
 
 namespace {
 
-constexpr double k_min_source_rate_hz = 4000.0;  // K-weighting design limit (core/dsp/k_weight.h)
+constexpr double k_min_source_rate_hz =
+    8000.0;  // harmonic/noise stage and consonant evidence (owner, 2026-10-23)
 
 /// Adds the stage name to an error.
 Unexpected stage_error(const char* stage, const Error& e) {
@@ -130,8 +131,6 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
     return note;
 }
 
-constexpr double k_min_evidence_rate_hz = 8000.0;  // measure_frames' minimum
-
 bool active_notes_overlap(const std::vector<Note>& notes) {
     const Note* previous = nullptr;
     for (const Note& n : notes) {
@@ -160,10 +159,7 @@ Result<void> add_gap_analysis(const AudioSource& src, const MonoAudio& mono,
     }
     const SourceTime end = SourceTime{} + Seconds{static_cast<double>(src.frame_count().value()) /
                                                   src.sample_rate().value()};
-    // measure_frames needs 8 kHz or more; below that the level rule alone protects the gaps.
-    auto evidence = mono.sample_rate.value() >= k_min_evidence_rate_hz
-                        ? classify_gap_frames(mono, activity, *floor, params.gap_evidence)
-                        : Result<GapEvidence>{neutral_gap_evidence(activity.grid)};
+    auto evidence = classify_gap_frames(mono, activity, *floor, params.gap_evidence);
     if (!evidence) {
         return stage_error("gap evidence", evidence.error());
     }
@@ -187,7 +183,7 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     }
     if (src.sample_rate().value() < k_min_source_rate_hz) {
         return fail(ErrorCode::invalid_argument,
-                    "analyse: the source sample rate must be at least 4 kHz");
+                    "analyse: the source sample rate must be at least 8 kHz");
     }
     auto mono = read_mono(src);
     if (!mono) {

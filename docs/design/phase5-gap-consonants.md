@@ -68,7 +68,7 @@ struct GapEvidence {
 - **Known limit, stated:** a fricative less than `event_margin` above the floor is not detected. Comparing each frame's band spectrum with `NoiseFloor::band_dbfs` (shape change at any level) is the v2 candidate; it needs calibration data we do not have.
 - **Voiced note onsets look like plosive bursts** at voicing 0 (flux peak, closure dip, high-frequency rise): the guard and the preroll keep them out; a test pins it.
 - **Burst statistics** (median + 3 MAD of flux) are now taken over the whole recording, not per note as in the research; provisional, recorded.
-- **Sample rates 4-8 kHz:** `analyse()` accepts 4 kHz and up, `measure_frames` 8 kHz and up; below 8 kHz `analyse` passes neutral evidence (so the level rule alone protects), with a test.
+- **Sample rates 4-8 kHz (superseded, owner 2026-10-23):** `analyse()` now refuses sources below 8 kHz (the per-note harmonic/noise stage already needed it); `neutral_gap_evidence` remains for callers that build a timeline without features. Original text: `analyse()` accepts 4 kHz and up, `measure_frames` 8 kHz and up; below 8 kHz `analyse` passes neutral evidence (so the level rule alone protects), with a test.
 
 ## Effect on audio
 

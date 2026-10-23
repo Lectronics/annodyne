@@ -207,10 +207,13 @@ TEST_CASE("low_sample_rates_and_tiny_sources", "[analyse]") {
         analyse(source_of(make_sine(220.0, 0.02, 44100.0), 44100.0), AnalyseParams{}).value();
     CHECK(validate(*tiny).has_value());
     CHECK(tiny->notes.empty());
-    // below 4 kHz: refused, naming the limit
-    const auto too_low = analyse(source_of(make_sine(100.0, 0.5, 3000.0), 3000.0), AnalyseParams{});
-    REQUIRE_FALSE(too_low.has_value());
-    CHECK(too_low.error().code == ErrorCode::invalid_argument);
+    // below 8 kHz: refused, naming the limit (owner, 2026-10-23: 8 kHz is the minimum)
+    for (const double low : {3000.0, 6000.0}) {
+        const auto too_low = analyse(source_of(make_sine(100.0, 0.5, low), low), AnalyseParams{});
+        REQUIRE_FALSE(too_low.has_value());
+        CHECK(too_low.error().code == ErrorCode::invalid_argument);
+        CHECK(too_low.error().message.find("8 kHz") != std::string::npos);
+    }
 }
 
 TEST_CASE("notes_appear_only_where_the_recording_is_active", "[analyse]") {
@@ -378,17 +381,4 @@ TEST_CASE("a_hiss_in_a_pause_becomes_a_sibilant_region_and_nothing_else_does", "
     CHECK(sibilants(gaps[0]) == 0);
     CHECK(sibilants(gaps[2]) == 0);
     CHECK(sibilants(gaps[3]) == 0);
-}
-
-TEST_CASE("a_source_below_8_kHz_without_notes_is_analysed_with_the_level_rule_alone",
-          "[analyse][gaps]") {
-    // (A source with notes still fails below 8 kHz in the per-note harmonic/noise stage: a limit
-    // analyse() documents as 4 kHz; recorded in the Phase 5 review.)
-    std::vector<float> x = make_noise(1.0, 6000.0, 0.001, 4);
-    const auto analysed = analyse(source_of(x, 6000.0), AnalyseParams{});
-    INFO((analysed ? "ok" : analysed.error().message));
-    REQUIRE(analysed.has_value());
-    REQUIRE((*analysed)->timeline.has_value());
-    CHECK((*analysed)->timeline->gaps().size() == 1);
-    CHECK(validate(**analysed).has_value());
 }
