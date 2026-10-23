@@ -347,6 +347,72 @@ Result<ScenarioPitchDrag> parse_pitch_drag(const Json& j, const std::string& pat
     return drag;
 }
 
+/// {"macro": "correct_pitch" | "leveling", ...numbers...}.
+Result<ScenarioMacro> parse_macro(const Json& j, const std::string& path) {
+    if (!j.is_object() || !j.contains("macro") || !j["macro"].is_string()) {
+        return bad(path, R"(must be an object with a "macro" name)");
+    }
+    ScenarioMacro macro;
+    macro.name = j["macro"].get<std::string>();
+    if (macro.name != "correct_pitch" && macro.name != "leveling") {
+        return bad(at(path, "macro"), "unknown macro (available: correct_pitch, leveling)");
+    }
+    for (const auto& [key, value] : j.items()) {
+        if (key == "macro") {
+            continue;
+        }
+        if (key == "scale") {
+            if (!value.is_string()) {
+                return bad(at(path, key), "must be a string");
+            }
+            macro.scale = value.get<std::string>();
+            continue;
+        }
+        auto v = number(value, at(path, key));
+        if (!v) {
+            return Unexpected{v.error()};
+        }
+        if (key == "root") {
+            macro.root = static_cast<int>(*v);
+        } else if (key == "center_amount") {
+            macro.center_amount = *v;
+        } else if (key == "drift_amount") {
+            macro.drift_amount = *v;
+        } else if (key == "min_deviation_cents") {
+            macro.min_deviation_cents = *v;
+        } else if (key == "between_notes") {
+            macro.between_notes = *v;
+        } else if (key == "within_notes") {
+            macro.within_notes = *v;
+        } else {
+            return bad(at(path, key), "unknown key");
+        }
+    }
+    return macro;
+}
+
+/// Fills scenario.macros from the "macros" array (absent: none). Needs "analysis": "analyse".
+Result<void> parse_macros(const Json& root, Scenario& scenario) {
+    const auto macros = root.find("macros");
+    if (macros == root.end()) {
+        return {};
+    }
+    if (!macros->is_array()) {
+        return bad("$.macros", "must be an array");
+    }
+    if (scenario.analysis != ScenarioAnalysis::analyse) {
+        return bad("$.macros", R"(need "analysis": "analyse")");
+    }
+    for (std::size_t i = 0; i < macros->size(); ++i) {
+        auto macro = parse_macro((*macros)[i], "$.macros[" + std::to_string(i) + "]");
+        if (!macro) {
+            return Unexpected{macro.error()};
+        }
+        scenario.macros.push_back(std::move(*macro));
+    }
+    return {};
+}
+
 /// Fills scenario.edits, scenario.drags and edits_json from the "edits" array (an absent array
 /// means no edits).
 Result<void> parse_edits(const Json& root, Scenario& scenario) {
@@ -406,9 +472,9 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     if (!root.is_object()) {
         return bad("$", "must be an object");
     }
-    static const std::set<std::string> keys{"name",     "source",          "algorithm",
-                                            "analysis", "notes",           "edits",
-                                            "expect",   "stretch_vibrato", "stretch_engine"};
+    static const std::set<std::string> keys{
+        "name",  "source", "algorithm",       "analysis",       "notes",
+        "edits", "expect", "stretch_vibrato", "stretch_engine", "macros"};
     for (const auto& [key, value] : root.items()) {
         if (!keys.contains(key)) {
             return bad("$." + key, "unknown key");
@@ -454,6 +520,9 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         scenario.analysis = ScenarioAnalysis::analyse;
     } else if (!analysis->empty() && *analysis != "given") {
         return bad("$.analysis", R"(must be "given" or "analyse")");
+    }
+    if (auto parsed = parse_macros(root, scenario); !parsed) {
+        return Unexpected{parsed.error()};
     }
     if (scenario.analysis == ScenarioAnalysis::analyse && root.contains("notes")) {
         return bad("$.notes", R"(not allowed with "analysis": "analyse")");

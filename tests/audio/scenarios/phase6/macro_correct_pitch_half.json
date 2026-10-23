@@ -1,0 +1,16 @@
+{
+  "name": "macro_correct_pitch_half",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "macros": [
+    {
+      "macro": "correct_pitch",
+      "scale": "chromatic",
+      "center_amount": 0.5,
+      "min_deviation_cents": 10.0
+    }
+  ],
+  "expect": {
+    "macro": "the same at half the distance"
+  }
+}

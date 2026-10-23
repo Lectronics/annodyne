@@ -1,0 +1,16 @@
+{
+  "name": "macro_correct_pitch_chromatic",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "macros": [
+    {
+      "macro": "correct_pitch",
+      "scale": "chromatic",
+      "center_amount": 1.0,
+      "min_deviation_cents": 10.0
+    }
+  ],
+  "expect": {
+    "macro": "every pitched note of vocadito_2 snapped to the nearest semitone (centre only; vibrato and scoops ride on it)"
+  }
+}

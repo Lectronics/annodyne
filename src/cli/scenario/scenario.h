@@ -38,6 +38,20 @@ struct ScenarioPitchDrag {
     bool snap_chromatic = false;         // pass the target through target_pitch (440 Hz grid)
 };
 
+/// A macro written in a scenario ("macros": [...]); resolved after the analysis. correct_pitch
+/// reads scale, root, center_amount, drift_amount, min_deviation_cents; leveling reads
+/// between_notes, within_notes.
+struct ScenarioMacro {
+    std::string name;  // "correct_pitch" or "leveling"
+    std::string scale = "major";
+    int root = 0;
+    double center_amount = 1.0;
+    double drift_amount = 0.0;
+    double min_deviation_cents = 0.0;
+    double between_notes = 0.5;
+    double within_notes = 0.0;
+};
+
 struct Scenario {
     std::string name;
     ScenarioAnalysis analysis = ScenarioAnalysis::given;
@@ -46,8 +60,9 @@ struct Scenario {
     std::vector<ScenarioNote> notes;
     std::vector<EditSpec> edits;  // each one is its own EditList::add group, in order
     std::vector<ScenarioPitchDrag>
-        drags;                   // the edits of an analyse-mode scenario (never mixed with `edits`)
-    bool stretch_psola = false;  // "stretch_engine": "psola" (the default is Rubber Band)
+        drags;  // the edits of an analyse-mode scenario (never mixed with `edits`)
+    std::vector<ScenarioMacro> macros;    // the "macros" array (analyse-mode scenarios only)
+    bool stretch_psola = false;           // "stretch_engine": "psola" (the default is Rubber Band)
     bool stretch_vibrato_retime = false;  // "stretch_vibrato": "retime" (A/B against the default)
     std::string edits_json;               // the "edits" array as written, for the audition package
     std::string expect_json;              // the "expect" object as written ("" if absent)

@@ -11,6 +11,9 @@
 #include "core/synthesis/psola/psola_engine.h"
 #include "core/synthesis/rubberband_pitch/rubberband_pitch_engine.h"
 #include "core/tuning/chromatic_grid.h"
+#include "core/tuning/scale_grid.h"
+#include "macros/correct_pitch/correct_pitch.h"
+#include "macros/leveling/leveling.h"
 #include "tools/main_tool/main_tool.h"
 
 #include <algorithm>
@@ -122,6 +125,47 @@ Result<EditSpec> resolve_drag(const AnalysisResult& analysis, const ScenarioPitc
     return pitch_drag_edit(analysis, {.note = note.id, .target = target});
 }
 
+/// The scale type named in a scenario.
+Result<ScaleType> parse_scale(const std::string& name) {
+    for (const auto& [text, type] :
+         {std::pair{"chromatic", ScaleType::chromatic}, std::pair{"major", ScaleType::major},
+          std::pair{"natural_minor", ScaleType::natural_minor},
+          std::pair{"harmonic_minor", ScaleType::harmonic_minor},
+          std::pair{"major_pentatonic", ScaleType::major_pentatonic},
+          std::pair{"minor_pentatonic", ScaleType::minor_pentatonic},
+          std::pair{"dorian", ScaleType::dorian}, std::pair{"mixolydian", ScaleType::mixolydian}}) {
+        if (name == text) {
+            return type;
+        }
+    }
+    return fail(ErrorCode::invalid_argument, "macro: unknown scale '" + name + "'");
+}
+
+/// The edits of one scenario macro against the analysed notes.
+Result<std::vector<EditSpec>> resolve_macro(const AnalysisResult& analysis,
+                                            const ScenarioMacro& macro) {
+    if (macro.name == "leveling") {
+        LevelingParams params;
+        params.between_notes = Ratio{macro.between_notes};
+        params.within_notes = Ratio{macro.within_notes};
+        return leveling_edits(analysis, params);
+    }
+    auto type = parse_scale(macro.scale);
+    if (!type) {
+        return Unexpected{type.error()};
+    }
+    auto grid = make_scale_grid(*type, macro.root);
+    if (!grid) {
+        return Unexpected{grid.error()};
+    }
+    CorrectPitchParams params;
+    params.grid = std::move(*grid);
+    params.center_amount = Ratio{macro.center_amount};
+    params.drift_amount = Ratio{macro.drift_amount};
+    params.min_deviation = Cents{macro.min_deviation_cents};
+    return correct_pitch_edits(analysis, params);
+}
+
 }  // namespace
 
 Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
@@ -163,6 +207,13 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
             return Unexpected{spec.error()};
         }
         specs.push_back(std::move(*spec));
+    }
+    for (const ScenarioMacro& macro : scenario->macros) {
+        auto produced = resolve_macro(*analysis, macro);
+        if (!produced) {
+            return Unexpected{produced.error()};
+        }
+        specs.insert(specs.end(), produced->begin(), produced->end());
     }
     EditList edits{scenario_track()};
     for (const EditSpec& spec : specs) {

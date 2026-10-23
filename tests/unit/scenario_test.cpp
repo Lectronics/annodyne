@@ -237,3 +237,39 @@ TEST_CASE("gap_targets_are_checked", "[scenario]") {
                      "target": {"note_id": "n1"}}]})")
                     .has_value());
 }
+
+TEST_CASE("macros_and_the_stretch_keys_parse_and_name_their_errors", "[scenario]") {
+    const auto good = parse(R"({
+      "name": "m", "source": "x.wav", "analysis": "analyse", "stretch_engine": "psola",
+      "stretch_vibrato": "retime",
+      "macros": [{"macro": "correct_pitch", "scale": "natural_minor", "root": 9,
+                  "center_amount": 0.5, "min_deviation_cents": 12},
+                 {"macro": "leveling", "between_notes": 0.7, "within_notes": 0.2}]
+    })");
+    REQUIRE(good.has_value());
+    REQUIRE(good->macros.size() == 2);
+    CHECK(good->macros[0].name == "correct_pitch");
+    CHECK(good->macros[0].scale == "natural_minor");
+    CHECK(good->macros[0].root == 9);
+    CHECK(good->macros[0].center_amount == 0.5);
+    CHECK(good->macros[0].min_deviation_cents == 12.0);
+    CHECK(good->macros[1].between_notes == 0.7);
+    CHECK(good->macros[1].within_notes == 0.2);
+    CHECK(good->stretch_psola);
+    CHECK(good->stretch_vibrato_retime);
+    // macros need an analysed scenario; unknown macros and keys name their path
+    CHECK(parse(R"({"name": "m", "source": "x.wav", "macros": [{"macro": "leveling"}]})")
+              .error()
+              .message.find("$.macros") != std::string::npos);
+    CHECK(parse(R"({"name": "m", "source": "x.wav", "analysis": "analyse",
+                    "macros": [{"macro": "magic"}]})")
+              .error()
+              .message.find("$.macros[0].macro") != std::string::npos);
+    CHECK(parse(R"({"name": "m", "source": "x.wav", "analysis": "analyse",
+                    "macros": [{"macro": "leveling", "bogus": 1}]})")
+              .error()
+              .message.find("$.macros[0].bogus") != std::string::npos);
+    CHECK(parse(R"({"name": "m", "source": "x.wav", "stretch_engine": "magic"})")
+              .error()
+              .message.find("$.stretch_engine") != std::string::npos);
+}

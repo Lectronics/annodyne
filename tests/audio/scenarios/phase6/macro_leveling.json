@@ -1,0 +1,15 @@
+{
+  "name": "macro_leveling",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "macros": [
+    {
+      "macro": "leveling",
+      "between_notes": 0.7,
+      "within_notes": 0.3
+    }
+  ],
+  "expect": {
+    "macro": "note levels pulled 70 % toward the mean loudness, within-note dynamics flattened by 30 %"
+  }
+}
