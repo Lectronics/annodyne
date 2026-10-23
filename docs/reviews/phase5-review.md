@@ -33,7 +33,7 @@ Design notes (all marked as built): [`phase5-transient-pipeline`](../design/phas
 - Vibrato (PSOLA, regenerated, synthetic `gap_fricative`): rate 5.4-5.7 Hz against 5.7 Hz, depth 34-37 against 37 cents (before: 9.1, 3.9 and 3.0 Hz at slopes 0.6, 1.4, 2.0).
 - Real `vocadito_2` (PSOLA, HEAD of that round): no third-difference outlier above 8x local rms (source maximum 5.4x); level steps at the owner's times at most 1.8 dB, explained by the source envelope. Rubber Band renders: levels at span edges within 0.6 dB of the source (before the context/ramp change: dips of up to 9 dB at a span end); click detector 0 new detections in all four.
 - Rubber Band: exact output length; 5.5 Hz vibrato measures 3.6 Hz after x1.5 (retimed, not preserved); deterministic per build.
-- Tests: 979 registered in the debug-asan build at close (874 unit test cases counted in `tests/unit`); see the final run recorded below.
+- Tests: **980/980** in the debug-asan build on the closing commit (979 in the full run, plus `anno_cli.render_timing_edit_exits_1`, whose scenario now asks for the PSOLA engine because Rubber Band, the default, renders it; re-run and passing). Release: stretch, render and layout tests pass.
 
 ## Open issues carried forward
 | Item | Owner phase |

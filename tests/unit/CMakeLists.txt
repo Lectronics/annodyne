@@ -78,6 +78,7 @@ file(WRITE "${scenario_dir}/pitch_edit.json" "{
 }")
 file(WRITE "${scenario_dir}/timing_edit.json" "{
   \"name\": \"timing_edit\",
+  \"stretch_engine\": \"psola\",
   \"source\": \"${cli_wav}\",
   \"notes\": [{\"id\": \"n1\", \"start_s\": 0.02, \"end_s\": 0.05}],
   \"edits\": [{\"category\": \"time\", \"op\": \"add\", \"param\": \"onset_shift\", \"value\": 0.01,
