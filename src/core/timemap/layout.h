@@ -44,6 +44,8 @@ struct LayoutMarker {
     SourceTime source;
     OutputTime output;
     std::size_t note = k_no_marker_note;  // index into the notes span; none for origin and end
+    bool pinned = false;  // an unedited note's start or end: held in place; the solver moves the
+                          // note's two markers as one body when an edit pushes it (ADR-0025 am. 2)
 };
 
 struct LayoutMarkers {
@@ -51,7 +53,10 @@ struct LayoutMarkers {
     std::vector<bool> repaired;         // per note: a requested time that merging changed
 };
 
-/// The markers of the active notes' timing edits, as build_time_map derives its anchors
+/// The markers of the active notes' timing edits, plus, when any note has one, a pinned start and
+/// end for every other active note (ADR-0025 amendment 2: an edit never moves or stretches a note
+/// it did not touch; a pin sharing a source time with an edited marker gives way to it). The
+/// edited markers are as build_time_map derives its anchors
 /// (docs/design/phase5-layout.md, the derivation table): for each note with a timing edit its
 /// start (start + onset_shift), attack end (attack_end + shift + attack extra), every handle inside
 /// the body (absolute output) and end (end + shift + attack extra + body extra). Added: the origin

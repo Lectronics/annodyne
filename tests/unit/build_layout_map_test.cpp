@@ -82,21 +82,22 @@ TEST_CASE("a_moved_note_keeps_its_neighbours_in_place_and_the_gaps_change", "[bu
     CHECK(cuts == 1);
 }
 
-TEST_CASE("growth_stretches_the_audio_before_the_marker_and_keeps_the_gap_at_slope_one",
-          "[build_layout_map]") {
+TEST_CASE("growth_with_no_other_audio_inserts_silence_in_the_held_gap", "[build_layout_map]") {
+    // b moves 0.25 later; a is pinned, so the interval a.end..b.start is the gap alone and the
+    // 0.25 s is inserted there; b's end moved with it, so the gap after b gives 0.25 back.
     const auto built = build(notes3(), 7.0, edits_of({shift_of("b", 0.25)}));
     const TimeMap& m = built.map;
-    CHECK(near(out_of(m, 0.5), 0.5));                // g0 held at slope 1
-    CHECK(near(out_of(m, 2.0), 1.0 + 1.0 * 1.125));  // a..gA stretched 2 s -> 2.25 s from 1.0
+    CHECK(near(out_of(m, 2.0), 2.0));  // a is where it was
     CHECK(near(out_of(m, 3.0), 3.25));
-    CHECK(std::abs(out_of(m, 4.0 - 1e-6) - 4.25) < 1e-5);
     CHECK(near(out_of(m, 7.0), 7.0));
+    int inserts = 0;
     int cuts = 0;
     for (const TimeSpan& span : m.spans()) {
-        CHECK(span.kind != SpanKind::insert);  // nothing is inserted: the audio took the growth
+        inserts += span.kind == SpanKind::insert ? 1 : 0;
         cuts += span.kind == SpanKind::cut ? 1 : 0;
     }
-    CHECK(cuts == 1);  // b's end moved with it, so the gap after b gave the 0.25 back
+    CHECK(inserts == 1);
+    CHECK(cuts == 1);
 }
 
 TEST_CASE("every_span_tiles_and_the_map_round_trips", "[build_layout_map]") {

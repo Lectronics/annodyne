@@ -37,6 +37,19 @@ LayoutMarker marker_of(const Anchor& a, std::span<const Note> notes) {
     return m;
 }
 
+/// An unedited note's start and end at their own times, minus a start that shares its source time
+/// with the marker before it (the earlier marker keeps the boundary).
+void append_pins(std::vector<Anchor>& done, std::vector<bool>& pinned, int index,
+                 const Note& note) {
+    for (const double s : {raw(note.source_start), raw(note.source_end)}) {
+        if (s > done.back().s) {
+            done.push_back({.s = s, .t = s, .note = index});
+            pinned.resize(done.size(), false);
+            pinned.back() = true;
+        }
+    }
+}
+
 }  // namespace
 
 Result<LayoutMarkers> layout_markers(std::span<const Note> notes, const EditList& edits,
@@ -50,23 +63,42 @@ Result<LayoutMarkers> layout_markers(std::span<const Note> notes, const EditList
     LayoutMarkers out;
     out.repaired.assign(notes.size(), false);
     std::vector<Anchor> done{{.s = 0.0, .t = 0.0, .note = k_no_note}};
+    std::vector<bool> pinned{false};
+    std::vector<EffectiveNote> states;
+    states.reserve(notes.size());
+    bool any_timing_edit = false;
+    for (const Note& n : notes) {
+        states.push_back(effective_state(n, edits));
+        any_timing_edit =
+            any_timing_edit || (n.is_active && timemap_detail::has_timing_edit(states.back()));
+    }
     for (std::size_t i = 0; i < notes.size(); ++i) {
         if (!notes[i].is_active) {
             continue;
         }
-        const EffectiveNote eff = effective_state(notes[i], edits);
-        if (timemap_detail::has_timing_edit(eff)) {
-            timemap_detail::append(
-                done, timemap_detail::desired_anchors(static_cast<int>(i), notes[i], eff),
-                out.repaired);
+        const auto index = static_cast<int>(i);
+        if (!timemap_detail::has_timing_edit(states[i])) {
+            if (any_timing_edit) {
+                append_pins(done, pinned, index, notes[i]);
+            }
+            continue;
         }
+        const auto wanted = timemap_detail::desired_anchors(index, notes[i], states[i]);
+        if (pinned.back() && done.back().s == wanted.front().s) {
+            done.pop_back();  // the edited note owns the shared boundary
+            pinned.pop_back();
+        }
+        timemap_detail::append(done, wanted, out.repaired);
+        pinned.resize(done.size(), false);
     }
     if (raw(source_end) > done.back().s) {
         done.push_back({.s = raw(source_end), .t = raw(source_end), .note = k_no_note});
+        pinned.resize(done.size(), false);
     }
     out.markers.reserve(done.size());
-    for (const Anchor& a : done) {
-        out.markers.push_back(marker_of(a, notes));
+    for (std::size_t k = 0; k < done.size(); ++k) {
+        out.markers.push_back(marker_of(done[k], notes));
+        out.markers.back().pinned = pinned[k];
     }
     return out;
 }

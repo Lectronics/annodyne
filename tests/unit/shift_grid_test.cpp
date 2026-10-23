@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace anno;
@@ -97,9 +98,13 @@ TEST_CASE("the_solver_cuts_and_stretches_in_whole_grid_steps", "[shift_grid]") {
     tm.sample_rate = Hz{k_rate};
     tm.shift_step = Samples{k_step};
     const Layout layout = solve_layout(timeline, markers, {}, tm).value();
-    REQUIRE(layout.intervals.back().gap);
+    const auto pause = std::ranges::find_if(layout.intervals, [](const IntervalPlan& i) {
+        return (i.from - SourceTime{}).value() == 2.0;
+    });
+    REQUIRE(pause != layout.intervals.end());
+    REQUIRE(pause->gap);
     // room 0.15 s = 6615 samples floors to 38 steps of 172 = 6536 samples
-    const double cut = layout.intervals.back().gap->length.value() * k_rate;
+    const double cut = pause->gap->length.value() * k_rate;
     CHECK(std::abs(cut - 6536.0) < 1e-6);
     for (const IntervalPlan& i : layout.intervals) {
         const double shift = (i.out_from - OutputTime{}).value() - (i.from - SourceTime{}).value();

@@ -70,6 +70,17 @@ Layout solve(const Fixture& f, const EditList& edits, const LayoutParams& params
     return solve_layout(f.timeline, markers, params, tm).value();
 }
 
+/// The same markers without the pinned neighbours: the solver's contract on edited markers alone
+/// (a hand-built marker list, or the unpinned behaviour the gap rules were first written for).
+Layout solve_unpinned(const Fixture& f, const EditList& edits, const LayoutParams& params = {},
+                      double rate_hz = 0.0) {
+    LayoutMarkers markers = layout_markers(f.notes, edits, src(f.end)).value();
+    std::erase_if(markers.markers, [](const LayoutMarker& m) { return m.pinned; });
+    TimeMapParams tm;
+    tm.sample_rate = Hz{rate_hz};
+    return solve_layout(f.timeline, markers, params, tm).value();
+}
+
 double s_of(SourceTime t) {
     return (t - SourceTime{}).value();
 }
@@ -119,7 +130,7 @@ TEST_CASE("no_timing_edits_is_one_interval_with_slope_one", "[solve_layout]") {
 TEST_CASE("a_note_moved_later_inserts_in_the_leading_gap_and_cuts_the_gap_after_it",
           "[solve_layout]") {
     const auto f = fixture3();
-    const Layout layout = solve(f, edits_of({shift_of("a", 0.25)}));
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25)}));
     REQUIRE(layout.intervals.size() == 4);  // origin|start, start|attack, attack|end, end|end
     const IntervalPlan& lead = layout.intervals[0];
     REQUIRE(lead.gap);
@@ -146,7 +157,8 @@ TEST_CASE("a_note_moved_later_inserts_in_the_leading_gap_and_cuts_the_gap_after_
 TEST_CASE("a_gap_that_is_too_short_takes_what_it_can_and_the_rest_is_stretched", "[solve_layout]") {
     // a [1,2], b [2.2,3]: gA is 0.2 s, so room = 0.2 - min_gap 0.02 - 2 * (0.01 + 0.005) = 0.15.
     const auto f = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)}, 4.0);
-    const Layout layout = solve(f, edits_of({scale_of("a", 2.0)}));  // a's end plays at 3.8 - 1.0
+    const Layout layout =
+        solve_unpinned(f, edits_of({scale_of("a", 2.0)}));  // a's end plays at 3.8 - 1.0
     const IntervalPlan& last = layout.intervals.back();
     REQUIRE(last.gap);
     CHECK(last.gap->cut);
@@ -161,7 +173,7 @@ TEST_CASE("the_cut_goes_in_the_longest_silence_region_not_in_other_kinds", "[sol
                                 {region(GapRegionKind::silence, 2.0, 2.3),
                                  region(GapRegionKind::sibilant, 2.3, 2.5),
                                  region(GapRegionKind::silence, 2.5, 3.0)});
-    const Layout layout = solve(f, edits_of({shift_of("a", 0.25)}));
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25)}));
     const IntervalPlan& tail = layout.intervals.back();
     REQUIRE(tail.gap);
     CHECK(near(s_of(tail.gap->at), 2.75 - 0.125));  // centred in [2.5, 3.0]
@@ -173,7 +185,7 @@ TEST_CASE("the_room_of_a_cut_leaves_min_gap_and_the_margins_around_it", "[solve_
     const auto f = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)}, 4.0);
     LayoutParams params;
     params.min_gap = Seconds{0.04};
-    const Layout layout = solve(f, edits_of({scale_of("a", 2.0)}), params);
+    const Layout layout = solve_unpinned(f, edits_of({scale_of("a", 2.0)}), params);
     const IntervalPlan& last = layout.intervals.back();
     REQUIRE(last.gap);
     CHECK(near(last.gap->length.value(), 0.2 - 0.04 - 0.03));
@@ -183,7 +195,7 @@ TEST_CASE("the_room_of_a_cut_leaves_min_gap_and_the_margins_around_it", "[solve_
     CHECK(left >= 0.015 - k_eps);  // note_margin + splice_fade
     // a silence with no room at all: no cut, the whole interval is squished
     const auto narrow = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.04, 3.0)}, 4.0);
-    const Layout none = solve(narrow, edits_of({scale_of("a", 1.5)}));
+    const Layout none = solve_unpinned(narrow, edits_of({scale_of("a", 1.5)}));
     CHECK(!none.intervals.back().gap);
     check_conserved(none, narrow.timeline);
 }
@@ -192,7 +204,7 @@ TEST_CASE("a_gap_without_silence_absorbs_nothing_and_the_interval_is_stretched",
     const auto f = with_regions(fixture3(), 1,
                                 {region(GapRegionKind::tail, 2.0, 2.3),
                                  region(GapRegionKind::protected_preroll, 2.3, 3.0)});
-    const Layout layout = solve(f, edits_of({shift_of("a", 0.25)}));
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25)}));
     const IntervalPlan& tail = layout.intervals.back();
     CHECK(!tail.gap);
     CHECK(near(tail.residual_slope, (5.0 - 0.25) / 5.0));
@@ -202,7 +214,7 @@ TEST_CASE("a_gap_without_silence_absorbs_nothing_and_the_interval_is_stretched",
 
 TEST_CASE("a_legato_end_has_no_gap_after_it_and_the_trailing_gap_absorbs", "[solve_layout]") {
     const auto f = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.0, 4.0)}, 5.0);
-    const Layout layout = solve(f, edits_of({scale_of("a", 1.2)}));  // a ends 0.18 later
+    const Layout layout = solve_unpinned(f, edits_of({scale_of("a", 1.2)}));  // a ends 0.18 later
     const IntervalPlan& last = layout.intervals.back();
     REQUIRE(last.gap);
     CHECK(last.gap->cut);
@@ -228,7 +240,7 @@ TEST_CASE("the_gap_before_the_right_marker_absorbs_when_the_left_note_end_has_no
     // a [1,2] legato b [2,3], gap gB [3,4], c [4,5]; a ends 0.09 early, c starts 0.3 early.
     const auto f = fixture_of(
         {make_note("a", 1.0, 2.0), make_note("b", 2.0, 3.0), make_note("c", 4.0, 5.0)}, 6.0);
-    const Layout layout = solve(f, edits_of({scale_of("a", 0.9), shift_of("c", -0.3)}));
+    const Layout layout = solve_unpinned(f, edits_of({scale_of("a", 0.9), shift_of("c", -0.3)}));
     const IntervalPlan* between = nullptr;
     for (const IntervalPlan& i : layout.intervals) {
         if (near(s_of(i.from), 2.0) && near(s_of(i.to), 4.0)) {
@@ -248,7 +260,7 @@ TEST_CASE("growth_stretches_the_audio_and_holds_the_silence_at_slope_one", "[sol
     // b moves 0.25 later with a unedited: the interval origin..b.start (3 s) holds g0 (1 s) as
     // silence at slope 1 and stretches the other 2 s (a and gA) by 0.25; nothing is inserted.
     const auto f = fixture3();
-    const Layout layout = solve(f, edits_of({shift_of("b", 0.25)}));
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("b", 0.25)}));
     const IntervalPlan& first = layout.intervals.front();
     REQUIRE(first.gap);
     CHECK(first.gap->gap == 0);
@@ -280,7 +292,7 @@ TEST_CASE("stretch_mode_never_uses_a_gap", "[solve_layout]") {
     const auto f = fixture3();
     LayoutParams params;
     params.mode = LayoutMode::stretch;
-    const Layout layout = solve(f, edits_of({shift_of("a", 0.25)}), params);
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25)}), params);
     REQUIRE(layout.intervals.size() == 4);
     CHECK(!layout.intervals[0].gap);
     CHECK(near(layout.intervals[0].residual_slope, 1.25));
@@ -321,7 +333,7 @@ TEST_CASE("with_a_sample_rate_every_shift_and_gap_edit_is_a_whole_number_of_samp
           "[solve_layout]") {
     constexpr double k_rate = 44100.0;
     const auto f = fixture3();
-    const Layout layout = solve(f, edits_of({shift_of("a", 0.25003)}), {}, k_rate);
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25003)}), {}, k_rate);
     for (const IntervalPlan& i : layout.intervals) {
         const double shift_samples = (o_of(i.out_from) - s_of(i.from)) * k_rate;
         CHECK(std::abs(shift_samples - std::round(shift_samples)) < 1e-6);
@@ -335,7 +347,7 @@ TEST_CASE("with_a_sample_rate_every_shift_and_gap_edit_is_a_whole_number_of_samp
     check_conserved(layout, f.timeline);
     // the room of a short gap is floored to whole samples: 0.15 s is exactly 6615 samples
     const auto small = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)}, 4.0);
-    const Layout cut = solve(small, edits_of({scale_of("a", 2.0)}), {}, k_rate);
+    const Layout cut = solve_unpinned(small, edits_of({scale_of("a", 2.0)}), {}, k_rate);
     REQUIRE(cut.intervals.back().gap);
     CHECK(std::abs(cut.intervals.back().gap->length.value() * k_rate - 6615.0) < 1e-6);
 }
@@ -366,4 +378,83 @@ TEST_CASE("markers_that_do_not_sit_on_the_timeline_are_an_invalid_argument", "[s
     const Fixture shorter = fixture_of(notes3(), 8.0);
     CHECK(solve_layout(shorter.timeline, markers, {}, {}).error().code ==
           ErrorCode::invalid_argument);
+}
+
+TEST_CASE("the_neighbour_pins_split_the_layout_into_one_interval_per_marker_pair",
+          "[solve_layout]") {
+    const auto f = fixture3();
+    const Layout layout = solve(f, edits_of({shift_of("a", 0.25)}));
+    // origin|start, start|attack, attack|end, end|b.start, b, gap, c, trailing gap
+    REQUIRE(layout.intervals.size() == 8);
+    const IntervalPlan& pause = layout.intervals[3];
+    REQUIRE(pause.gap);
+    CHECK(pause.gap->cut);
+    CHECK(near(pause.gap->length.value(), 0.25));
+    CHECK(near(o_of(pause.out_to), 3.0));  // b stays
+    for (std::size_t k = 4; k < layout.intervals.size(); ++k) {
+        CHECK(near(delta_of(layout.intervals[k]), 0.0));
+        CHECK(!layout.intervals[k].gap);
+    }
+    check_conserved(layout, f.timeline);
+}
+
+TEST_CASE("a_shortened_note_leaves_the_next_unedited_note_where_it_was", "[solve_layout]") {
+    const auto f = fixture3();
+    const Layout layout =
+        solve(f, edits_of({scale_of("a", 0.6)}));  // a ends 0.36 s earlier (its attack is fixed)
+    check_conserved(layout, f.timeline);
+    bool saw_b = false;
+    for (const IntervalPlan& i : layout.intervals) {
+        if (s_of(i.from) >= 3.0) {  // from b's start on: nothing moves
+            CHECK(near(delta_of(i), 0.0));
+            CHECK(i.residual_slope == 1.0);
+            CHECK(near(o_of(i.out_from), s_of(i.from)));
+            saw_b = true;
+        }
+    }
+    CHECK(saw_b);
+    // the 0.36 s of growth goes into gap A (held, then lengthened: no other audio to stretch)
+    bool in_gap_a = false;
+    for (const IntervalPlan& i : layout.intervals) {
+        if (i.gap && i.gap->gap == 1) {
+            CHECK(!i.gap->cut);
+            CHECK(near(i.gap->length.value(), 0.36));
+            in_gap_a = true;
+        }
+    }
+    CHECK(in_gap_a);
+    CHECK(layout.repaired == std::vector<bool>(3, false));
+}
+
+TEST_CASE("a_lengthened_note_is_taken_up_by_the_pause_after_it_before_b_moves", "[solve_layout]") {
+    const auto f = fixture3();
+    const Layout layout = solve(f, edits_of({scale_of("a", 1.5)}));  // a ends 0.5 s later
+    check_conserved(layout, f.timeline);
+    for (const IntervalPlan& i : layout.intervals) {
+        if (s_of(i.from) >= 3.0) {
+            CHECK(near(delta_of(i), 0.0));
+            CHECK(near(o_of(i.out_from), s_of(i.from)));
+        }
+    }
+    CHECK(layout.repaired == std::vector<bool>(3, false));
+}
+
+TEST_CASE("a_note_pushed_by_the_edit_before_it_moves_as_one_body", "[solve_layout]") {
+    // gA is 1 s: a lengthened by 1.9 s (to end at 3.9) cannot be absorbed; b is pushed later
+    // but keeps its length and slope (its two markers share one shift).
+    const auto f = fixture3();
+    const Layout layout = solve(f, edits_of({scale_of("a", 2.9)}));
+    check_conserved(layout, f.timeline);
+    const IntervalPlan* body = nullptr;
+    for (const IntervalPlan& i : layout.intervals) {
+        if (near(s_of(i.from), 3.0) && near(s_of(i.to), 4.0)) {
+            body = &i;
+        }
+    }
+    REQUIRE(body != nullptr);
+    CHECK(near(body->residual_slope, 1.0));
+    CHECK(near(delta_of(*body), 0.0));
+    CHECK(o_of(body->out_from) > 3.0);
+    CHECK(layout.repaired[1]);
+    CHECK(!layout.repaired[0]);
 }

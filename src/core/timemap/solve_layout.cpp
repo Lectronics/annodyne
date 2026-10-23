@@ -304,6 +304,26 @@ std::vector<Anchor> anchors_of(const LayoutMarkers& markers) {
     return anchors;
 }
 
+/// An unedited (pinned) note moves as one body: its start and end markers take the larger of their
+/// two shifts, so a push on one never squeezes the note. Marks the note repaired if it moved.
+void follow_pinned(const std::vector<LayoutMarker>& list, std::vector<Anchor>& anchors,
+                   Layout& layout) {
+    for (std::size_t k = 0; k + 1 < anchors.size(); ++k) {
+        const bool body = list[k].pinned && list[k + 1].pinned && list[k].note == list[k + 1].note;
+        if (!body) {
+            continue;
+        }
+        const double shift =
+            std::max(anchors[k].t - anchors[k].s, anchors[k + 1].t - anchors[k + 1].s);
+        for (const std::size_t i : {k, k + 1}) {
+            anchors[i].t = anchors[i].s + shift;
+        }
+        if (std::abs(shift) > k_same_length_s) {
+            layout.repaired[static_cast<std::size_t>(anchors[k].note)] = true;
+        }
+    }
+}
+
 void mark_changed(Layout& layout, const std::vector<Anchor>& now, const std::vector<Anchor>& was) {
     for (std::size_t k = 0; k < now.size(); ++k) {
         if (now[k].note != k_no_note && std::abs(now[k].t - was[k].t) > k_same_length_s) {
@@ -334,6 +354,12 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
         unedited_layout(layout, list);
         return layout;
     }
+    follow_pinned(list, anchors, layout);
+    if (!timemap_detail::enforce_min_segments(anchors, fixed_end, c.min_segment_s)) {
+        unedited_layout(layout, list);
+        return layout;
+    }
+    follow_pinned(list, anchors, layout);
     mark_changed(layout, anchors, requested);
     if (c.rate_hz > 0.0) {
         (void)timemap_detail::quantise_shifts(anchors, fixed_end, c.rate_hz, c.step_samples);
@@ -351,6 +377,7 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
             if (anchors[k].note != k_no_note) {
                 layout.repaired[static_cast<std::size_t>(anchors[k].note)] = true;
             }
+            follow_pinned(list, anchors, layout);
             solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);
             if (!solved.feasible) {
                 unedited_layout(layout, list);

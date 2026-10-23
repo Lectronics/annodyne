@@ -168,3 +168,6 @@ struct Layout { std::vector<IntervalPlan> intervals; std::vector<bool> repaired;
 ## Review log
 
 *(round 2 pending; round 1 findings answered above: B1/B2 anchors are absolute, the derivation table is `desired_anchors`; B3 the Phase 1 repair rules apply, a move past room cuts to `min_gap` and stretches the rest; B4 first gap only; B5 intervals between markers, ratio bound, whole-interval stretch; B6 integer whole-sample `Δ` by quantised markers; B7 splice post-pass, room constraint, `not_implemented` for edited notes near a cut; S1 `GapEdit` carries the position; S2 legato and virtual gaps; S3 `TimeMapParams` kept, one entry point name; S4 handle pinned, end derived absolutely; S5 total key; S6 `dirty_regions` over-approximation; S7 no timeline; S8 types in timemap; S9 ADR-0025; S10 limitation stated.)*
+
+## Slice 8c amendment 2: unedited notes are pinned (2026-10-23)
+See ADR-0025 amendment 2. `layout_markers` adds a pinned start and end for every unedited active note when any note has a timing edit; `solve_layout` moves a pushed pinned note as one body (`follow_pinned`). Effect on the four layout audition scenarios: the second vowel keeps its place and speed unless the pause is used up (`layout_a_longer_than_pause`), when it is pushed later at slope 1 and the trailing pause gives the time back.
