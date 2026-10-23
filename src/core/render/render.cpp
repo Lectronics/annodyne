@@ -4,6 +4,7 @@
 #include "core/edits/effective_gap.h"
 #include "core/edits/effective_state.h"
 #include "core/render/blend_plan.h"
+#include "core/render/level.h"
 #include "core/render/render_key.h"
 #include "core/render/splice.h"
 #include "core/synthesis/engine/engine_support.h"
@@ -379,9 +380,24 @@ Result<Zone> render_zone(const RenderInputs& in, const TimeMap& map, const Synth
     const OutputRange range =
         OutputRange::from_start(to_time_point<OutputAxis>(Samples{zone.begin}, rate),
                                 to_seconds(Samples{zone.end - zone.begin}, rate));
-    auto rendered = engine.render_note(in.source, *e.note, e.eff, map, range);
-    if (!rendered) {
-        return Unexpected{rendered.error()};
+    // The pitch engine is shown the pitch part only; gain, fades and flattening are applied to its
+    // result as one gain curve (level.h, ADR-0028). A note with only level edits needs no engine.
+    const EffectiveNote engine_eff = without_level(e.eff);
+    const bool pitch_edited = !only_timing_edited(engine_eff, e.note->pitch_center);
+    auto pristine =
+        read_through_map(in.source, map, Samples{zone.begin}, Samples{zone.end - zone.begin});
+    if (!pristine) {
+        return Unexpected{pristine.error()};
+    }
+    std::optional<OutputAudio> rendered;
+    if (pitch_edited) {
+        auto from_engine = engine.render_note(in.source, *e.note, engine_eff, map, range);
+        if (!from_engine) {
+            return Unexpected{from_engine.error()};
+        }
+        rendered = std::move(*from_engine);
+    } else {
+        rendered = OutputAudio{.audio = *pristine, .start = range.start()};
     }
     const bool shape_ok =
         rendered->audio.frame_count().value() == zone.end - zone.begin &&
@@ -392,10 +408,24 @@ Result<Zone> render_zone(const RenderInputs& in, const TimeMap& map, const Synth
         return fail(ErrorCode::internal, "engine '" + std::string{engine.name()} +
                                              "' returned audio that does not match the zone");
     }
-    auto pristine =
-        read_through_map(in.source, map, Samples{zone.begin}, Samples{zone.end - zone.begin});
-    if (!pristine) {
-        return Unexpected{pristine.error()};
+    if (has_level_edit(e.eff)) {
+        auto shift = zone_shift(map, rate, range, "render_region");
+        if (!shift) {
+            return Unexpected{shift.error()};
+        }
+        auto gain = level_gain(*e.note, e.eff,
+                               {.first = zone.begin,
+                                .count = zone.end - zone.begin,
+                                .note_first = e.span.begin,
+                                .note_last = e.span.end,
+                                .rate = rate,
+                                .shift_samples = *shift});
+        if (!gain) {
+            return Unexpected{gain.error()};
+        }
+        if (auto applied = apply_gain(rendered->audio, *gain); !applied) {
+            return Unexpected{applied.error()};
+        }
     }
     zone.identical = same_samples(*pristine, rendered->audio);
     zone.audio = std::move(rendered->audio);

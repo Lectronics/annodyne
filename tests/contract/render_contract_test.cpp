@@ -120,7 +120,33 @@ TEST_CASE("samples_outside_the_dirty_regions_are_bit_identical", "[render_contra
     }
 }
 
-TEST_CASE("the_passthrough_engine_renders_the_source_whatever_the_edits", "[render_contract]") {
+TEST_CASE("the_passthrough_engine_renders_the_source_whatever_the_pitch_edits",
+          "[render_contract]") {
+    // PassthroughEngine realises no pitch edit and returns the original; level edits are not its
+    // business (the renderer applies them, see below).
+    for (int seed = 0; seed < k_property_cases; ++seed) {
+        INFO("seed " << seed);
+        Rng rng{static_cast<std::uint64_t>(seed)};
+        auto sc = random_scenario(rng);
+        EditList list{TrackId{"t1"}};
+        for (int i = uniform_int(rng, 1, 4); i > 0; --i) {
+            const Note& n = sc.notes[static_cast<std::size_t>(
+                uniform_int(rng, 0, static_cast<int>(sc.notes.size()) - 1))];
+            list = list.add(std::vector{make_spec(n.id.value, EditCategory::pitch,
+                                                  EditParam::center_offset, EditOp::add,
+                                                  Cents{uniform(rng, -300.0, 300.0)})},
+                            k_t0)
+                       .value();
+        }
+        const Fixture f = sc.fixture.with_edits(list);
+        const auto r = render_region(f.inputs(), whole(f.source), PassthroughEngine{}, {}).value();
+        CHECK(bit_identical(audio_of(r), source_audio(f)));
+    }
+}
+
+TEST_CASE("a_gain_edit_changes_only_its_notes_zone_whatever_the_engine", "[render_contract]") {
+    // The level is applied by the renderer: samples farther than the crossfade margin from every
+    // edited note are the source, bit for bit (CLAUDE.md rule 5).
     for (int seed = 0; seed < k_property_cases; ++seed) {
         INFO("seed " << seed);
         Rng rng{static_cast<std::uint64_t>(seed)};
@@ -128,7 +154,25 @@ TEST_CASE("the_passthrough_engine_renders_the_source_whatever_the_edits", "[rend
         const EditList list = random_history(rng, sc.notes).back();
         const Fixture f = sc.fixture.with_edits(list);
         const auto r = render_region(f.inputs(), whole(f.source), PassthroughEngine{}, {}).value();
-        CHECK(bit_identical(audio_of(r), source_audio(f)));
+        const AudioBuffer source = source_audio(f);
+        const auto margin = static_cast<std::int64_t>(0.011 * k_rate);
+        for (std::int64_t n = 0; n < source.frame_count().value(); n += 97) {
+            bool near_edit = false;
+            for (const Note& note : sc.notes) {
+                if (n >= static_cast<std::int64_t>(
+                             note.source_start.unchecked_since_origin().value() * k_rate) -
+                             margin &&
+                    n <= static_cast<std::int64_t>(
+                             note.source_end.unchecked_since_origin().value() * k_rate) +
+                             margin) {
+                    near_edit = true;
+                }
+            }
+            if (!near_edit) {
+                REQUIRE(audio_of(r).channel(0)[static_cast<std::size_t>(n)] ==
+                        source.channel(0)[static_cast<std::size_t>(n)]);
+            }
+        }
     }
 }
 

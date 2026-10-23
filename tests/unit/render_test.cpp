@@ -244,7 +244,11 @@ TEST_CASE("an_engine_that_returns_the_wrong_shape_is_an_internal_error", "[rende
                                .start = r.start()};
         }
     };
-    const Fixture f = make_fixture(two_notes()).with_edits(edits_of({gain_edit("a", 6.0)}));
+    // a pitch edit reaches the engine (a gain edit is applied by the renderer, level.h)
+    const Fixture f =
+        make_fixture(two_notes())
+            .with_edits(edits_of({make_spec("a", EditCategory::pitch, EditParam::center_offset,
+                                            EditOp::set, Cents{100.0})}));
     CHECK(render_region(f.inputs(), whole(f.source), MonoEngine{}, {}).error().code ==
           ErrorCode::internal);
 }
@@ -308,4 +312,37 @@ TEST_CASE("moving_a_neighbour_outside_the_region_that_changes_a_ramp_changes_the
     const auto r2 = render_region(f2.inputs(), region, engine, {.cache = &cache}).value();
     CHECK(r1 != r2);
     CHECK(r1->cache_id != r2->cache_id);
+}
+
+TEST_CASE("level_edits_are_applied_by_the_renderer_whatever_the_engine", "[render][level]") {
+    // PassthroughEngine realises no edit at all; the gain still lands on the note, and nothing
+    // else moves.
+    const Fixture f = make_fixture(two_notes()).with_edits(edits_of({gain_edit("a", 6.0)}));
+    const auto r = render(f, PassthroughEngine{});
+    const AudioBuffer original = source_audio(f);
+    const auto out = audio_of(r).channel(0);
+    const auto in = original.channel(0);
+    // well inside note a (0.5 .. 1.0 s at 48 kHz): scaled; far from it: bit-identical
+    CHECK(std::abs(static_cast<double>(out[36000]) -
+                   static_cast<double>(in[36000]) * gain_of(6.0)) < 1e-6);
+    CHECK(out[1000] == in[1000]);
+    CHECK(out[150000] == in[150000]);
+    CHECK(r->notes_rendered.size() == 1);
+}
+
+TEST_CASE("a_fade_in_and_out_shape_the_note_and_leave_the_rest_alone", "[render][level]") {
+    const Fixture f =
+        make_fixture(two_notes())
+            .with_edits(edits_of(
+                {make_spec("a", EditCategory::fade, EditParam::fade_in, EditOp::set, Seconds{0.1}),
+                 make_spec("a", EditCategory::fade, EditParam::fade_out, EditOp::set,
+                           Seconds{0.1})}));
+    const auto r = render(f, PassthroughEngine{});
+    const AudioBuffer original = source_audio(f);
+    const auto out = audio_of(r).channel(0);
+    const auto in = original.channel(0);
+    // note a is 0.5 .. 1.0 s: halfway up the fade in (0.55 s) the gain is 0.5 (default linear)
+    CHECK(std::abs(static_cast<double>(out[26400]) - 0.5 * static_cast<double>(in[26400])) < 1e-4);
+    CHECK(std::abs(static_cast<double>(out[36000]) - static_cast<double>(in[36000])) < 1e-6);
+    CHECK(out[1000] == in[1000]);
 }
