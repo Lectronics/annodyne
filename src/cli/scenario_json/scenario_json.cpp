@@ -354,8 +354,9 @@ Result<ScenarioMacro> parse_macro(const Json& j, const std::string& path) {
     }
     ScenarioMacro macro;
     macro.name = j["macro"].get<std::string>();
-    if (macro.name != "correct_pitch" && macro.name != "leveling") {
-        return bad(at(path, "macro"), "unknown macro (available: correct_pitch, leveling)");
+    if (macro.name != "correct_pitch" && macro.name != "leveling" && macro.name != "formant") {
+        return bad(at(path, "macro"),
+                   "unknown macro (available: correct_pitch, leveling, formant)");
     }
     for (const auto& [key, value] : j.items()) {
         if (key == "macro") {
@@ -384,6 +385,8 @@ Result<ScenarioMacro> parse_macro(const Json& j, const std::string& path) {
             macro.between_notes = *v;
         } else if (key == "within_notes") {
             macro.within_notes = *v;
+        } else if (key == "offset_cents") {
+            macro.offset_cents = *v;
         } else {
             return bad(at(path, key), "unknown key");
         }

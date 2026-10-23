@@ -22,9 +22,9 @@ constexpr int k_exit_usage = 2;
 void print_usage() {
     std::fputs("usage: anno-cli info <file.wav>\n"
                "       anno-cli render <scenario.json> --out <out.wav> [--engine "
-               "passthrough|harmonic_noise|psola|rubberband]\n"
+               "passthrough|harmonic_noise|psola|rubberband (default)]\n"
                "       anno-cli audition <scenario.json> --out <dir> [--engine "
-               "passthrough|harmonic_noise|psola|rubberband]\n"
+               "passthrough|harmonic_noise|psola|rubberband (default)]\n"
                "       anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] "
                "[--pitch-track]\n"
                "                        [--track-id <id>] [--onsets adaptive|pipeline]\n",
@@ -42,7 +42,7 @@ int report_error(const anno::Error& error) {
 struct RunArgs {
     std::filesystem::path scenario;
     std::filesystem::path out;
-    anno::cli::EngineChoice engine = anno::cli::EngineChoice::passthrough;
+    anno::cli::EngineChoice engine = anno::cli::EngineChoice::rubberband;  // ADR-0029
 };
 
 bool parse_run_args(std::span<char*> args, RunArgs& parsed, int& exit_code) {

@@ -1,0 +1,46 @@
+{
+  "name": "level_fade_up_down_cut",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "fade",
+      "op": "set",
+      "param": "fade_in",
+      "value": 1.2,
+      "target": {
+        "note_id": "n003102"
+      }
+    },
+    {
+      "category": "fade",
+      "op": "set",
+      "param": "fade_shape",
+      "value": "linear",
+      "target": {
+        "note_id": "n003102"
+      }
+    },
+    {
+      "category": "fade",
+      "op": "set",
+      "param": "fade_out",
+      "value": 0.64,
+      "target": {
+        "note_id": "n004325"
+      }
+    },
+    {
+      "category": "fade",
+      "op": "set",
+      "param": "fade_shape",
+      "value": "linear",
+      "target": {
+        "note_id": "n004325"
+      }
+    }
+  ],
+  "expect": {
+    "level": "vocadito_2: a 1.2 s linear fade up over the note at 3.10 s, then a 0.64 s linear fade down over the note at 4.33 s, then the next note (4.98 s) at full level: a cut back up"
+  }
+}

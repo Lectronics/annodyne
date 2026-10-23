@@ -14,6 +14,7 @@
 #include "core/tuning/scale_grid.h"
 #include "macros/correct_pitch/correct_pitch.h"
 #include "macros/leveling/leveling.h"
+#include "tools/formant/formant.h"
 #include "tools/main_tool/main_tool.h"
 
 #include <algorithm>
@@ -144,6 +145,20 @@ Result<ScaleType> parse_scale(const std::string& name) {
 /// The edits of one scenario macro against the analysed notes.
 Result<std::vector<EditSpec>> resolve_macro(const AnalysisResult& analysis,
                                             const ScenarioMacro& macro) {
+    if (macro.name == "formant") {
+        std::vector<EditSpec> specs;
+        for (const Note& note : analysis.notes) {
+            if (!note.is_active) {
+                continue;
+            }
+            auto spec = formant_edit(analysis, note.id, Cents{macro.offset_cents});
+            if (!spec) {
+                return Unexpected{spec.error()};
+            }
+            specs.push_back(std::move(*spec));
+        }
+        return specs;
+    }
     if (macro.name == "leveling") {
         LevelingParams params;
         params.between_notes = Ratio{macro.between_notes};

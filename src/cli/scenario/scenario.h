@@ -40,7 +40,7 @@ struct ScenarioPitchDrag {
 
 /// A macro written in a scenario ("macros": [...]); resolved after the analysis. correct_pitch
 /// reads scale, root, center_amount, drift_amount, min_deviation_cents; leveling reads
-/// between_notes, within_notes.
+/// between_notes, within_notes; formant (every active note) reads offset_cents.
 struct ScenarioMacro {
     std::string name;  // "correct_pitch" or "leveling"
     std::string scale = "major";
@@ -50,6 +50,7 @@ struct ScenarioMacro {
     double min_deviation_cents = 0.0;
     double between_notes = 0.5;
     double within_notes = 0.0;
+    double offset_cents = 0.0;  // formant: the envelope shift for every active note
 };
 
 struct Scenario {

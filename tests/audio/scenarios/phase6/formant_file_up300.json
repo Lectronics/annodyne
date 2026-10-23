@@ -1,0 +1,14 @@
+{
+  "name": "formant_file_up300",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "macros": [
+    {
+      "macro": "formant",
+      "offset_cents": 300.0
+    }
+  ],
+  "expect": {
+    "formant": "formant envelope +300 cents on every note of the file, pitch unchanged"
+  }
+}
