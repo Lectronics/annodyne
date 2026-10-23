@@ -28,3 +28,7 @@ monophonic (Phase 11); the crossfade default `equal_power` overshoots by up to +
 signals (listening decision at Phase 4); `-ffp-contract=off` makes results reproducible per build,
 not across platforms.
 Tuning parameters: `RenderParams::crossfade_length` (0..20 ms, default 10 ms), `crossfade_shape`.
+
+## The gap gate (ADR-0024)
+
+`gate.h`: `gate_curve` is the per-sample gain a `gap_gain` edit applies to the `silence` regions of its gap (5 ms ramps inside the region where it borders a note or another region; none at the recording's start or end). `render_region` multiplies it in after the blend and skips samples whose gain is 1; tails, the guard before a note and every classified region (sibilant, breath, plosive, audible) are never touched. `RenderResult::gaps_rendered` lists the gated gaps that meet the region; the gates are the last part of the cache key.
