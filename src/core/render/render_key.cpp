@@ -10,10 +10,11 @@ namespace anno {
 
 namespace {
 
+// Every new hashed field bumps the version.
 constexpr std::uint32_t k_key_format_version =
-    6;  // 6: the stretch vibrato mode; 5: local map spans, the splice fade; 4: edited
-        // gaps; 3: the stretch settings;
-        // 2: the whole TimeMap is part of the key
+    7;  // 7: the stretch engine, voiced_bridge and the vibrato mode (6); 5: local map spans, the
+        // splice fade; 4: edited gaps; 3: the stretch settings; 2: the whole TimeMap is part of
+        // the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;

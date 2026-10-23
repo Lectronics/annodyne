@@ -1,7 +1,7 @@
 # Design note: The segment timeline and the gate (Phase 5, gap slices 1-7)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 2 (round 1 findings B1-B12 and round 2 findings B-R1..B-F1, S-1..S-7 answered)
+- **Status:** implemented, as built (ADR-0024 and its amendments record the deviations); was draft, revision 2 (round 1 findings B1-B12 and round 2 findings B-R1..B-F1, S-1..S-7 answered)
 - **Supersedes, for Phase 5:** `silence-and-gaps.md` (kept as the long-term plan; where the two differ this note and ADR-0024 win) and the gap parts of `breath-lane.md` (breath detection and everything about breaths are **not** in this note: see "Deferred").
 - **Spec sections:** architecture spec §2, §3, §5.1-5.2; ADR-0005, ADR-0008, ADR-0017, ADR-0023, ADR-0024 (proposed).
 - **Folders / CMake targets:** `src/core/types` (new headers), `src/core/analysis/gaps` (layer 1), `src/core/edits` (`effective_gap`), `src/core/render` (`gate`, slice 7), `src/macros/strip_silence` and `src/tools/gap` (layer 5, slice 7). The shift-first layout (slice 8) has its **own** design note and ADR amending ADR-0023 §3; it is not designed here.

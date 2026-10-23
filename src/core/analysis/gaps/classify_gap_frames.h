@@ -24,10 +24,10 @@ struct GapEvidenceParams {
 /// share, closure dip. Keeps the class and `activity.level - floor.curve` per frame of
 /// `activity.grid`; entries of note frames are unspecified. An empty grid gives empty evidence.
 /// Errors: invalid_argument (empty signal; sample rate below 8 kHz, which measure_frames rejects,
-/// so the caller passes neutral_gap_evidence instead; the activity grid and the floor on different
-/// grids or arrays that do not match; bad params). Pure; thread-safe; not real-time safe
-/// (allocates). Cost: one STFT pass over the recording (a 4096 and a 1024 point FFT per frame,
-/// about 25 MB transient for 10 minutes).
+/// `analyse()` therefore requires 8 kHz or more; neutral_gap_evidence remains for tests; the
+/// activity grid and the floor on different grids or arrays that do not match; bad params). Pure;
+/// thread-safe; not real-time safe (allocates). Cost: one STFT pass over the recording (a 4096 and
+/// a 1024 point FFT per frame, about 25 MB transient for 10 minutes).
 [[nodiscard]] Result<GapEvidence> classify_gap_frames(const MonoAudio& mono,
                                                       const ActivityTrack& activity,
                                                       const NoiseFloor& floor,

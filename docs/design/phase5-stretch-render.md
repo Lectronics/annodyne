@@ -1,7 +1,7 @@
 # Design note: Time-stretch rendering (Phase 5, slice 1)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 2 (structure review round 1 answered, see the review log)
+- **Status:** implemented, as built. Superseded as the default renderer by Rubber Band (ADR-0026 amendment 1); the PSOLA path described here is retained as the alternative. Was draft, revision 2 (structure review round 1 answered, see the review log)
 - **Spec sections:** `annodyne-core-architecture.md` §2 (time axes), §4.5 (`SynthesisEngine`), §4.6, §5.3–5.5; ADR-0006 (render API), ADR-0008 (TimeMap spans), ADR-0016, ADR-0017 (frame classes), ADR-0018 (stretch research items), ADR-0021 (engine choice), ADR-0023 (this slice, proposed).
 - **Folders / CMake targets:** `src/core/synthesis/grain/` (new, layer 2), `src/core/synthesis/stretch/` (new, layer 2), `src/core/synthesis/psola/` (refactor onto `grain`, output unchanged), `src/core/synthesis/engine/` (`only_timing_edited`), `src/core/timemap/` (whole-sample anchors), `src/core/render/` (stretched spans).
 - **Relation to `note-stretching.md`:** that note is the full plan (segments, allocation, vibrato regeneration, splices). This note is its first slice. See "What this changes".

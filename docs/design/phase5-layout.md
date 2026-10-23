@@ -1,7 +1,7 @@
 # Design note: Pinned markers and the absorb-first layout (Phase 5, slice 8)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 3 (owner's answers 2026-10-22; answers structure review rounds 1 and 2)
+- **Status:** implemented, as built (ADR-0025 and its amendments 1-3 record the deviations); was draft, revision 3 (owner's answers 2026-10-22; answers structure review rounds 1 and 2)
 - **Spec sections:** architecture spec §2, §5.4; ADR-0005 §16; ADR-0008 §4, §5; ADR-0023 §3, §3a, §7; ADR-0025 (proposed with this note); `phase5-gaps-core.md` (`SegmentTimeline`, `Gap`, `GapRegion`); `phase5-time-tools.md`; `silence-and-gaps.md` §1.2-1.4 (replaced for Phase 5 by this note).
 - **Folders / CMake targets:** `src/core/timemap` (layer 3: `layout.h/.cpp`, `layout_markers.cpp`, `build_layout_map.cpp`), `src/core/timemap/detail` (shared anchor helpers), `src/core/render` (the splice, `render_unedited`).
 

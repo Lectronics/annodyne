@@ -1,7 +1,7 @@
 # Design note: tools/time and tools/attack_speed (Phase 5)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft
+- **Status:** implemented, as built; was draft
 - **Spec sections:** features spec §11 (Time Tool and Time Handles), §12 (Attack Speed Tool); architecture spec §5.1–5.4 (`time` and `attack` categories, `build_time_map`); ADR-0005 (edit model), ADR-0008 §4 (shift first), ADR-0023 (stretched rendering).
 - **Folders / CMake targets:** `src/tools/time` (`anno::tools_time`), `src/tools/attack_speed` (`anno::tools_attack_speed`), both layer 5, each linking only `core/types`.
 

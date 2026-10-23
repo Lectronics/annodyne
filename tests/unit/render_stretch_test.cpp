@@ -7,7 +7,9 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <string>
 
 // Timing edits that stretch render through the TimeMap (ADR-0023): the unedited base is the source
 // through the map, slope-1 parts byte for byte and slope != 1 parts by stretch_span.
@@ -181,4 +183,30 @@ TEST_CASE("a_region_before_the_stretch_is_not_marked_stretched", "[render_stretc
                        .value();
     CHECK_FALSE(r->stretched);
     CHECK(r->passthrough);
+}
+
+TEST_CASE("every_stretch_setting_is_part_of_the_cache_key", "[render_stretch]") {
+    const Fixture f = mono_fixture().with_edits(edits_of({length_edit("a", 1.5)}));
+    const OutputRange range = OutputRange::from_start(OutputTime{}, Seconds{1.0});
+    const auto id_of = [&](const std::function<void(StretchParams&)>& change) {
+        RenderParams params;
+        change(params.stretch);
+        return render_region(f.inputs(), range, PassthroughEngine{}, params).value()->cache_id;
+    };
+    const std::string base = id_of([](StretchParams&) {});
+    const std::vector<std::pair<const char*, std::function<void(StretchParams&)>>> changes{
+        {"engine", [](StretchParams& p) { p.engine = StretchEngine::psola; }},
+        {"vibrato", [](StretchParams& p) { p.vibrato = VibratoMode::retime; }},
+        {"voiced_bridge", [](StretchParams& p) { p.voiced_bridge = Seconds{0.0}; }},
+        {"class_edge_fade", [](StretchParams& p) { p.class_edge_fade = Seconds{0.001}; }},
+        {"noise_grain", [](StretchParams& p) { p.noise_grain = Seconds{0.05}; }},
+        {"noise_jitter", [](StretchParams& p) { p.noise_jitter_hop_fraction = 0.1; }},
+        {"noise_seed", [](StretchParams& p) { p.noise_seed = 1; }},
+        {"min_slope", [](StretchParams& p) { p.min_slope = Ratio{0.3}; }},
+        {"max_slope", [](StretchParams& p) { p.max_slope = Ratio{3.0}; }},
+        {"voiced_classes", [](StretchParams& p) { p.voiced_classes = FrameClassSet{}; }}};
+    for (const auto& [name, change] : changes) {
+        INFO(name);
+        CHECK(id_of(change) != base);
+    }
 }

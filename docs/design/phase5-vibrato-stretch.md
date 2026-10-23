@@ -1,6 +1,6 @@
 # Phase 5: vibrato-preserving stretch (design note)
 
-Status: draft for structure review, 2026-10-23. Amends ADR-0023 (stretch render). Owner requirement (2026-10-23, after listening to `layout_a_*`): stretching or squishing a note must not change its vibrato rate by more than 0.5 Hz, from any edit or chain of edits; depth should stay as close to the source as possible (unless the edit is a vibrato control).
+Status: implemented, as built (PSOLA path only; the default render engine is Rubber Band since ADR-0026 amendment 1, so this regeneration applies when `engine = psola`). Was: draft for structure review, 2026-10-23. Amends ADR-0023 (stretch render). Owner requirement (2026-10-23, after listening to `layout_a_*`): stretching or squishing a note must not change its vibrato rate by more than 0.5 Hz, from any edit or chain of edits; depth should stay as close to the source as possible (unless the edit is a vibrato control).
 
 ## Problem (measured)
 `stretch_span` re-times the whole pitch contour, so the vibrato rate scales with 1/slope. Measured on `gap_fricative.wav` (source vibrato 5.7 Hz, 37 cents; DFT of the f0 trace, drift removed): slope 0.6 gives 9.1 Hz, slope 1.4 gives 3.9 Hz, slope 2.0 gives 3.0 Hz. Depth stays 35-41 cents; a slower rate at the same depth is what sounds like "more depth". The README already listed this as a known limit.

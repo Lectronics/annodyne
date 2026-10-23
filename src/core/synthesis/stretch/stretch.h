@@ -22,8 +22,11 @@ namespace anno {
 /// re-times the contour with the audio, so the rate scales with 1 / slope (the Phase 5 behaviour).
 enum class VibratoMode : std::uint8_t { preserve, retime };
 
-/// Which renderer makes a stretched voiced span: this module's TD-PSOLA path (mono only, the
-/// default) or Rubber Band R3 (ADR-0026: any channel count, a phase vocoder, an A/B engine).
+/// Which renderer makes a stretched voiced span: this module's TD-PSOLA path (mono only; keeps
+/// the vibrato rate, `vibrato`) or Rubber Band R3 (ADR-0026: any channel count, a phase vocoder;
+/// the engine renders use, see RenderParams). The other fields below, `vibrato` and `voiced_bridge`
+/// included, apply to the PSOLA path only. StretchParams itself defaults to psola so the module's
+/// unit tests stay on the path they test; RenderParams overrides it.
 enum class StretchEngine : std::uint8_t { psola, rubberband };
 
 struct StretchParams {
@@ -77,10 +80,10 @@ struct StretchParams {
 ///    noise_seed, the span's first output sample and the grain index, so the samples of a range do
 ///    not depend on which range was asked for). Digital silence stays exactly zero.
 ///  - Voiced and noise paths are joined with an equal-power crossfade of class_edge_fade.
-/// Mono only. Errors: invalid_argument (bad params; `span` not a warp; `out_range` outside the
-/// span; a note whose frame_class has the wrong size), not_implemented (stereo; slope outside
-/// [min_slope, max_slope]). Source samples outside the recording read as zero. Pure; thread-safe;
-/// not real-time safe.
+/// Mono only with engine psola (any channel count with rubberband). Errors: invalid_argument (bad
+/// params; `span` not a warp; `out_range` outside the span; a note whose frame_class has the wrong
+/// size), not_implemented (stereo; slope outside [min_slope, max_slope]). Source samples outside
+/// the recording read as zero. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<OutputAudio> stretch_span(const AudioSource& src,
                                                const AnalysisResult& analysis, const TimeSpan& span,
                                                OutputRange out_range, const StretchParams& params);

@@ -1,6 +1,6 @@
 # Time-scale modification for monophonic notes: findings and toolkit notes
 
-*Compiled 2026-10-23. Covers the literature on stretching and squishing monophonic audio, and implementation notes for each toolkit worth considering from C++. Licensing is deliberately left out of the analysis (license names appear only as one-line facts).*
+*Status: research input to ADR-0026; not normative.* *Compiled 2026-10-23. Covers the literature on stretching and squishing monophonic audio, and implementation notes for each toolkit worth considering from C++. Licensing is deliberately left out of the analysis (license names appear only as one-line facts).*
 
 **Legend for confidence tags**
 
