@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <vector>
 
 using namespace anno;
@@ -161,7 +162,9 @@ namespace {
 Fixture vibrato_voice(double rate_hz, double depth_cents) {
     return Fixture{voice(
         [=](double t) {
-            return 220.0 * std::pow(2.0, depth_cents * std::sin(2.0 * M_PI * rate_hz * t) / 1200.0);
+            return 220.0 *
+                   std::pow(2.0,
+                            depth_cents * std::sin(2.0 * std::numbers::pi * rate_hz * t) / 1200.0);
         },
         harmonic_amps(10, 0.5))};
 }
@@ -185,8 +188,8 @@ double vibrato_depth(const OutputAudio& out) {
         double im = 0.0;
         for (std::size_t i = 0; i < n.pitch_mod.size(); ++i) {
             const double v = n.pitch_mod[i].value();
-            re += v * std::cos(2.0 * M_PI * f * static_cast<double>(i) * hop);
-            im += v * std::sin(2.0 * M_PI * f * static_cast<double>(i) * hop);
+            re += v * std::cos(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
+            im += v * std::sin(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
         }
         best = std::max(best, 2.0 * std::hypot(re, im) / static_cast<double>(n.pitch_mod.size()));
     }
