@@ -13,6 +13,11 @@ Written while the owner was away; nothing here is a phase close-out. Branch `pha
 | Sibilant | per-class noise gains (sibilant, breath, plosive) in the renderer gain curve; `tools/sibilant` | ADR-0028 amendment 1 |
 | CLI | scenario key `macros` (correct_pitch, leveling) for end-to-end demos | `audition/phase6-macros` |
 
+## After the owner's listening round (2026-10-23)
+- Rubber Band is the default pitch engine (CLI and ADR-0029); PSOLA stays available. A programmatic choice between them is not built: the objective measures do not separate the engines note by note, so it waits for per-note listening labels (`audition/phase6-macros-rb/NOTES.md`).
+- Demos asked for: `audition/phase6-fade` (1.2 s fade up, 0.64 s fade down, then a cut back to full level), `audition/phase6-formant-file` (formant +-300 cents on every note of the file; scenario macro `formant`).
+- Hitches in the Rubber Band Correct Pitch render at 4.322 s and 6.61-6.63 s traced to the boundary between two corrected notes with different offsets; touching notes now glide (ADR-0030, `TouchingNotes`, key version 8). 4.322 s is clear of cycle-similarity dips; 6.61-6.63 s is not (both notes are breathy): next step is shifting voiced frames only and/or a longer glide.
+
 ## Tests
 debug-asan: 1023/1023 on the build before the sibilant slice and the CI fixes (the later slices and fixes were run as unit tests: `level_test`, `expression_tools_test`, `stretch_span_test`, `scenario_test`; clang-tidy and `check_includes` clean). PR #4 CI: see the PR.
 
