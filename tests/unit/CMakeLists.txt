@@ -160,6 +160,8 @@ anno_add_test(NAME rubberband_pitch_engine_test SOURCES rubberband_pitch_engine_
 anno_add_test(NAME level_tools_test SOURCES level_tools_test.cpp LABELS unit DEPS anno::tools_amplitude anno::tools_fade anno::core_edits)
 anno_add_test(NAME level_test SOURCES level_test.cpp LABELS unit DEPS anno::core_render)
 anno_add_test(NAME psola_engine_test SOURCES psola_engine_test.cpp LABELS unit DEPS anno::core_synthesis_psola anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
+anno_add_test(NAME correct_pitch_test SOURCES correct_pitch_test.cpp LABELS unit DEPS anno::macros_correct_pitch anno::core_edits anno::core_tuning)
+anno_add_test(NAME scale_grid_test SOURCES scale_grid_test.cpp LABELS unit DEPS anno::core_tuning)
 anno_add_test(NAME chromatic_grid_test SOURCES chromatic_grid_test.cpp LABELS unit DEPS anno::core_tuning)
 anno_add_test(NAME main_tool_test SOURCES main_tool_test.cpp LABELS unit DEPS anno::tools_main_tool anno::core_edits)
 anno_add_test(NAME gap_tools_test SOURCES gap_tools_test.cpp LABELS unit DEPS anno::tools_gap anno::macros_strip_silence anno::core_edits)
