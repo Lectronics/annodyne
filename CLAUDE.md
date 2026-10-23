@@ -37,6 +37,7 @@ Every non-trivial change follows this loop. Do not skip steps to save time.
 6. **Record decisions.** Any change to a public type, return value, edit category, folder or dependency rule gets an ADR in `docs/decisions/` from `docs/templates/ADR.md`.
 7. **Close the phase** with `docs/templates/PHASE_REVIEW.md`. A phase that changes audio is not done until a human has filled in the listening sheet.
 8. **Commit at logical points.** Commit locally when a stage, slice, design note or ADR is finished and its tests pass (one concern per commit). Never push, open or merge a PR, or tag without the owner's say-so.
+9. **Reuse before building (owner, 2026-10-23).** Where a known, tested library or reference implementation covers a need (Rubber Band, c4dm/qm-dsp, SPTK, WORLD...), propose adopting it (vendored, ADR, AnnoLayers allowlist, A/B by ear) before designing our own.
 
 If a spec looks wrong or two specs conflict, stop and ask rather than guessing. Record the answer in an ADR.
 
