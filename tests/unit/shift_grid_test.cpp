@@ -69,24 +69,24 @@ TEST_CASE("build_time_map_puts_every_anchor_shift_on_the_grid", "[shift_grid]") 
         make_spec("a", EditCategory::time, EditParam::onset_shift, EditOp::set, Seconds{0.2501}),
         make_spec("b", EditCategory::time, EditParam::onset_shift, EditOp::set, Seconds{-0.0713})};
     const EditList edits = EditList{TrackId{"t1"}}.add(group, k_t0).value();
-    constexpr double rate = 44100.0;
+    constexpr double k_rate = 44100.0;
     for (const std::int64_t step : {1, 172, 345}) {
         TimeMapParams params;
         params.source_end = src(6.0);
-        params.sample_rate = Hz{rate};
+        params.sample_rate = Hz{k_rate};
         params.shift_step = Samples{step};
         const auto built = build_time_map(notes, edits, params).value();
         for (const TimeSpan& span : built.map.spans()) {
             const double shift = (span.output_start - OutputTime{}).value() -
                                  (span.source_start - SourceTime{}).value();
-            CHECK(whole_multiple(shift, rate, step));
+            CHECK(whole_multiple(shift, k_rate, step));
         }
     }
 }
 
 TEST_CASE("the_solver_cuts_and_stretches_in_whole_grid_steps", "[shift_grid]") {
-    constexpr double rate = 44100.0;
-    constexpr std::int64_t step = 172;
+    constexpr double k_rate = 44100.0;
+    constexpr std::int64_t k_step = 172;
     const std::vector<Note> notes{make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)};
     const SegmentTimeline timeline = timeline_of(notes, 4.0);
     const std::vector<EditSpec> group{
@@ -94,15 +94,15 @@ TEST_CASE("the_solver_cuts_and_stretches_in_whole_grid_steps", "[shift_grid]") {
     const EditList edits = EditList{TrackId{"t1"}}.add(group, k_t0).value();
     const LayoutMarkers markers = layout_markers(notes, edits, src(4.0)).value();
     TimeMapParams tm;
-    tm.sample_rate = Hz{rate};
-    tm.shift_step = Samples{step};
+    tm.sample_rate = Hz{k_rate};
+    tm.shift_step = Samples{k_step};
     const Layout layout = solve_layout(timeline, markers, {}, tm).value();
     REQUIRE(layout.intervals.back().gap);
     // room 0.15 s = 6615 samples floors to 38 steps of 172 = 6536 samples
-    const double cut = layout.intervals.back().gap->length.value() * rate;
+    const double cut = layout.intervals.back().gap->length.value() * k_rate;
     CHECK(std::abs(cut - 6536.0) < 1e-6);
     for (const IntervalPlan& i : layout.intervals) {
         const double shift = (i.out_from - OutputTime{}).value() - (i.from - SourceTime{}).value();
-        CHECK(whole_multiple(shift, rate, step));
+        CHECK(whole_multiple(shift, k_rate, k_step));
     }
 }

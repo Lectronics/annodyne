@@ -175,7 +175,7 @@ double cut_room(const Context& c, double silence_s) {
     if (c.rate_hz <= 0.0) {
         return room > k_same_length_s ? room : 0.0;
     }
-    const double step = static_cast<double>(c.step_samples);
+    const auto step = static_cast<double>(c.step_samples);
     return std::max(0.0, std::floor(room * c.rate_hz / step + k_slope_dust) * step / c.rate_hz);
 }
 
