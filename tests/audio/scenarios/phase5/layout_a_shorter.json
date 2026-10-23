@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "a is squished to 0.6x; the audio after it is stretched slightly to keep b at its place and the recording's length"
+    "layout": "note 1 body squished to 0.6x; nothing in the pause is cut; the audio after note 1 (pause, vowel 2, tail) is stretched about 1.23x and vowel 2 starts about 0.27 s early (unedited notes are not pinned: open owner question)"
   }
 }

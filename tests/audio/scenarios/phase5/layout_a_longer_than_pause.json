@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "a is stretched past what the pause can give: the pause shrinks to its minimum and b and the rest are squished"
+    "layout": "note 1 body stretched 2.6x: the pause is cut to its minimum and vowel 2 and the rest are squished (vowel 2 starts about 0.83 s late and plays at about 0.31x)"
   }
 }

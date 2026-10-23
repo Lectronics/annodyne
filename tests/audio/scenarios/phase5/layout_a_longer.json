@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "a is stretched 1.4x in its body (pitch and timbre kept); the pause gives the time back, b stays in place"
+    "layout": "note 1 body stretched 1.4x; the pause is cut by what it can give (the cut is room-limited), the remainder squishes vowel 2 and the tail slightly (vowel 2 starts about 10 ms late)"
   }
 }

@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "a plays 0.2 s later: the leading silence gets longer, the pause after a gets shorter by the same, b and the fricative stay in place and bit-identical"
+    "layout": "note 1 plays 0.2 s later (landing on the shift grid, 0.199 s): the silence before it grows (digital zeros), the pause after it is cut by the same amount; the fricative moves with note 1 (it lies before the cut); vowel 2 and everything after the cut are in place and bit-identical"
   }
 }
