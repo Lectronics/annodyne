@@ -33,7 +33,8 @@ struct LevelZone {
     std::int64_t shift_samples = 0;  // output sample n plays source sample n - shift_samples
 };
 
-/// True if gain, flatten or a fade is non-neutral.
+/// True if gain, flatten, a fade or the sibilant, breath or plosive noise gain is non-neutral. (The
+/// voiced noise gain is the engine's.)
 [[nodiscard]] bool has_level_edit(const EffectiveNote& eff) noexcept;
 
 /// `eff` with the level fields neutral (what the pitch engine is shown).
@@ -51,6 +52,10 @@ struct LevelZone {
 ///    note's `amp` (dBFS per frame, linear in dB between frame centres) and mean its mean over the
 ///    frames above mean - k_flatten_floor_below_mean_db; clamped to +-k_max_flatten_db; frames
 ///    below the floor are left alone. A note without amp frames is not flattened.
+///  - class gains: the noise gain (eff.noise_gain) of the frames whose class is sibilant, breath or
+///    plosive (note.noise.frame_class on note.noise.grid), linear in dB between frame centres, so a
+///    class change is a ramp of one hop. Those frames are noise, so a gain on the frame is a gain
+///    on the noise. Other classes are not touched.
 /// Errors: invalid_argument (count < 0, rate not > 0, note_last < note_first, a non-finite gain,
 /// amp and grid disagree). Pure; thread-safe; not real-time safe (allocates).
 [[nodiscard]] Result<std::vector<float>> level_gain(const Note& note, const EffectiveNote& eff,

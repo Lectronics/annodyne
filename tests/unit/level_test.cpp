@@ -171,3 +171,40 @@ TEST_CASE("bad_zones_are_invalid_arguments_and_apply_gain_multiplies_every_chann
     CHECK(apply_gain(audio, std::vector<float>(3, 1.0F)).error().code ==
           ErrorCode::invalid_argument);
 }
+
+TEST_CASE("sibilant_breath_and_plosive_frames_take_their_class_gain_with_short_ramps", "[level]") {
+    Note note = flat_note();
+    // five frames 50 ms apart from 100 ms: voiced, sibilant, sibilant, breath, voiced
+    note.noise.grid = FrameGrid{.hop = Seconds{0.05}, .start = src(0.1), .n_frames = 5};
+    note.noise.frame_class = {FrameClass::voiced, FrameClass::sibilant, FrameClass::sibilant,
+                              FrameClass::breath, FrameClass::voiced};
+    EffectiveNote e = eff_of();
+    e.noise_gain.sibilant = Decibels{-12.0};
+    e.noise_gain.breath = Decibels{6.0};
+    const auto g = level_gain(note, e, zone()).value();
+    CHECK(near(at(g, 100), 1.0));                             // a voiced frame: untouched
+    CHECK(near(20.0 * std::log10(at(g, 150)), -12.0, 1e-3));  // a sibilant frame
+    CHECK(near(20.0 * std::log10(at(g, 200)), -12.0, 1e-3));
+    CHECK(near(20.0 * std::log10(at(g, 250)), 6.0, 1e-3));   // a breath frame
+    CHECK(near(20.0 * std::log10(at(g, 125)), -6.0, 1e-3));  // halfway into the ramp
+    CHECK(near(at(g, 300), 1.0));
+    // the voiced noise gain is the engine's, not the gain curve's
+    EffectiveNote voiced = eff_of();
+    voiced.noise_gain.voiced = Decibels{-6.0};
+    CHECK_FALSE(has_level_edit(voiced));
+    const auto flat = level_gain(note, voiced, zone()).value();
+    for (const float v : flat) {
+        CHECK(v == 1.0F);
+    }
+}
+
+TEST_CASE("class_gains_count_as_a_level_edit_and_without_level_keeps_the_voiced_noise_gain",
+          "[level]") {
+    EffectiveNote e = eff_of();
+    e.noise_gain.plosive = Decibels{-3.0};
+    CHECK(has_level_edit(e));
+    e.noise_gain.voiced = Decibels{2.0};
+    const EffectiveNote stripped = without_level(e);
+    CHECK(stripped.noise_gain.plosive == Decibels{});
+    CHECK(stripped.noise_gain.voiced.value() == 2.0);
+}

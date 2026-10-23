@@ -15,3 +15,6 @@ The Phase 4 engines refuse every edit but `center` (and `onset_shift`); the only
 - A level edit on a note whose zone meets a stretched or cut part of the map is still `not_implemented` (the existing check in `make_plan`).
 - `GainTestEngine` is no longer reached for gain edits; it stays for the tests that use it as an engine stand-in.
 - Not done: gain applied per frame class (sibilants and breaths separately: the `noise_gain_*` edits, ADR-0018), loudness-based leveling (the macro), and the zone's gain at a note that touches another.
+
+## Amendment 1 (2026-10-23): per-class noise gains
+The gain curve also carries `noise_gain_sibilant`, `noise_gain_breath` and `noise_gain_plosive`: those frame classes are noise, so the gain of a frame is the gain of its noise (linear in dB between frame centres of `note.noise`, a ramp of one hop at a class change). `without_level` clears the three; the voiced noise gain (voiced, breathy and rough frames, ADR-0017) stays with the engine, which still refuses it (`not_implemented`), because it needs the periodic and noise parts told apart. `tools/sibilant` emits the three edits. Limit: a sibilant that overlaps a voiced frame is gained with its frame; no source separation.

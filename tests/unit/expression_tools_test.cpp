@@ -4,6 +4,7 @@
 #include "tools/formant/formant.h"
 #include "tools/pitch_drift/pitch_drift.h"
 #include "tools/pitch_modulation/pitch_modulation.h"
+#include "tools/sibilant/sibilant.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -69,4 +70,31 @@ TEST_CASE("the_expression_tools_refuse_unknown_notes_and_non_finite_values", "[e
           ErrorCode::invalid_argument);
     a.notes[0].is_active = false;
     CHECK(formant_edit(a, NoteId{"a"}, Cents{10.0}).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("the_sibilant_tool_sets_the_three_class_gains", "[expression_tools]") {
+    const AnalysisResult a = two_notes();
+    const auto specs = sibilant_edits(a, {.note = NoteId{"a"},
+                                          .sibilant = Decibels{-9.0},
+                                          .breath = Decibels{3.0},
+                                          .plosive = Decibels{0.0}})
+                           .value();
+    REQUIRE(specs.size() == 3);
+    CHECK(specs[0].param == EditParam::noise_gain_sibilant);
+    CHECK(specs[1].param == EditParam::noise_gain_breath);
+    CHECK(specs[2].param == EditParam::noise_gain_plosive);
+    const EditList list = EditList{TrackId{"t1"}}.add(specs, k_t0).value();
+    const EffectiveNote e = effective_state(a.notes[0], list);
+    CHECK(e.noise_gain.sibilant.value() == -9.0);
+    CHECK(e.noise_gain.breath.value() == 3.0);
+    CHECK(e.noise_gain.plosive.value() == 0.0);
+    CHECK(sibilant_edits(a, {.note = NoteId{"zz"}, .sibilant = {}, .breath = {}, .plosive = {}})
+              .error()
+              .code == ErrorCode::invalid_argument);
+    CHECK(
+        sibilant_edits(
+            a,
+            {.note = NoteId{"a"}, .sibilant = Decibels{std::nan("")}, .breath = {}, .plosive = {}})
+            .error()
+            .code == ErrorCode::invalid_argument);
 }

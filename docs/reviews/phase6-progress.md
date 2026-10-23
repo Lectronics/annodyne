@@ -10,6 +10,7 @@ Written while the owner was away; nothing here is a phase close-out. Branch `pha
 | Vibrato, drift, formant | `mod_scale`, `drift_scale`, `formant_offset` realised by the live shifter (calibrated lead -30 ms, gain 1.5); tools `pitch_modulation`, `pitch_drift`, `formant` | ADR-0027 amendments 1-2, `phase6-expression-tools.md`, `audition/phase6-formant` |
 | Scales and Correct Pitch | `ScaleGrid`, `target_pitch(Cents, ScaleGrid)`, `macros/correct_pitch` (centre offset toward a scale, min deviation, optional drift scale) | `phase6-correct-pitch.md` |
 | Leveling | `macros/leveling` (gain toward the mean loudness, within-note flatten) | `phase6-leveling.md` |
+| Sibilant | per-class noise gains (sibilant, breath, plosive) in the renderer gain curve; `tools/sibilant` | ADR-0028 amendment 1 |
 | CLI | scenario key `macros` (correct_pitch, leveling) for end-to-end demos | `audition/phase6-macros` |
 
 ## Measured, not listened
@@ -23,4 +24,4 @@ Written while the owner was away; nothing here is a phase close-out. Branch `pha
 - The drift correction (`drift_amount`) is realised only by the Rubber Band engine.
 
 ## Not started
-`tools/pitch` transitions and continuous curves (needs an `AmountCurve` type and an ADR), the `sibilant` tool and per-class noise gains, the breath chain and macros, and the ADR-0019 SPTK trial.
+`tools/pitch` transitions and continuous curves (needs an `AmountCurve` type and an ADR), the voiced noise gain, the breath chain and macros, and the ADR-0019 SPTK trial.

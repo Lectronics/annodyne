@@ -157,7 +157,7 @@ anno_add_test(NAME envelope_test SOURCES envelope_test.cpp LABELS unit DEPS anno
 anno_add_test(NAME harmonic_noise_engine_test SOURCES harmonic_noise_engine_test.cpp LABELS unit DEPS anno::core_synthesis_harmonic_noise anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
 anno_add_test(NAME stretch_span_test SOURCES stretch_span_test.cpp LABELS unit DEPS anno::core_synthesis_stretch anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
 anno_add_test(NAME rubberband_pitch_engine_test SOURCES rubberband_pitch_engine_test.cpp LABELS unit DEPS anno::core_synthesis_rubberband_pitch anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
-anno_add_test(NAME expression_tools_test SOURCES expression_tools_test.cpp LABELS unit DEPS anno::tools_pitch_modulation anno::tools_pitch_drift anno::tools_formant anno::core_edits)
+anno_add_test(NAME expression_tools_test SOURCES expression_tools_test.cpp LABELS unit DEPS anno::tools_pitch_modulation anno::tools_pitch_drift anno::tools_formant anno::tools_sibilant anno::core_edits)
 anno_add_test(NAME level_tools_test SOURCES level_tools_test.cpp LABELS unit DEPS anno::tools_amplitude anno::tools_fade anno::core_edits)
 anno_add_test(NAME level_test SOURCES level_test.cpp LABELS unit DEPS anno::core_render)
 anno_add_test(NAME psola_engine_test SOURCES psola_engine_test.cpp LABELS unit DEPS anno::core_synthesis_psola anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)

@@ -72,6 +72,29 @@ FlattenPoints flatten_points(const Note& note, double amount, const LevelZone& z
     return out;
 }
 
+/// The gain in dB of each noise frame's class (sibilant, breath, plosive; every other class 0) at
+/// its centre on the output axis.
+FlattenPoints class_points(const Note& note, const EffectiveNote& eff, const LevelZone& zone) {
+    FlattenPoints out;
+    const NoiseTrack& noise = note.noise;
+    if ((eff.noise_gain.sibilant.value() == 0.0 && eff.noise_gain.breath.value() == 0.0 &&
+         eff.noise_gain.plosive.value() == 0.0) ||
+        noise.grid.n_frames <= 0 ||
+        noise.frame_class.size() != static_cast<std::size_t>(noise.grid.n_frames)) {
+        return out;
+    }
+    for (std::int64_t i = 0; i < noise.grid.n_frames; ++i) {
+        const FrameClass c = noise.frame_class[static_cast<std::size_t>(i)];
+        const bool noisy =
+            c == FrameClass::sibilant || c == FrameClass::breath || c == FrameClass::plosive;
+        const double seconds = (frame_time(noise.grid, i) - SourceTime{}).value();
+        out.position.push_back(seconds * zone.rate.value() +
+                               static_cast<double>(zone.shift_samples));
+        out.db.push_back(noisy ? noise_gain(eff.noise_gain, c).value() : 0.0);
+    }
+    return out;
+}
+
 double flatten_db_at(const FlattenPoints& p, double position) {
     if (p.position.empty()) {
         return 0.0;
@@ -92,7 +115,9 @@ double flatten_db_at(const FlattenPoints& p, double position) {
 
 bool has_level_edit(const EffectiveNote& eff) noexcept {
     return eff.gain.value() != 0.0 || eff.within_note_flatten.value() != 0.0 ||
-           eff.fade_in.value() != 0.0 || eff.fade_out.value() != 0.0;
+           eff.fade_in.value() != 0.0 || eff.fade_out.value() != 0.0 ||
+           eff.noise_gain.sibilant.value() != 0.0 || eff.noise_gain.breath.value() != 0.0 ||
+           eff.noise_gain.plosive.value() != 0.0;
 }
 
 EffectiveNote without_level(EffectiveNote eff) {
@@ -101,6 +126,9 @@ EffectiveNote without_level(EffectiveNote eff) {
     eff.fade_in = Seconds{};
     eff.fade_out = Seconds{};
     eff.fade_shape = FadeShape::linear;
+    eff.noise_gain.sibilant = Decibels{};
+    eff.noise_gain.breath = Decibels{};
+    eff.noise_gain.plosive = Decibels{};
     return eff;
 }
 
@@ -132,6 +160,7 @@ Result<std::vector<float>> level_gain(const Note& note, const EffectiveNote& eff
     }
     const FlattenPoints flatten =
         flatten_points(note, std::clamp(eff.within_note_flatten.value(), 0.0, 1.0), zone);
+    const FlattenPoints classes = class_points(note, eff, zone);
     std::vector<float> out(static_cast<std::size_t>(zone.count));
     for (std::int64_t i = 0; i < zone.count; ++i) {
         const std::int64_t n = zone.first + i;
@@ -144,7 +173,8 @@ Result<std::vector<float>> level_gain(const Note& note, const EffectiveNote& eff
             g *=
                 fade_shape_gain(eff.fade_shape, static_cast<double>(zone.note_last - n) / fade_out);
         }
-        const double db = flatten_db_at(flatten, static_cast<double>(n));
+        const double db = flatten_db_at(flatten, static_cast<double>(n)) +
+                          flatten_db_at(classes, static_cast<double>(n));
         if (db != 0.0) {
             g *= std::pow(10.0, db / 20.0);
         }

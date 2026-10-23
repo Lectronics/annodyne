@@ -9,5 +9,7 @@ Each reads the analysis (to find an active note) and returns one `EditSpec` (op 
 ## Rendering
 `RubberBandPitchEngine` (`--engine rubberband`) realises all three through Rubber Band's live shifter (ADR-0027 amendment 1): vibrato and drift terms scaled per frame, the formant envelope by `setFormantScale`. PSOLA and the harmonic engine refuse them (`not_implemented`), as before. Measured: `mod_scale` 0 leaves under a quarter of the vibrato (unit test); `formant_offset` +-300 cents moves the cepstral envelope by about +250..+400 / -310..-340 cents on `vocadito_2` (`audition/phase6-formant`, crude cepstral measure; unlistened).
 
+`sibilant_edits(analysis, {note, sibilant, breath, plosive})` (`tools/sibilant`) emits `noise_gain_sibilant/breath/plosive` (op set); the renderer applies them to the frames of those classes as part of the gain curve (ADR-0028 amendment 1), so no engine is needed. The test voice has no sibilant frames in `vocadito_2` beyond one 10 ms burst, so there is no audition package; the unit tests cover the curve.
+
 ## Not here
-Continuous (time-varying) amounts, glides between notes, the `sibilant` tool (`noise_gain_*`), and the transitions. The edit parameters exist; the engines take one number per note for centre and formant.
+Continuous (time-varying) amounts, glides between notes, and the transitions; the voiced noise gain. The edit parameters exist; the engines take one number per note for centre and formant.
