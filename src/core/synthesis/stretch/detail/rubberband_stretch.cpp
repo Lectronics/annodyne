@@ -53,7 +53,8 @@ std::vector<float> resample_linear(const std::vector<float>& in, std::size_t n_o
 
 /// `in` through Rubber Band R3 (offline, one thread, no pitch change), cut or zero-padded to
 /// exactly `n_out` frames.
-Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz) {
+Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz, std::size_t head,
+                      std::size_t tail, std::size_t ramp) {
     namespace rb = RubberBand;
     const std::size_t n_in = in.front().size();
     const std::size_t channels = in.size();
@@ -68,6 +69,15 @@ Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz) {
                                       options,
                                       static_cast<double>(n_out) / static_cast<double>(n_in), 1.0);
     stretcher.setDebugLevel(0);
+    // Slope 1 for the context and for `ramp` samples inside each end of the span: there the output
+    // is nearly the source, so blending it into the source copy cannot cancel or add.
+    const std::size_t span_in = n_in - head - tail;
+    const std::size_t span_out = n_out - head - tail;
+    stretcher.setKeyFrameMap({{0, 0},
+                              {head + ramp, head + ramp},
+                              {head + span_in - ramp, head + span_out - ramp},
+                              {head + span_in, head + span_out},
+                              {n_in, n_out}});
     stretcher.setExpectedInputDuration(n_in);
     std::vector<const float*> input(channels);
     const auto point_at = [&](std::size_t at) {
@@ -111,24 +121,49 @@ Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz) {
     return out;
 }
 
-/// Blends the first and last `zone` samples (equal power) into the source copy that continues the
-/// neighbouring slope-1 audio: output frame i at the start is source frame i, output frame
-/// n_out - 1 - d at the end is source frame n_in - 1 - d.
+/// Gain of the stretched audio that keeps the level of a fade between two signals correlated by
+/// `rho` (0..1) when the source copy has gain `a`: a^2 + b^2 + 2 rho a b = 1. rho = 0 is the
+/// equal-power fade, rho = 1 the linear one (the sum of the gains is 1).
+double stretch_gain_for(double a, double rho) {
+    return -rho * a + std::sqrt(std::max(0.0, 1.0 - a * a * (1.0 - rho * rho)));
+}
+
+/// Normalised correlation of a[0..n) and b[0..n), floored at 0 and capped at 1.
+double coherence(const std::vector<float>& a, const std::vector<float>& b, std::size_t a_at,
+                 std::size_t b_at, std::size_t n) {
+    double ab = 0.0;
+    double aa = 0.0;
+    double bb = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto x = static_cast<double>(a[a_at + i]);
+        const auto y = static_cast<double>(b[b_at + i]);
+        ab += x * y;
+        aa += x * x;
+        bb += y * y;
+    }
+    return std::clamp(ab / std::sqrt(aa * bb + 1e-30), 0.0, 1.0);
+}
+
+/// Blends the first and last `zone` samples into the source copy that continues the neighbouring
+/// slope-1 audio: output frame i at the start is source frame i, output frame n_out - 1 - d at the
+/// end is source frame n_in - 1 - d. The gains follow the correlation of the two signals over the
+/// zone (so a stretched note that is nearly the source is not dipped or bumped by an equal-power
+/// fade); at the edge sample the copy has gain 1.
 void anchor_edges(const Planar& source, std::size_t zone, Planar& out) {
     const std::size_t n_out = out.front().size();
     const std::size_t n_in = source.front().size();
     for (std::size_t c = 0; c < out.size(); ++c) {
+        const double rho_head = coherence(out[c], source[c], 0, 0, zone);
+        const double rho_tail = coherence(out[c], source[c], n_out - zone, n_in - zone, zone);
         for (std::size_t d = 0; d < zone; ++d) {
-            const double angle =
-                0.5 * std::numbers::pi * static_cast<double>(d) / static_cast<double>(zone);
-            const double copy_gain = std::cos(angle);
-            const double stretch_gain = std::sin(angle);
+            const double a = std::cos(0.5 * std::numbers::pi * static_cast<double>(d) /
+                                      static_cast<double>(zone));
             float& head = out[c][d];
-            head = static_cast<float>(stretch_gain * static_cast<double>(head) +
-                                      copy_gain * static_cast<double>(source[c][d]));
+            head = static_cast<float>(stretch_gain_for(a, rho_head) * static_cast<double>(head) +
+                                      a * static_cast<double>(source[c][d]));
             float& tail = out[c][n_out - 1 - d];
-            tail = static_cast<float>(stretch_gain * static_cast<double>(tail) +
-                                      copy_gain * static_cast<double>(source[c][n_in - 1 - d]));
+            tail = static_cast<float>(stretch_gain_for(a, rho_tail) * static_cast<double>(tail) +
+                                      a * static_cast<double>(source[c][n_in - 1 - d]));
         }
     }
 }
@@ -143,21 +178,35 @@ Result<OutputAudio> rubberband_span(const AudioSource& src, const SpanGeometry& 
         std::max(from + 1,
                  static_cast<std::int64_t>(std::llround(g.source_at(static_cast<double>(g.last)))));
     const auto n_out = static_cast<std::size_t>(g.last - g.first);
-    auto source = read_channels(src, from, to);
+    const auto n_span = static_cast<std::size_t>(to - from);
+    const auto context = static_cast<std::size_t>(std::llround(k_rubberband_context_s * g.rate_hz));
+    // The span with `context` samples of the recording on each side (zero beyond its ends).
+    auto source = read_channels(src, from - static_cast<std::int64_t>(context),
+                                to + static_cast<std::int64_t>(context));
     if (!source) {
         return Unexpected{source.error()};
     }
+    Planar span_source;
+    for (const std::vector<float>& channel : *source) {
+        span_source.emplace_back(channel.begin() + static_cast<std::ptrdiff_t>(context),
+                                 channel.begin() + static_cast<std::ptrdiff_t>(context + n_span));
+    }
     Planar out;
     if (to - from < k_min_rubberband_input) {
-        for (const std::vector<float>& channel : *source) {
+        for (const std::vector<float>& channel : span_source) {
             out.push_back(resample_linear(channel, n_out));
         }
     } else {
-        out = run_rubberband(*source, n_out, g.rate_hz);
-        const auto zone = std::min<std::size_t>(
+        const auto ramp = std::min<std::size_t>(
             static_cast<std::size_t>(std::llround(k_rubberband_edge_zone_s * g.rate_hz)),
-            std::min(n_out, source->front().size()) / 3);
-        anchor_edges(*source, zone, out);
+            std::min(n_out, n_span) / 4);
+        const Planar all =
+            run_rubberband(*source, n_out + 2 * context, g.rate_hz, context, context, ramp);
+        for (const std::vector<float>& channel : all) {
+            out.emplace_back(channel.begin() + static_cast<std::ptrdiff_t>(context),
+                             channel.begin() + static_cast<std::ptrdiff_t>(context + n_out));
+        }
+        anchor_edges(span_source, ramp, out);
     }
     auto buffer = AudioBuffer::create(src.channel_count(), Samples{wanted.second - wanted.first},
                                       src.sample_rate());

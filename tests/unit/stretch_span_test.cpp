@@ -606,3 +606,27 @@ TEST_CASE("psola_still_refuses_stereo_and_an_unknown_engine_is_invalid", "[stret
     p.engine = static_cast<StretchEngine>(9);
     CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("the_rubber_band_edge_blend_does_not_dip_or_bump_the_level", "[stretch][rubberband]") {
+    // A steady tone has a constant level; the 30 ms blend into the source copy at either end of a
+    // stretched span must keep it within 1 dB (an equal-power fade of two correlated signals
+    // would not).
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.5, 1.0, 1.5);  // inside the steady part (no fade ramps)
+    const auto samples =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto window = static_cast<std::size_t>(k_rate / 220.0);  // one period: a steady level
+    const double body =
+        rms_of(std::span<const float>(samples).subspan(samples.size() / 2, 4 * window));
+    const auto zone = static_cast<std::size_t>(0.030 * k_rate);
+    for (std::size_t at = 0; at + window <= zone; at += window / 4) {
+        const double head = rms_of(std::span<const float>(samples).subspan(at, window));
+        const double tail =
+            rms_of(std::span<const float>(samples).subspan(samples.size() - zone + at, window));
+        INFO("at " << at);
+        CHECK(std::abs(db(head / body)) < 1.0);
+        CHECK(std::abs(db(tail / body)) < 1.0);
+    }
+}
