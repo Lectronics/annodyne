@@ -138,6 +138,7 @@ anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS 
 anno_add_test(NAME pitch_target_test SOURCES pitch_target_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
 anno_add_test(NAME take_annotation_test SOURCES take_annotation_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
 anno_add_test(NAME build_segment_timeline_test SOURCES build_segment_timeline_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
+anno_add_test(NAME classify_gap_frames_test SOURCES classify_gap_frames_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
 anno_add_test(NAME noise_floor_test SOURCES noise_floor_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
 anno_add_test(NAME activity_test SOURCES activity_test.cpp LABELS unit DEPS anno::core_analysis_activity)
 anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)

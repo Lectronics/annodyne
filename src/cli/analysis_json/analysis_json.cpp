@@ -178,6 +178,9 @@ const char* to_text(GapRegionKind kind) {
     case GapRegionKind::tail: return "tail";
     case GapRegionKind::protected_preroll: return "protected_preroll";
     case GapRegionKind::audible: return "audible";
+    case GapRegionKind::sibilant: return "sibilant";
+    case GapRegionKind::breath: return "breath";
+    case GapRegionKind::plosive: return "plosive";
     }
     return "silence";
 }

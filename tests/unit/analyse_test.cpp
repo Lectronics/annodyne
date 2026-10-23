@@ -335,3 +335,60 @@ TEST_CASE("the_gap_analysis_is_deterministic", "[analyse][gaps]") {
         CHECK(a->timeline->gaps()[i].start == b->timeline->gaps()[i].start);
     }
 }
+
+namespace {
+
+/// 50 ms of high-passed noise (first difference of white noise) at about -30 dBFS, added at `at_s`.
+void add_hiss(std::vector<float>& x, double rate, double at_s) {
+    const std::vector<float> w = make_noise(0.05, rate, 0.03, 21);
+    const auto first = static_cast<std::size_t>(std::llround(at_s * rate));
+    for (std::size_t i = 1; i < w.size(); ++i) {
+        x[first + i] += w[i] - w[i - 1];
+    }
+}
+
+std::vector<GapRegionKind> kinds_in(const Gap& g) {
+    std::vector<GapRegionKind> kinds;
+    kinds.reserve(g.regions.size());
+    for (const GapRegion& r : g.regions) {
+        kinds.push_back(r.kind);
+    }
+    return kinds;
+}
+
+}  // namespace
+
+TEST_CASE("a_hiss_in_a_pause_becomes_a_sibilant_region_and_nothing_else_does", "[analyse][gaps]") {
+    std::vector<double> starts;
+    auto x = melody({note(262.0, 0.5, 0.4), note(330.0, 0.5, 0.4), note(392.0, 0.6, 0.4)}, 44100.0,
+                    starts);
+    // The pause between the first two notes is 100 ms; put the hiss at 30 ms into it.
+    add_hiss(x, 44100.0, starts[0] + 0.5 + 0.03);
+    const auto result = analyse(source_of(x, 44100.0), AnalyseParams{}).value();
+    REQUIRE(result->notes.size() == 3);
+    REQUIRE(result->timeline.has_value());
+    const auto& gaps = result->timeline->gaps();
+    REQUIRE(gaps.size() == 4);
+
+    const auto sibilants = [](const Gap& g) {
+        const auto kinds = kinds_in(g);
+        return std::ranges::count(kinds, GapRegionKind::sibilant);
+    };
+    CHECK(sibilants(gaps[1]) == 1);  // between the first two notes
+    CHECK(sibilants(gaps[0]) == 0);
+    CHECK(sibilants(gaps[2]) == 0);
+    CHECK(sibilants(gaps[3]) == 0);
+}
+
+TEST_CASE("a_source_below_8_kHz_without_notes_is_analysed_with_the_level_rule_alone",
+          "[analyse][gaps]") {
+    // (A source with notes still fails below 8 kHz in the per-note harmonic/noise stage: a limit
+    // analyse() documents as 4 kHz; recorded in the Phase 5 review.)
+    std::vector<float> x = make_noise(1.0, 6000.0, 0.001, 4);
+    const auto analysed = analyse(source_of(x, 6000.0), AnalyseParams{});
+    INFO((analysed ? "ok" : analysed.error().message));
+    REQUIRE(analysed.has_value());
+    REQUIRE((*analysed)->timeline.has_value());
+    CHECK((*analysed)->timeline->gaps().size() == 1);
+    CHECK(validate(**analysed).has_value());
+}

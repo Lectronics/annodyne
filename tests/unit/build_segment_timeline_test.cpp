@@ -4,6 +4,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 
 using namespace anno;
@@ -53,9 +55,25 @@ Env flat_env(double seconds, double db = -70.0) {
     return env_for(seconds, [db](double) { return db; });
 }
 
+Result<SegmentTimeline> build_with(const std::vector<Note>& notes, double end, const Env& e,
+                                   const GapEvidence& evidence, const GapParams& p = {}) {
+    return build_segment_timeline(notes, src(end), e.activity, e.floor, evidence, p);
+}
+
 Result<SegmentTimeline> build(const std::vector<Note>& notes, double end, const Env& e,
                               const GapParams& p = {}) {
-    return build_segment_timeline(notes, src(end), e.activity, e.floor, p);
+    return build_with(notes, end, e, neutral_gap_evidence(e.activity.grid), p);
+}
+
+/// Marks the frames in [from_s, to_s) with a class and an excess over the floor.
+void mark(GapEvidence& ev, double from_s, double to_s, FrameClass c, double excess_db) {
+    for (std::size_t i = 0; i < ev.frame_class.size(); ++i) {
+        const double t = static_cast<double>(i) * k_hop;
+        if (t >= from_s - 1e-9 && t < to_s - 1e-9) {
+            ev.frame_class[i] = c;
+            ev.excess_db[i] = Decibels{excess_db};
+        }
+    }
 }
 
 std::vector<GapRegionKind> kinds_of(const Gap& g) {
@@ -307,4 +325,254 @@ TEST_CASE("audible_and_tail_params_are_validated", "[segment_timeline_builder]")
     p = {};
     p.audible_pad = Seconds{std::nan("")};
     CHECK(build({}, 3.0, e, p).error().code == ErrorCode::invalid_argument);
+}
+
+// ---- classified runs (consonant evidence, slice 6b) ----
+
+namespace {
+
+using K = GapRegionKind;
+
+std::vector<Note> two_notes() {
+    return {make_note("a", 0.5, 1.0), make_note("b", 3.0, 4.0)};
+}
+
+}  // namespace
+
+TEST_CASE("a_quiet_sibilant_the_level_rule_misses_gets_its_own_region",
+          "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);  // the level never leaves the floor
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.2, FrameClass::sibilant, 4.0);  // 4 dB over the floor: under tail_margin
+    const auto t = build_with(two_notes(), 5.0, e, ev).value();
+    const Gap& g = t.gaps()[1];
+    REQUIRE(kinds_of(g) ==
+            std::vector<K>{K::silence, K::sibilant, K::silence, K::protected_preroll});
+    CHECK(start_of(g.regions[1]) == Catch::Approx(1.99).margin(k_hop));
+    CHECK(end_of(g.regions[1]) == Catch::Approx(2.21).margin(k_hop));
+}
+
+TEST_CASE("each_class_becomes_its_own_kind", "[segment_timeline_builder]") {
+    const Env e = flat_env(6.0);
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 1.5, 1.7, FrameClass::breath, 5.0);
+    mark(ev, 2.2, 2.4, FrameClass::sibilant, 5.0);
+    mark(ev, 3.0, 3.005, FrameClass::plosive, 8.0);  // one frame
+    const auto t =
+        build_with({make_note("a", 0.5, 1.0), make_note("b", 4.0, 5.0)}, 6.0, e, ev).value();
+    CHECK(kinds_of(t.gaps()[1]) == std::vector<K>{K::silence, K::breath, K::silence, K::sibilant,
+                                                  K::silence, K::plosive, K::silence,
+                                                  K::protected_preroll});
+}
+
+TEST_CASE("the_evidence_threshold_is_strict", "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);
+    for (const auto& [excess, expect_region] :
+         {std::pair{2.9, false}, std::pair{3.0, false}, std::pair{3.1, true}}) {
+        GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+        mark(ev, 2.0, 2.2, FrameClass::sibilant, excess);
+        const auto t = build_with(two_notes(), 5.0, e, ev).value();
+        CHECK((kinds_of(t.gaps()[1]).size() > 2) == expect_region);
+    }
+}
+
+TEST_CASE("short_sibilants_are_ignored_but_a_plosive_of_any_length_is_kept",
+          "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.01, FrameClass::sibilant, 10.0);  // 10 ms < min_audible
+    CHECK(kinds_of(build_with(two_notes(), 5.0, e, ev).value().gaps()[1]) ==
+          std::vector<K>{K::silence, K::protected_preroll});
+    GapEvidence burst = neutral_gap_evidence(e.activity.grid);
+    mark(burst, 2.0, 2.005, FrameClass::plosive, 10.0);
+    const auto kinds = kinds_of(build_with(two_notes(), 5.0, e, burst).value().gaps()[1]);
+    CHECK(std::ranges::count(kinds, K::plosive) == 1);
+}
+
+TEST_CASE("a_plosive_followed_by_a_sibilant_is_two_regions", "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.015, FrameClass::plosive, 10.0);
+    mark(ev, 2.015, 2.2, FrameClass::sibilant, 10.0);  // an affricate
+    const auto kinds = kinds_of(build_with(two_notes(), 5.0, e, ev).value().gaps()[1]);
+    CHECK(kinds ==
+          std::vector<K>{K::silence, K::plosive, K::sibilant, K::silence, K::protected_preroll});
+}
+
+TEST_CASE("a_level_run_partly_covered_keeps_its_uncovered_part_as_audible",
+          "[segment_timeline_builder]") {
+    const Env e = env_with_level(5.0, -70.0, [](double t) {
+        return (t >= 2.0 && t < 2.4) ? -50.0 : -70.0;  // 20 dB over the floor
+    });
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.2, FrameClass::sibilant, 20.0);
+    const auto g = build_with(two_notes(), 5.0, e, ev).value().gaps()[1];
+    CHECK(kinds_of(g) ==
+          std::vector<K>{K::silence, K::sibilant, K::audible, K::silence, K::protected_preroll});
+    CHECK(end_of(g.regions[1]) == start_of(g.regions[2]));  // adjacent, no overlap
+}
+
+TEST_CASE("an_audible_sliver_beside_a_classified_region_joins_it", "[segment_timeline_builder]") {
+    const Env e = env_with_level(5.0, -70.0,
+                                 [](double t) { return (t >= 2.0 && t < 2.205) ? -50.0 : -70.0; });
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.2, FrameClass::sibilant, 20.0);
+    const auto g = build_with(two_notes(), 5.0, e, ev).value().gaps()[1];
+    CHECK(kinds_of(g) == std::vector<K>{K::silence, K::sibilant, K::silence, K::protected_preroll});
+    CHECK(end_of(g.regions[1]) == Catch::Approx(2.215).margin(k_hop));
+}
+
+TEST_CASE("classified_runs_ignore_the_guard_after_a_note_and_the_preroll",
+          "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 1.0, 1.1, FrameClass::sibilant, 10.0);  // starts at the note's end
+    const auto g = build_with(two_notes(), 5.0, e, ev).value().gaps()[1];
+    REQUIRE(kinds_of(g) ==
+            std::vector<K>{K::silence, K::sibilant, K::silence, K::protected_preroll});
+    // The first counted frame is 1.015 (the guard skips 1.0-1.015); padding reaches 10 ms back.
+    CHECK(start_of(g.regions[1]) == Catch::Approx(1.005).margin(1e-6));
+    // A burst right before the next note (a note onset looks like one) is inside the preroll.
+    GapEvidence onset = neutral_gap_evidence(e.activity.grid);
+    mark(onset, 2.99, 3.0, FrameClass::plosive, 15.0);
+    CHECK(kinds_of(build_with(two_notes(), 5.0, e, onset).value().gaps()[1]) ==
+          std::vector<K>{K::silence, K::protected_preroll});
+    // A leading gap has no note before it: no guard.
+    GapEvidence lead = neutral_gap_evidence(e.activity.grid);
+    mark(lead, 0.0, 0.2, FrameClass::breath, 10.0);
+    CHECK(start_of(build_with(two_notes(), 5.0, e, lead).value().gaps()[0].regions[0]) == 0.0);
+}
+
+TEST_CASE("evidence_that_does_not_match_is_a_named_error", "[segment_timeline_builder]") {
+    const Env e = flat_env(5.0);
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    ev.excess_db.pop_back();
+    CHECK(build_with(two_notes(), 5.0, e, ev).error().code == ErrorCode::invalid_argument);
+    GapEvidence other = neutral_gap_evidence(e.activity.grid);
+    other.grid.hop = Seconds{0.01};
+    CHECK(build_with(two_notes(), 5.0, e, other).error().code == ErrorCode::invalid_argument);
+    GapParams p;
+    p.event_margin = Decibels{std::nan("")};
+    CHECK(build(two_notes(), 5.0, e, p).error().code == ErrorCode::invalid_argument);
+    p = {};
+    p.evidence_guard = Seconds{-1.0};
+    CHECK(build(two_notes(), 5.0, e, p).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("regions_always_tile_the_gap_with_evidence", "[segment_timeline_builder]") {
+    const Env e =
+        env_with_level(6.0, -70.0, [](double t) { return (t > 1.4 && t < 1.9) ? -45.0 : -70.0; });
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 1.5, 1.6, FrameClass::sibilant, 25.0);
+    mark(ev, 1.6, 1.62, FrameClass::plosive, 25.0);
+    mark(ev, 2.5, 2.8, FrameClass::breath, 6.0);
+    const auto t =
+        build_with({make_note("a", 0.5, 1.0), make_note("b", 4.0, 5.0)}, 6.0, e, ev).value();
+    for (const Gap& g : t.gaps()) {
+        CHECK(g.regions.front().start == g.start);
+        CHECK(g.regions.back().end == g.end);
+        for (std::size_t i = 1; i < g.regions.size(); ++i) {
+            CHECK(g.regions[i].start == g.regions[i - 1].end);
+        }
+    }
+}
+
+TEST_CASE("a_sibilant_inside_a_tail_cuts_it_but_a_breath_inside_a_tail_is_the_tail",
+          "[segment_timeline_builder]") {
+    // The level stays 20 dB over the floor from the note's end at 1.0 to 1.5 (a decay, and the
+    // high-pass ringing through a consonant).
+    const Env e =
+        env_with_level(5.0, -70.0, [](double t) { return (t >= 1.0 && t < 1.5) ? -50.0 : -70.0; });
+    GapEvidence hiss = neutral_gap_evidence(e.activity.grid);
+    mark(hiss, 1.2, 1.4, FrameClass::sibilant, 20.0);
+    const auto cut = build_with(two_notes(), 5.0, e, hiss).value().gaps()[1];
+    // The level stays up to 1.5 s: after the hiss (to 1.41) 90 ms remain audible.
+    CHECK(kinds_of(cut) ==
+          std::vector<K>{K::tail, K::sibilant, K::audible, K::silence, K::protected_preroll});
+    CHECK(end_of(cut.regions[0]) == Catch::Approx(1.19).margin(k_hop));  // padded start of the hiss
+    CHECK(start_of(cut.regions[1]) == end_of(cut.regions[0]));
+
+    GapEvidence decay = neutral_gap_evidence(e.activity.grid);
+    mark(decay, 1.1, 1.4, FrameClass::breath, 20.0);  // low-frequency: the decay itself
+    CHECK(kinds_of(build_with(two_notes(), 5.0, e, decay).value().gaps()[1]) ==
+          std::vector<K>{K::tail, K::silence, K::protected_preroll});
+}
+
+TEST_CASE("a_breath_after_the_tail_is_still_a_breath", "[segment_timeline_builder]") {
+    const Env e = env_with_level(5.0, -70.0, [](double t) {
+        return (t >= 1.0 && t < 1.1) ? -50.0 : -70.0;  // a short decay
+    });
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.3, FrameClass::breath, 6.0);
+    CHECK(kinds_of(build_with(two_notes(), 5.0, e, ev).value().gaps()[1]) ==
+          std::vector<K>{K::tail, K::silence, K::breath, K::silence, K::protected_preroll});
+}
+
+TEST_CASE("an_audible_sliver_between_two_classified_regions_joins_only_one",
+          "[segment_timeline_builder]") {
+    // Padding leaves a 5 ms audible piece between a sibilant and a breath (the level stays up
+    // through both): it joins one of them, never both (they would overlap and break the tiling).
+    const Env e = env_with_level(5.0, -70.0,
+                                 [](double t) { return (t >= 2.0 && t < 2.225) ? -50.0 : -70.0; });
+    GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+    mark(ev, 2.0, 2.1, FrameClass::sibilant, 20.0);
+    mark(ev, 2.125, 2.225, FrameClass::breath, 20.0);
+    const auto t = build_with(two_notes(), 5.0, e, ev);
+    REQUIRE(t.has_value());  // SegmentTimeline::make checks that the regions tile
+    const Gap& g = t->gaps()[1];
+    CHECK(kinds_of(g) ==
+          std::vector<K>{K::silence, K::sibilant, K::breath, K::silence, K::protected_preroll});
+    for (std::size_t i = 1; i < g.regions.size(); ++i) {
+        CHECK(g.regions[i].start == g.regions[i - 1].end);
+    }
+}
+
+TEST_CASE("random_levels_and_evidence_always_give_a_valid_tiling", "[segment_timeline_builder]") {
+    // Real recordings found a tiling bug the hand-made cases did not (a sliver between two
+    // classified regions), so the builder is also run on random scenes: it must always return a
+    // timeline whose regions tile every gap (SegmentTimeline::make checks it).
+    std::uint64_t state = 12345;
+    const auto next = [&state](double lo, double hi) {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return lo + (hi - lo) * static_cast<double>(state >> 40U) / 16777216.0;
+    };
+    const std::array<FrameClass, 4> classes{FrameClass::sibilant, FrameClass::breath,
+                                            FrameClass::plosive, FrameClass::silence};
+    for (int scene = 0; scene < 300; ++scene) {
+        const double seconds = 6.0;
+        std::vector<std::pair<double, double>> loud;  // level bursts, 20 dB over the floor
+        for (int i = 0; i < 6; ++i) {
+            const double a = next(0.0, seconds - 0.5);
+            loud.emplace_back(a, a + next(0.005, 0.4));
+        }
+        const Env e = env_with_level(seconds, -70.0, [&](double t) {
+            return std::ranges::any_of(loud,
+                                       [t](const auto& b) { return t >= b.first && t < b.second; })
+                       ? -50.0
+                       : -70.0;
+        });
+        GapEvidence ev = neutral_gap_evidence(e.activity.grid);
+        for (int i = 0; i < 8; ++i) {
+            const double a = next(0.0, seconds - 0.5);
+            mark(ev, a, a + next(0.005, 0.3), classes[static_cast<std::size_t>(next(0.0, 3.999))],
+                 next(-2.0, 25.0));
+        }
+        std::vector<Note> notes;
+        double at = next(0.0, 0.6);
+        for (int i = 0; i < 4 && at < seconds - 0.8; ++i) {
+            const double len = next(0.1, 0.8);
+            notes.push_back(make_note("n" + std::to_string(i), at, at + len));
+            at += len + (next(0.0, 1.0) < 0.2 ? 0.0 : next(0.005, 1.2));
+        }
+        GapParams p;
+        p.audible_pad = Seconds{next(0.0, 0.03)};
+        p.min_audible = Seconds{next(0.0, 0.05)};
+        INFO("scene " << scene);
+        const auto t = build_with(notes, seconds, e, ev, p);
+        REQUIRE(t.has_value());
+        for (const Gap& g : t->gaps()) {
+            REQUIRE(g.regions.front().start == g.start);
+            REQUIRE(g.regions.back().end == g.end);
+        }
+    }
 }

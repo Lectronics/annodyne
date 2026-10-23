@@ -130,6 +130,8 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
     return note;
 }
 
+constexpr double k_min_evidence_rate_hz = 8000.0;  // measure_frames' minimum
+
 bool active_notes_overlap(const std::vector<Note>& notes) {
     const Note* previous = nullptr;
     for (const Note& n : notes) {
@@ -146,8 +148,9 @@ bool active_notes_overlap(const std::vector<Note>& notes) {
 
 /// ADR-0024: the noise floor and the segment timeline. Both stay empty for an empty source and
 /// when active notes overlap (the partition needs them to be disjoint).
-Result<void> add_gap_analysis(const AudioSource& src, const ActivityTrack& activity,
-                              const AnalyseParams& params, AnalysisResult& result) {
+Result<void> add_gap_analysis(const AudioSource& src, const MonoAudio& mono,
+                              const ActivityTrack& activity, const AnalyseParams& params,
+                              AnalysisResult& result) {
     if (src.frame_count().value() == 0 || active_notes_overlap(result.notes)) {
         return {};
     }
@@ -157,7 +160,15 @@ Result<void> add_gap_analysis(const AudioSource& src, const ActivityTrack& activ
     }
     const SourceTime end = SourceTime{} + Seconds{static_cast<double>(src.frame_count().value()) /
                                                   src.sample_rate().value()};
-    auto timeline = build_segment_timeline(result.notes, end, activity, *floor, params.gaps);
+    // measure_frames needs 8 kHz or more; below that the level rule alone protects the gaps.
+    auto evidence = mono.sample_rate.value() >= k_min_evidence_rate_hz
+                        ? classify_gap_frames(mono, activity, *floor, params.gap_evidence)
+                        : Result<GapEvidence>{neutral_gap_evidence(activity.grid)};
+    if (!evidence) {
+        return stage_error("gap evidence", evidence.error());
+    }
+    auto timeline =
+        build_segment_timeline(result.notes, end, activity, *floor, *evidence, params.gaps);
     if (!timeline) {
         return stage_error("segment timeline", timeline.error());
     }
@@ -232,7 +243,7 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
         result->notes[i].pitch_target.flags.bits = static_cast<std::uint16_t>(
             result->notes[i].pitch_target.flags.bits | (*take_flags)[i].bits);
     }
-    if (auto r = add_gap_analysis(src, *activity, params, *result); !r) {
+    if (auto r = add_gap_analysis(src, *mono, *activity, params, *result); !r) {
         return Unexpected{r.error()};
     }
     result->onsets = std::move(*onsets);

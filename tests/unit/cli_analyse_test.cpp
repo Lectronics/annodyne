@@ -122,7 +122,8 @@ TEST_CASE("analyse_json_reports_the_gaps_and_the_noise_floor", "[cli_analyse]") 
         for (const auto& r : g["regions"]) {
             const std::string kind = r["kind"];
             CHECK((kind == "silence" || kind == "tail" || kind == "audible" ||
-                   kind == "protected_preroll"));
+                   kind == "protected_preroll" || kind == "sibilant" || kind == "breath" ||
+                   kind == "plosive"));
         }
         if (!g["after"].is_null()) {  // a note follows: its lead-in is protected
             CHECK(g["regions"].back()["kind"] == "protected_preroll");

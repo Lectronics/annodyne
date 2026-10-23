@@ -18,11 +18,11 @@
 namespace anno {
 
 /// What a stretch of a gap is. `tail` is the previous note's decay, `protected_preroll` the guard
-/// before the next note's start; both are left alone by the gate. `audible` is a stretch inside a
-/// gap that stands above the floor (a fricative, a breath, a room event) wherever it sits: the gate
-/// leaves it alone too, whatever it is (the consonant detector, a later slice, refines it into
-/// sibilant, breath and plosive kinds). `silence` is the rest.
-enum class GapRegionKind { tail, protected_preroll, silence, audible };
+/// before the next note's start, `audible` a stretch above the floor by level only (kind unknown),
+/// `sibilant`, `breath` and `plosive` stretches the ADR-0017 features classify. The gate mutes
+/// `silence` regions only (ADR-0024 amendment 1), so every other kind is left alone; `silence` is
+/// the rest.
+enum class GapRegionKind { tail, protected_preroll, silence, audible, sibilant, breath, plosive };
 
 struct GapRegion {
     GapRegionKind kind = GapRegionKind::silence;

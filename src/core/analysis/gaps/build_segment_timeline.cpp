@@ -22,7 +22,9 @@ Result<void> check_params(const GapParams& p) {
     const auto bad_nonneg = [](double v) { return !std::isfinite(v) || v < 0.0; };
     const bool bad = bad_nonneg(p.tail_margin.value()) || bad_nonneg(p.preroll_guard.value()) ||
                      bad_nonneg(p.min_audible.value()) || bad_nonneg(p.audible_pad.value()) ||
-                     !std::isfinite(p.max_tail.value()) || p.max_tail.value() <= 0.0;
+                     bad_nonneg(p.evidence_guard.value()) ||
+                     !std::isfinite(p.event_margin.value()) || !std::isfinite(p.max_tail.value()) ||
+                     p.max_tail.value() <= 0.0;
     return bad ? Result<void>{invalid("margins, guards and pads must be finite and >= 0, "
                                       "max_tail finite and > 0")}
                : Result<void>{};
@@ -81,6 +83,7 @@ struct GapView {
 struct Levels {
     const ActivityTrack* activity = nullptr;
     const NoiseFloor* floor = nullptr;
+    const GapEvidence* evidence = nullptr;
     double margin_db = 0.0;
 
     [[nodiscard]] double frame_time(std::int64_t i) const {
@@ -156,20 +159,148 @@ std::vector<Span> find_audible(double from, double to, const Levels& lv, const G
     return out;
 }
 
-/// The regions of one gap, in order, tiling [start, end]: tail, audible stretches, silence between,
-/// and the protected preroll before the next note.
+struct Classified {
+    GapRegionKind kind = GapRegionKind::audible;
+    Span span;
+};
+
+std::optional<GapRegionKind> kind_of(FrameClass c) {
+    switch (c) {
+    case FrameClass::sibilant: return GapRegionKind::sibilant;
+    case FrameClass::breath: return GapRegionKind::breath;
+    case FrameClass::plosive: return GapRegionKind::plosive;
+    default: return std::nullopt;
+    }
+}
+
+/// The kind a frame is evidence for: its class, if it is above the event margin.
+std::optional<GapRegionKind> evidence_kind(const Levels& lv, std::int64_t i, const GapParams& p) {
+    const auto at = static_cast<std::size_t>(i);
+    if (!(lv.evidence->excess_db[at].value() > p.event_margin.value())) {
+        return std::nullopt;
+    }
+    return kind_of(lv.evidence->frame_class[at]);
+}
+
+/// Maximal single-class runs of evidence in [from, to) (the guard after a note's end excluded):
+/// sibilant and breath need min_audible, a plosive any length; padded, clipped to the earlier
+/// region and to [lower, to).
+std::vector<Classified> find_classified(const GapView& g, double lower, double to, const Levels& lv,
+                                        const GapParams& p) {
+    const double from = g.has_before ? std::max(lower, g.start + p.evidence_guard.value()) : lower;
+    const auto [first, last] = frames_in(lv.activity->grid, from, to);
+    const double hop = lv.activity->grid.hop.value();
+    std::vector<Classified> out;
+    for (std::int64_t i = first; i <= last; ++i) {
+        const auto kind = evidence_kind(lv, i, p);
+        if (!kind) {
+            continue;
+        }
+        std::int64_t j = i;
+        while (j + 1 <= last && evidence_kind(lv, j + 1, p) == kind) {
+            ++j;
+        }
+        const double length = static_cast<double>(j - i + 1) * hop;
+        if (*kind == GapRegionKind::plosive || length >= p.min_audible.value()) {
+            const double floor_at = out.empty() ? lower : out.back().span.end;
+            const double begin = std::max(floor_at, lv.frame_time(i) - p.audible_pad.value());
+            const double stop = std::min(to, lv.frame_time(j) + hop + p.audible_pad.value());
+            if (stop > begin) {
+                out.push_back({.kind = *kind, .span = {.start = begin, .end = stop}});
+            }
+        }
+        i = j;
+    }
+    return out;
+}
+
+/// `s` without the parts covered by `classified` (sorted, disjoint).
+std::vector<Span> minus(const Span& s, const std::vector<Classified>& classified) {
+    std::vector<Span> out;
+    double cursor = s.start;
+    for (const Classified& c : classified) {
+        if (c.span.end <= cursor || c.span.start >= s.end) {
+            continue;
+        }
+        if (c.span.start > cursor) {
+            out.push_back({.start = cursor, .end = c.span.start});
+        }
+        cursor = std::max(cursor, c.span.end);
+    }
+    if (cursor < s.end) {
+        out.push_back({.start = cursor, .end = s.end});
+    }
+    return out;
+}
+
+/// The audible stretches left after the classified regions are taken out; a remainder shorter than
+/// min_audible joins the classified region it touches (and is dropped if it touches none).
+std::vector<Span> audible_remainders(const std::vector<Span>& level_runs,
+                                     std::vector<Classified>& classified, const GapParams& p) {
+    constexpr double k_touch = 1e-9;
+    std::vector<Span> out;
+    for (const Span& run : level_runs) {
+        for (const Span& piece : minus(run, classified)) {
+            if (piece.end - piece.start >= p.min_audible.value()) {
+                out.push_back(piece);
+                continue;
+            }
+            // Joins exactly one region (the one before it if both touch), or none.
+            const auto before = std::ranges::find_if(classified, [&](const Classified& c) {
+                return std::abs(c.span.end - piece.start) < k_touch;
+            });
+            const auto after = std::ranges::find_if(classified, [&](const Classified& c) {
+                return std::abs(c.span.start - piece.end) < k_touch;
+            });
+            if (before != classified.end()) {
+                before->span.end = piece.end;
+            } else if (after != classified.end()) {
+                after->span.start = piece.start;
+            }
+        }
+    }
+    return out;
+}
+
+/// The regions of one gap, in order, tiling [start, end]: tail, classified and audible stretches
+/// with silence between, and the protected preroll before the next note.
 std::vector<GapRegion> classify_regions(const GapView& g, const Levels& lv, const GapParams& p) {
     const double pre_start =
         g.has_after ? std::max(g.start, g.end - p.preroll_guard.value()) : g.end;
     std::vector<std::pair<GapRegionKind, Span>> kinds;
+    std::vector<Classified> classified = find_classified(g, g.start, pre_start, lv, p);
     double at = g.start;
-    if (const auto tail = find_tail(g, pre_start, lv, p)) {
-        kinds.emplace_back(GapRegionKind::tail, *tail);
-        at = tail->end;
+    if (auto tail = find_tail(g, pre_start, lv, p)) {
+        // A decay is low-frequency and continuous with the note; a sibilant or a plosive inside it
+        // is a consonant (the zero-phase high-pass rings after a loud note, so the level can stay
+        // up through it): it cuts the tail short. A breath inside the tail is the decay itself.
+        const auto cut = std::ranges::find_if(classified, [&](const Classified& c) {
+            return c.kind != GapRegionKind::breath && c.span.start < tail->end;
+        });
+        if (cut != classified.end()) {
+            tail->end = std::max(g.start, cut->span.start);
+        }
+        if (tail->end > g.start) {
+            kinds.emplace_back(GapRegionKind::tail, *tail);
+            at = tail->end;
+        }
+        std::erase_if(classified, [&](const Classified& c) { return c.span.end <= at; });
+        for (Classified& c : classified) {
+            c.span.start = std::max(c.span.start, at);
+        }
     }
-    for (const Span& s : find_audible(at, pre_start, lv, p)) {
-        kinds.emplace_back(GapRegionKind::audible, s);
+    const std::vector<Span> audible =
+        audible_remainders(find_audible(at, pre_start, lv, p), classified, p);
+    std::vector<std::pair<GapRegionKind, Span>> stretches;
+    stretches.reserve(classified.size() + audible.size());
+    for (const Classified& c : classified) {
+        stretches.emplace_back(c.kind, c.span);
     }
+    for (const Span& s : audible) {
+        stretches.emplace_back(GapRegionKind::audible, s);
+    }
+    std::ranges::sort(stretches, {}, [](const auto& k) { return k.second.start; });
+    kinds.insert(kinds.end(), stretches.begin(), stretches.end());
     if (g.has_after && pre_start < g.end) {
         kinds.emplace_back(GapRegionKind::protected_preroll,
                            Span{.start = pre_start, .end = g.end});
@@ -213,7 +344,8 @@ Gap make_gap(const NoiseFloor& floor, const Levels& lv, const GapParams& params,
 
 Result<SegmentTimeline> build_segment_timeline(std::span<const Note> notes, SourceTime source_end,
                                                const ActivityTrack& activity,
-                                               const NoiseFloor& floor, const GapParams& params) {
+                                               const NoiseFloor& floor, const GapEvidence& evidence,
+                                               const GapParams& params) {
     if (auto r = check_params(params); !r) {
         return Unexpected{r.error()};
     }
@@ -228,8 +360,14 @@ Result<SegmentTimeline> build_segment_timeline(std::span<const Note> notes, Sour
     if (activity.level.size() != frames || floor.curve_dbfs.size() != frames) {
         return invalid("the activity levels and the floor curve must match their grid");
     }
-    const Levels levels{
-        .activity = &activity, .floor = &floor, .margin_db = params.tail_margin.value()};
+    if (!(evidence.grid == activity.grid) || evidence.frame_class.size() != frames ||
+        evidence.excess_db.size() != frames) {
+        return invalid("the evidence must match the activity grid");
+    }
+    const Levels levels{.activity = &activity,
+                        .floor = &floor,
+                        .evidence = &evidence,
+                        .margin_db = params.tail_margin.value()};
     auto active = active_notes(notes, end);
     if (!active) {
         return Unexpected{active.error()};

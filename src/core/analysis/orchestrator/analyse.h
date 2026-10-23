@@ -3,6 +3,7 @@
 #include "core/analysis/activity/activity.h"
 #include "core/analysis/envelope/envelope.h"
 #include "core/analysis/gaps/build_segment_timeline.h"
+#include "core/analysis/gaps/classify_gap_frames.h"
 #include "core/analysis/gaps/estimate_noise_floor.h"
 #include "core/analysis/harmonic_noise/harmonic_noise.h"
 #include "core/analysis/loudness/loudness.h"
@@ -49,7 +50,8 @@ struct AnalyseParams {
     HarmonicNoiseParams harmonic_noise;  // Phase 4: noise bands and sound classes (ADR-0017)
     EnvelopeParams envelope;             // Phase 4: spectral envelope
     NoiseFloorParams noise_floor;        // Phase 5: the floor curve and spectrum (ADR-0024)
-    GapParams gaps;                      // Phase 5: the segment timeline
+    GapEvidenceParams gap_evidence;  // Phase 5: consonant and breath evidence (ADR-0017 features)
+    GapParams gaps;                  // Phase 5: the segment timeline
 };
 
 /// Runs, in order: read_mono + k_weight (once), detect pitch (params.engine: the vendored c4dm/pyin
@@ -61,17 +63,18 @@ struct AnalyseParams {
 /// then analyse_partials, split_harmonic_noise (with the pitch track's voicing and second-best path
 /// on the note's frames) and estimate_envelope fill the note's harmonics, noise and envelope
 /// tracks; only then is the Note final. Then the noise floor (estimate_noise_floor) and the segment
-/// timeline (build_segment_timeline) are added (ADR-0024); both stay empty for an empty source and
-/// when active notes overlap. `source_id = src.id()`; the tuning reference stays 440 Hz
-/// (estimated in Phase 8). The result passes validate(AnalysisResult) and is returned as a shared
-/// immutable snapshot. Every per-note stage is guaranteed to succeed for a span segment_notes
-/// returned (at least 10 pitch frames, voiced); if one fails anyway the whole analysis fails with
-/// the note id in the message (a bug, never silently dropped). Errors: not_implemented (algorithm
-/// other than melodic), invalid_argument (bad params, or a source rate below 4 kHz: the loudness
-/// K-weighting needs it and pitch needs twice max_f0), or any stage's error (the message names the
-/// stage). The source is never modified. The same source and params give a bit-identical result on
-/// the same build. Pure; thread-safe; not real-time safe. A cancel token (spec §4 EngineContext) is
-/// not needed yet and arrives with the Phase 9 scheduler.
+/// timeline (build_segment_timeline, with consonant evidence from classify_gap_frames, neutral
+/// below 8 kHz) are added (ADR-0024); both stay empty for an empty source and when active notes
+/// overlap. `source_id = src.id()`; the tuning reference stays 440 Hz (estimated in Phase 8). The
+/// result passes validate(AnalysisResult) and is returned as a shared immutable snapshot. Every
+/// per-note stage is guaranteed to succeed for a span segment_notes returned (at least 10 pitch
+/// frames, voiced); if one fails anyway the whole analysis fails with the note id in the message (a
+/// bug, never silently dropped). Errors: not_implemented (algorithm other than melodic),
+/// invalid_argument (bad params, or a source rate below 4 kHz: the loudness K-weighting needs it
+/// and pitch needs twice max_f0), or any stage's error (the message names the stage). The source is
+/// never modified. The same source and params give a bit-identical result on the same build. Pure;
+/// thread-safe; not real-time safe. A cancel token (spec §4 EngineContext) is not needed yet and
+/// arrives with the Phase 9 scheduler.
 [[nodiscard]] Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
                                                                     const AnalyseParams& params);
 

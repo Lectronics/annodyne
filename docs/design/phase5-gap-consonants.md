@@ -1,7 +1,7 @@
 # Design note: Consonant and breath evidence in gaps (Phase 5, slice 6b)
 
 - **Phase:** 5 (Timing), before the gate (owner, 2026-10-22: sibilants, fricatives and other unvoiced consonants are fundamental to the sound and must be detected before anything can mute a gap)
-- **Status:** draft, revision 2 (answers structure review round 1)
+- **Status:** implemented (revision 2 + the tail rule below)
 - **Spec sections:** implementation guide B6 (sibilant/breath classification, level-independent features), ADR-0017 (frame classes, classifier), ADR-0018 (research adoption), ADR-0024 (segment timeline), `phase5-gaps-core.md` (regions, slice 6)
 - **Folder / CMake target:** `src/core/analysis/gaps` (layer 1; links `core/types`, `core/dsp`, `analysis/activity`, and now `analysis/harmonic_noise` for the feature extractor: same layer, as the orchestrator does)
 
@@ -57,6 +57,7 @@ struct GapEvidence {
 1. **Classified runs, per class.** A run is a maximal stretch of frames with the same class in {sibilant, breath, plosive} and `excess_db > event_margin`, taken from the frames of the gap proper: the first `evidence_guard` after the gap start (the classifier's median smoothing and a note's release bleed across the boundary) and the preroll are excluded. `sibilant` and `breath` runs need at least `min_audible`; a `plosive` run counts at any length (bursts are about 15 ms). Adjacent classified runs stay separate regions (an affricate "ts" is a plosive then a sibilant). The run becomes a region of its class, padded by `audible_pad` each side, clipped to its neighbours (earlier region first) and to [tail end, preroll start).
 2. **Level runs (slice 6)** that overlap no classified region stay `audible`. A level run partly covered is split: the covered part takes the class; an `audible` remainder shorter than `min_audible` is absorbed into the adjacent classified region.
 3. Regions still tile the gap in order; `silence` is what is left.
+4. **Tail vs evidence (found while integrating):** the zero-phase high-pass rings after a loud note, so the level can stay above the floor straight through a consonant and the tail would swallow it. A `sibilant` or `plosive` run inside the tail cuts it short (the tail ends at the run's padded start); a `breath` run inside the tail is absorbed by it (a decay is low-frequency, and a reverb tail labelled breath could be removed by a breath macro).
 
 ## Why these choices
 
