@@ -10,12 +10,10 @@ if(APPLE)
     target_link_libraries(anno_rubberband PUBLIC "-framework Accelerate")
 endif()
 # GCC's libstdc++ implements some std::atomic operations in libatomic (the library asks whether a
-# 64-bit atomic is lock free); link it where it exists.
+# 64-bit atomic is lock free). The library sits in the compiler's own directory, which the compiler
+# driver searches but find_library does not, so link it by name.
 if(NOT APPLE AND NOT MSVC)
-    find_library(ANNO_ATOMIC_LIBRARY atomic)
-    if(ANNO_ATOMIC_LIBRARY)
-        target_link_libraries(anno_rubberband PUBLIC "${ANNO_ATOMIC_LIBRARY}")
-    endif()
+    target_link_libraries(anno_rubberband PUBLIC atomic)
 endif()
 if(MSVC)
     # <windows.h> must not define min and max: the library writes std::numeric_limits<T>::max().
