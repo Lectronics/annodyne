@@ -44,9 +44,10 @@ void append(std::vector<Anchor>& done, const std::vector<Anchor>& anchors,
 [[nodiscard]] bool enforce_min_segments(std::vector<Anchor>& done, bool fixed_end,
                                         double min_segment_s);
 
-/// Rounds the shift t - s of every anchor to a whole number of samples; false (anchors restored) if
-/// that would move the fixed end.
-[[nodiscard]] bool quantise_shifts(std::vector<Anchor>& anchors, bool fixed_end, double rate_hz);
+/// Rounds the shift t - s of every anchor to a multiple of `step_samples` samples (1: whole
+/// samples); false (anchors restored) if that would move the fixed end.
+[[nodiscard]] bool quantise_shifts(std::vector<Anchor>& anchors, bool fixed_end, double rate_hz,
+                                   std::int64_t step_samples = 1);
 
 /// invalid_argument: a note of another track, overlapping or unsorted active notes, an invalid
 /// note, a note ending after a non-origin `source_end`.

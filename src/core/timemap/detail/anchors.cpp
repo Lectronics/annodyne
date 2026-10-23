@@ -129,15 +129,17 @@ Result<void> check_notes(std::span<const Note> notes, const EditList& edits,
     return {};
 }
 
-/// Rounds the shift t - s of every anchor to a whole number of samples (ADR-0023), so two anchors
-/// that bound a slope-1 span (equal shift) keep equal shifts. Strictness: an output at or before
-/// the previous one takes one more sample of shift until it is later. Returns false, leaving the
-/// anchors as they were, if that would push an anchor to or past the fixed end.
-bool quantise_shifts(std::vector<Anchor>& anchors, bool fixed_end, double rate_hz) {
+/// Rounds the shift t - s of every anchor to a multiple of the shift step (ADR-0023), so two
+/// anchors that bound a slope-1 span (equal shift) keep equal shifts. Strictness: an output at or
+/// before the previous one takes one more sample of shift until it is later. Returns false, leaving
+/// the anchors as they were, if that would push an anchor to or past the fixed end.
+bool quantise_shifts(std::vector<Anchor>& anchors, bool fixed_end, double rate_hz,
+                     std::int64_t step_samples) {
     const std::vector<Anchor> before = anchors;
-    const double sample = 1.0 / rate_hz;
+    const double step = static_cast<double>(std::max<std::int64_t>(1, step_samples));
+    const double sample = step / rate_hz;
     for (std::size_t k = 1; k < anchors.size(); ++k) {
-        double shift = std::round((anchors[k].t - anchors[k].s) * rate_hz) * sample;
+        double shift = std::round((anchors[k].t - anchors[k].s) * rate_hz / step) * sample;
         double t = anchors[k].s + shift;
         while (t <= anchors[k - 1].t) {
             shift += sample;

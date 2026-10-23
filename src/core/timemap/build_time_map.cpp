@@ -53,7 +53,8 @@ Result<TimeMapBuild> build_time_map(std::span<const Note> notes, const EditList&
     const int repaired_notes = static_cast<int>(std::ranges::count(repaired, true));
     if (params.sample_rate.value() > 0.0) {
         // The fixed end has shift 0, so it is unchanged; quantise_shifts refuses to move it.
-        (void)quantise_shifts(done, fixed_end, params.sample_rate.value());
+        (void)quantise_shifts(done, fixed_end, params.sample_rate.value(),
+                              params.shift_step.value());
     }
     // The domain ends at the recording's end; when that is unknown (map-only use) at the last note
     // or anchor, whichever is later.

@@ -25,7 +25,8 @@ constexpr double k_slope_dust = 1e-9;
 struct Context {
     const SegmentTimeline* timeline;
     const LayoutParams* params;
-    double rate_hz;  // 0: exact arithmetic
+    double rate_hz;             // 0: exact arithmetic
+    std::int64_t step_samples;  // the shift grid, >= 1
     double min_segment_s;
 };
 
@@ -42,14 +43,24 @@ OutputTime output_at(double s) {
 }
 
 /// `seconds` rounded to a whole number of samples (toward zero when `toward_zero`), or unchanged.
-double on_grid(const Context& c, double seconds, bool toward_zero = false) {
+double on_units(const Context& c, double seconds, double unit_samples, bool toward_zero) {
     if (c.rate_hz <= 0.0) {
         return seconds;
     }
-    const double samples = seconds * c.rate_hz;
-    return (toward_zero ? std::trunc(samples + std::copysign(k_slope_dust, samples))
-                        : std::round(samples)) /
-           c.rate_hz;
+    const double units = seconds * c.rate_hz / unit_samples;
+    return (toward_zero ? std::trunc(units + std::copysign(k_slope_dust, units))
+                        : std::round(units)) *
+           unit_samples / c.rate_hz;
+}
+
+/// `seconds` on the shift grid (the unit every marker shift and gap change is a multiple of).
+double on_grid(const Context& c, double seconds, bool toward_zero = false) {
+    return on_units(c, seconds, static_cast<double>(c.step_samples), toward_zero);
+}
+
+/// `seconds` on the sample grid: where a cut or insert sits.
+double on_sample(const Context& c, double seconds) {
+    return on_units(c, seconds, 1.0, false);
 }
 
 [[nodiscard]] bool marker_fits(const SegmentTimeline& tl, const LayoutMarker& m) {
@@ -164,7 +175,8 @@ double cut_room(const Context& c, double silence_s) {
     if (c.rate_hz <= 0.0) {
         return room > k_same_length_s ? room : 0.0;
     }
-    return std::max(0.0, std::floor(room * c.rate_hz + k_slope_dust) / c.rate_hz);
+    const double step = static_cast<double>(c.step_samples);
+    return std::max(0.0, std::floor(room * c.rate_hz / step + k_slope_dust) * step / c.rate_hz);
 }
 
 /// The cut or insert for a change of `delta_s` in `gap`, or nullopt if the gap can take none of it.
@@ -186,12 +198,12 @@ std::optional<GapEdit> gap_edit(const Context& c, std::size_t index, double delt
             return std::nullopt;
         }
         edit.length = Seconds{length};
-        edit.at = source_at(on_grid(c, centre - length / 2.0));
+        edit.at = source_at(on_sample(c, centre - length / 2.0));
     } else {
         // Growth stretches the audio and holds the silence (slope 1): length 0 until solve_interval
         // finds the audio cannot take it all.
         edit.length = Seconds{0.0};
-        edit.at = source_at(on_grid(c, centre));
+        edit.at = source_at(on_sample(c, centre));
     }
     return edit;
 }
@@ -307,6 +319,7 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
     const Context c{.timeline = &timeline,
                     .params = &params,
                     .rate_hz = time_map.sample_rate.value(),
+                    .step_samples = std::max<std::int64_t>(1, time_map.shift_step.value()),
                     .min_segment_s = time_map.min_segment.value()};
     const auto& list = markers.markers;
     Layout layout;
@@ -320,7 +333,7 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
     }
     mark_changed(layout, anchors, requested);
     if (c.rate_hz > 0.0) {
-        (void)timemap_detail::quantise_shifts(anchors, fixed_end, c.rate_hz);
+        (void)timemap_detail::quantise_shifts(anchors, fixed_end, c.rate_hz, c.step_samples);
     }
     for (std::size_t k = 1; k < anchors.size(); ++k) {
         Solved solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);

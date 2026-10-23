@@ -2,6 +2,7 @@
 
 #include "core/edits/edit_list.h"
 #include "core/timemap/build_time_map.h"
+#include "core/timemap/shift_grid.h"
 #include "core/types/note.h"
 #include "core/types/result.h"
 #include "core/types/segments.h"
@@ -30,6 +31,7 @@ struct LayoutParams {
     Seconds splice_fade{0.005};  // crossfade at a cut, fade at an insert
     Seconds note_margin{0.010};  // the renderer's crossfade_length: a cut keeps this + splice_fade
                                  // away from a note edge
+    ShiftGridParams grid = {};   // the shift step (tempo, 1/512 note); see shift_grid.h
 };
 
 enum class MarkerKind { origin, note_start, attack_end, handle, note_end, end };

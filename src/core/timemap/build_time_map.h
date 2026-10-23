@@ -40,6 +40,9 @@ struct TimeMapParams {
     /// whole-sample shift of the source (read_through_map needs that). A stretched span's ratio
     /// changes by under one sample over its length. 0 (default) leaves the anchors exact.
     Hz sample_rate{0.0};
+    /// With a sample rate: shifts are multiples of this many samples (the shift grid, see
+    /// shift_grid.h); 1 is whole samples. Must be >= 1.
+    Samples shift_step{1};
 };
 
 struct TimeMapBuild {
