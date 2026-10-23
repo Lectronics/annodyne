@@ -32,3 +32,7 @@ Tuning parameters: `RenderParams::crossfade_length` (0..20 ms, default 10 ms), `
 ## The gap gate (ADR-0024)
 
 `gate.h`: `gate_curve` is the per-sample gain a `gap_gain` edit applies to the `silence` regions of its gap (5 ms ramps inside the region where it borders a note or another region; none at the recording's start or end). `render_region` multiplies it in after the blend and skips samples whose gain is 1; tails, the guard before a note and every classified region (sibilant, breath, plosive, audible) are never touched. `RenderResult::gaps_rendered` lists the gated gaps that meet the region; the gates are the last part of the cache key.
+
+## The layout and the splice (ADR-0025)
+
+With no supplied map and a segment timeline in the analysis, `render_region` builds the map with `build_layout_time_map` (`RenderParams::layout`): gaps next to a timing edit are cut or held first, the audio between markers is stretched, the recording keeps its length. `splice.h` smooths the joins: a cut crossfades over `splice_fade` (5 ms) into the audio after it; an insert (digital zeros until room tone) fades the audio on each side to and from zero, inside its silence region. `splice_fade` 0 keeps hard joins. The cache key (version 5) holds the map spans that meet the region widened by the margin and the fade, so a timing edit elsewhere leaves a block's key alone (the first edit from an identity map changes every key once). Limits: an edited note whose zone meets a cut or insert is `not_implemented`; stretched spans need mono.
