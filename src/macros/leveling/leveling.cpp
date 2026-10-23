@@ -20,10 +20,23 @@ EditSpec spec_of(const NoteId& note, EditParam param, EditValue value) {
                     .value = value};
 }
 
-}  // namespace
+/// The mean loudness of the active notes with a finite one; nullopt if there is none.
+std::optional<double> mean_loudness(const AnalysisResult& analysis) {
+    double sum = 0.0;
+    std::size_t count = 0;
+    for (const Note& note : analysis.notes) {
+        if (note.is_active && std::isfinite(note.loudness.value())) {
+            sum += note.loudness.value();
+            ++count;
+        }
+    }
+    if (count == 0) {
+        return std::nullopt;
+    }
+    return sum / static_cast<double>(count);
+}
 
-Result<std::vector<EditSpec>> leveling_edits(const AnalysisResult& analysis,
-                                             const LevelingParams& params) {
+Result<void> check_params(const LevelingParams& params) {
     if (!valid_amount(params.between_notes) || !valid_amount(params.within_notes)) {
         return fail(ErrorCode::invalid_argument,
                     "leveling_edits: the amounts must be finite and in 0..1");
@@ -36,33 +49,38 @@ Result<std::vector<EditSpec>> leveling_edits(const AnalysisResult& analysis,
     if (params.target && !std::isfinite(params.target->value())) {
         return fail(ErrorCode::invalid_argument, "leveling_edits: the target is not finite");
     }
-    double target = params.target ? params.target->value() : 0.0;
-    if (!params.target) {
-        double sum = 0.0;
-        std::size_t count = 0;
-        for (const Note& note : analysis.notes) {
-            if (note.is_active && std::isfinite(note.loudness.value())) {
-                sum += note.loudness.value();
-                ++count;
-            }
-        }
-        if (count == 0) {
-            return std::vector<EditSpec>{};
-        }
-        target = sum / static_cast<double>(count);
+    return {};
+}
+
+/// The gain correction of one note toward `target`, or 0 when it is below min_gain.
+double correction(const Note& note, double target, const LevelingParams& params) {
+    if (params.between_notes.value() <= 0.0 || !std::isfinite(note.loudness.value())) {
+        return 0.0;
+    }
+    const double wanted = (target - note.loudness.value()) * params.between_notes.value();
+    const double gain = std::clamp(wanted, -params.max_gain.value(), params.max_gain.value());
+    return std::abs(gain) >= params.min_gain.value() ? gain : 0.0;
+}
+
+}  // namespace
+
+Result<std::vector<EditSpec>> leveling_edits(const AnalysisResult& analysis,
+                                             const LevelingParams& params) {
+    if (auto ok = check_params(params); !ok) {
+        return Unexpected{ok.error()};
+    }
+    std::optional<double> target =
+        params.target ? std::optional<double>{params.target->value()} : mean_loudness(analysis);
+    if (!target) {
+        return std::vector<EditSpec>{};
     }
     std::vector<EditSpec> specs;
     for (const Note& note : analysis.notes) {
         if (!note.is_active) {
             continue;
         }
-        if (params.between_notes.value() > 0.0 && std::isfinite(note.loudness.value())) {
-            const double wanted = (target - note.loudness.value()) * params.between_notes.value();
-            const double gain =
-                std::clamp(wanted, -params.max_gain.value(), params.max_gain.value());
-            if (std::abs(gain) >= params.min_gain.value() && gain != 0.0) {
-                specs.push_back(spec_of(note.id, EditParam::gain, Decibels{gain}));
-            }
+        if (const double gain = correction(note, *target, params); gain != 0.0) {
+            specs.push_back(spec_of(note.id, EditParam::gain, Decibels{gain}));
         }
         if (params.within_notes.value() > 0.0) {
             specs.push_back(spec_of(note.id, EditParam::within_note_flatten, params.within_notes));
