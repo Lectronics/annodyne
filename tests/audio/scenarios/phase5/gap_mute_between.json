@@ -1,0 +1,34 @@
+{
+  "name": "gap_mute_between",
+  "source": "tests/audio/scenarios/sources/gap_fricative.wav",
+  "analysis": "given",
+  "notes": [
+    {
+      "id": "a",
+      "start_s": 0.5,
+      "end_s": 1.2
+    },
+    {
+      "id": "b",
+      "start_s": 2.0,
+      "end_s": 2.7
+    }
+  ],
+  "edits": [
+    {
+      "category": "gap",
+      "op": "set",
+      "param": "gap_gain",
+      "value": -120,
+      "target": {
+        "gap": {
+          "before": "a",
+          "after": "b"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "gate": "the pause between the vowels is silent except the fricative (1.5-1.65 s); vowels untouched; ramps of 5 ms at the vowel edges"
+  }
+}
