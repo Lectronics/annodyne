@@ -15,3 +15,6 @@ Identity and key, neutral offset exact, pitch of 220 Hz shifted by -400/+200/+70
 
 ## Limits
 Everything in the zone is shifted (no class routing); no time-varying pitch; the Phase 4 objective rows are not better than PSOLA's on the real voice.
+
+## Time-varying curves (ADR-0027 amendment 1)
+`mod_scale` and `drift_scale` other than 1 switch to `RubberBandLiveShifter`: pitch change per sample = centre offset + (scale - 1) x gain x the note's modulation/drift (cents, linear between frame centres, zero outside the note), one pitch scale per shifter block read `curve_lead` (-30 ms) behind the block centre, start delay discarded and a zero tail flushed so the result is exactly zone-long. Tests: vibrato depth at scales 0, 0.5, 1.5, 2; a drift scale renders; bad `curve_gain`.

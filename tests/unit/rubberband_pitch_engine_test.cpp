@@ -155,3 +155,82 @@ TEST_CASE("the_rubber_band_pitch_engine_shifts_every_channel", "[rubberband_pitc
     INFO("correlation " << ab / std::sqrt(aa * bb));
     CHECK(ab / std::sqrt(aa * bb) < -0.98);
 }
+
+namespace {
+
+Fixture vibrato_voice(double rate_hz, double depth_cents) {
+    return Fixture{voice(
+        [=](double t) {
+            return 220.0 * std::pow(2.0, depth_cents * std::sin(2.0 * M_PI * rate_hz * t) / 1200.0);
+        },
+        harmonic_amps(10, 0.5))};
+}
+
+/// Depth (cents) of the strongest 3-9 Hz component of the analysed fast pitch of the longest note.
+double vibrato_depth(const OutputAudio& out) {
+    const std::vector<float> mono = samples_of(out);
+    const auto src = AudioSource::from_buffer(to_buffer(mono, k_rate));
+    const auto analysis = analyse(src, engine_analysis_params()).value();
+    if (analysis->notes.empty()) {
+        return 0.0;
+    }
+    const Note& n = *std::max_element(
+        analysis->notes.begin(), analysis->notes.end(),
+        [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+    const double hop = n.grid.hop.value();
+    double best = 0.0;
+    for (int k = 60; k <= 180; ++k) {
+        const double f = k * 0.05;
+        double re = 0.0;
+        double im = 0.0;
+        for (std::size_t i = 0; i < n.pitch_mod.size(); ++i) {
+            const double v = n.pitch_mod[i].value();
+            re += v * std::cos(2.0 * M_PI * f * static_cast<double>(i) * hop);
+            im += v * std::sin(2.0 * M_PI * f * static_cast<double>(i) * hop);
+        }
+        best = std::max(best, 2.0 * std::hypot(re, im) / static_cast<double>(n.pitch_mod.size()));
+    }
+    return best;
+}
+
+OutputAudio render_scaled(const Fixture& fx, const RubberBandPitchEngine& engine,
+                          double mod_scale) {
+    EffectiveNote e = fx.effective(0.0);
+    e.mod_scale = Ratio{mod_scale};
+    e.is_edited = true;
+    return fx.render(engine, e).value();
+}
+
+}  // namespace
+
+TEST_CASE("the_modulation_scale_changes_the_vibrato_depth_in_proportion", "[rubberband_pitch]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const RubberBandPitchEngine engine;
+    const double source =
+        vibrato_depth(OutputAudio{.audio = to_buffer(fx.mono, k_rate), .start = OutputTime{}});
+    REQUIRE(std::abs(source - 40.0) < 6.0);
+    // measured depth = source x (1 + (scale - 1) x response): flat at 0, doubled at 2
+    CHECK(vibrato_depth(render_scaled(fx, engine, 0.0)) < 0.25 * source);
+    CHECK(std::abs(vibrato_depth(render_scaled(fx, engine, 0.5)) / source - 0.5) < 0.2);
+    CHECK(std::abs(vibrato_depth(render_scaled(fx, engine, 1.5)) / source - 1.5) < 0.25);
+    CHECK(std::abs(vibrato_depth(render_scaled(fx, engine, 2.0)) / source - 2.0) < 0.35);
+}
+
+TEST_CASE("a_drift_scale_and_bad_curve_parameters", "[rubberband_pitch]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const RubberBandPitchEngine engine;
+    EffectiveNote e = fx.effective(0.0);
+    e.drift_scale = Ratio{0.0};
+    e.is_edited = true;
+    const auto out = fx.render(engine, e).value();
+    CHECK(out.audio.frame_count().value() == static_cast<std::int64_t>(fx.mono.size()));
+    RubberBandPitchParams bad;
+    bad.curve_gain = Ratio{0.0};
+    EffectiveNote m = fx.effective(0.0);
+    m.mod_scale = Ratio{0.0};
+    CHECK(RubberBandPitchEngine{bad}
+              .render_note(fx.src, fx.note, m, fx.map,
+                           OutputRange::from_start(OutputTime{}, Seconds{1.0}))
+              .error()
+              .code == ErrorCode::invalid_argument);
+}
