@@ -137,15 +137,15 @@ struct GapParams {
     Decibels tail_margin{6.0};   // a tail lasts while the floor curve + margin is exceeded
     Seconds max_tail{1.5};
     Seconds preroll_guard{0.015};
-    Seconds min_gap{0.005};      // shorter spaces between notes are legato (no gap)
 };
 /// Partitions [0, source_end] into note and gap segments and classifies each gap's regions:
 /// `tail` from the previous note's end while the activity level stays above floor + tail_margin
 /// (at most max_tail); `protected_preroll` for the `preroll_guard` before a note's start (untouched by the gate, like
 /// a tail: a breath-in or a soft consonant lead-in is not silence; it is a region of the gap, **not**
 /// an extension of the note, whose range stays `Note::source_start/end` everywhere); `silence` for
-/// the rest. A gap shorter than min_gap is not made; the two
-/// notes touch. Slice 5 emits one `silence` region per gap; slice 6 adds tail and preroll. (`noise` regions and `noise_*` parameters wait for room tone, slice 9: no consumer before.)
+/// the rest. A space of any positive length between two notes is a gap (a hole would
+/// break the partition; `GapParams::min_gap` was dropped in the slice 5 build: the layout's `min_gap`
+/// and the gate's fade are the minimums); notes that touch exactly have none. Slice 5 emits one `silence` region per gap; slice 6 adds tail and preroll. (`noise` regions and `noise_*` parameters wait for room tone, slice 9: no consumer before.)
 /// Errors: invalid_argument (bad params; active notes overlapping or unsorted; a note outside
 /// [0, source_end]). Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<SegmentTimeline> build_segment_timeline(std::span<const Note> notes,
