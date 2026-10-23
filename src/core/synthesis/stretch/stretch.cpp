@@ -87,6 +87,26 @@ Result<SourceWindow> read_window(const AudioSource& src, const SpanGeometry& g) 
     return SourceWindow{.audio = std::move(*audio), .first = from};
 }
 
+/// Fills the stretches of 0 shorter than `max_samples` that have a 1 on both sides.
+void bridge_short_gaps(std::vector<std::uint8_t>& indicator, std::int64_t max_samples) {
+    const auto n = static_cast<std::int64_t>(indicator.size());
+    for (std::int64_t i = 1; i < n;) {
+        if (indicator[static_cast<std::size_t>(i)] != 0 ||
+            indicator[static_cast<std::size_t>(i - 1)] == 0) {
+            ++i;
+            continue;
+        }
+        std::int64_t j = i;
+        while (j < n && indicator[static_cast<std::size_t>(j)] == 0) {
+            ++j;
+        }
+        if (j < n && j - i < max_samples) {
+            std::fill(indicator.begin() + i, indicator.begin() + j, std::uint8_t{1});
+        }
+        i = j;
+    }
+}
+
 /// Moving average of the indicator over `length` samples, edges replicated: 0..1 per sample.
 std::vector<double> smoothed(const std::vector<std::uint8_t>& indicator, std::int64_t length) {
     const auto n = static_cast<std::int64_t>(indicator.size());
@@ -220,6 +240,9 @@ Result<void> check_stretch_params(const StretchParams& p) {
     if (p.vibrato != VibratoMode::preserve && p.vibrato != VibratoMode::retime) {
         return bad("vibrato must be preserve or retime");
     }
+    if (!std::isfinite(p.voiced_bridge.value()) || p.voiced_bridge.value() < 0.0) {
+        return bad("voiced_bridge must be finite and >= 0");
+    }
     if (!finite_positive(p.noise_grain.value())) {
         return bad("noise_grain must be finite and > 0");
     }
@@ -260,6 +283,8 @@ Result<OutputAudio> stretch_span(const AudioSource& src, const AnalysisResult& a
     if (!indicator) {
         return Unexpected{indicator.error()};
     }
+    bridge_short_gaps(*indicator, static_cast<std::int64_t>(std::llround(
+                                      params.voiced_bridge.value() * g.rate_hz * g.slope)));
     const grain::Signal x = window->signal();
     const auto fade_samples =
         static_cast<std::int64_t>(std::llround(params.class_edge_fade.value() * g.rate_hz));

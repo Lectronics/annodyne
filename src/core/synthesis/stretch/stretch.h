@@ -24,6 +24,10 @@ enum class VibratoMode : std::uint8_t { preserve, retime };
 
 struct StretchParams {
     VibratoMode vibrato = VibratoMode::preserve;
+    // A stretch of non-voiced frames shorter than this (source time) with voiced frames on both
+    // sides stays in the voiced run: a one-frame dropout of the classifier must not switch the
+    // renderer to the noise path and back (a step at each switch). >= 0, finite.
+    Seconds voiced_bridge{0.015};
     // Equal-power crossfade where voiced frames meet the others; >= 0, finite.
     Seconds class_edge_fade{0.004};
     // Unvoiced grain length (sine window, 50 % overlap); finite, > 0.

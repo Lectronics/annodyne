@@ -440,3 +440,41 @@ TEST_CASE("the_noise_path_joins_the_source_exactly_at_both_span_edges", "[stretc
         CHECK(std::abs(out[out.size() - 1 - i] - fx.mono[src_last - 1 - i]) < 0.02f);
     }
 }
+
+TEST_CASE("a_one_frame_voicing_dropout_does_not_switch_the_renderer_to_the_noise_path",
+          "[stretch]") {
+    const Fixture fx = steady_voice();
+    auto edited = std::make_shared<AnalysisResult>(*fx.analysis);
+    Note& note = *std::max_element(
+        edited->notes.begin(), edited->notes.end(),
+        [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+    REQUIRE(note.noise.frame_class.size() == static_cast<std::size_t>(note.grid.n_frames));
+    note.noise.frame_class[note.noise.frame_class.size() / 2] = FrameClass::breath;
+    const TimeSpan span = stretched(0.3, 1.3, 0.8);
+    const auto render = [&](double bridge_s) {
+        StretchParams params;
+        params.voiced_bridge = Seconds{bridge_s};
+        return samples_of(stretch_span(fx.src, *edited, span, whole(span), params).value());
+    };
+    // third-difference outlier against the local level: the dropout steps the unbridged render
+    const auto worst_tick = [](const std::vector<float>& x) {
+        double worst = 0.0;
+        const double level = rms_of(x);
+        for (std::size_t i = 3; i < x.size(); ++i) {
+            const double d3 = static_cast<double>(x[i]) - 3.0 * static_cast<double>(x[i - 1]) +
+                              3.0 * static_cast<double>(x[i - 2]) - static_cast<double>(x[i - 3]);
+            worst = std::max(worst, std::abs(d3));
+        }
+        return worst / level;
+    };
+    const auto bridged = render(0.015);
+    const auto unbridged = render(0.0);
+    CHECK(bridged != unbridged);
+    CHECK(worst_tick(bridged) < worst_tick(unbridged));
+}
+
+TEST_CASE("a_negative_voiced_bridge_is_an_invalid_argument", "[stretch]") {
+    StretchParams p;
+    p.voiced_bridge = Seconds{-0.001};
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}
