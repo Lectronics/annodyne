@@ -1,5 +1,6 @@
 #include "core/edits/dirty_regions.h"
 #include "support/test_data.h"
+#include "support/timeline_data.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -117,4 +118,127 @@ TEST_CASE("mismatched_tracks_and_unsorted_notes_are_errors", "[dirty_regions]") 
     CHECK_FALSE(
         dirty_regions(wrong_track, EditList{TrackId{"t1"}}, EditList{TrackId{"t1"}}, params())
             .has_value());
+}
+
+namespace {
+
+SegmentId gap_id(const char* before, const char* after) {
+    return gap_segment_id(before != nullptr ? std::optional<NoteId>{NoteId{before}} : std::nullopt,
+                          after != nullptr ? std::optional<NoteId>{NoteId{after}} : std::nullopt);
+}
+
+EditSpec gap_gain_on(const SegmentId& gap, double db) {
+    EditSpec spec =
+        make_spec("unused", EditCategory::gap, EditParam::gap_gain, EditOp::set, Decibels{db});
+    spec.target.segment_ids = {gap};
+    return spec;
+}
+
+/// The timeline of three_notes() over 10 s: gaps [0,1], [2,3], [4,5], [6,10].
+SegmentTimeline timeline() {
+    return timeline_of(three_notes(), 10.0);
+}
+
+DirtyParams with_timeline(const SegmentTimeline& t) {
+    DirtyParams p = params();
+    p.timeline = &t;
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("a_gap_gain_change_dirties_exactly_the_gap", "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    const EditList before{TrackId{"t1"}};
+    const auto regions =
+        dirty_regions(three_notes(), before, list_of({gap_gain_on(gap_id("a", "b"), -6.0)}),
+                      with_timeline(t))
+            .value();
+    REQUIRE(regions.size() == 1);
+    CHECK(start_s(regions[0]) == 2.0);  // no margin: gain does not move time
+    CHECK(end_s(regions[0]) == 3.0);
+}
+
+TEST_CASE("an_unchanged_or_neutral_gap_edit_is_not_dirty", "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    const EditList same = list_of({gap_gain_on(gap_id("a", "b"), -6.0)});
+    CHECK(dirty_regions(three_notes(), same, same, with_timeline(t)).value().empty());
+    // 0 dB is neutral: the gain did not change
+    CHECK(dirty_regions(three_notes(), EditList{TrackId{"t1"}},
+                        list_of({gap_gain_on(gap_id("a", "b"), 0.0)}), with_timeline(t))
+              .value()
+              .empty());
+}
+
+TEST_CASE("two_changed_gaps_and_a_note_edit_give_their_ranges", "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    const EditList after = list_of({gap_gain_on(gap_id(nullptr, "a"), -120.0),
+                                    gap_gain_on(gap_id("c", nullptr), -3.0), pitch_add("b", 10)});
+    const auto regions =
+        dirty_regions(three_notes(), EditList{TrackId{"t1"}}, after, with_timeline(t)).value();
+    REQUIRE(regions.size() == 3);
+    CHECK(start_s(regions[0]) == 0.0);
+    CHECK(end_s(regions[0]) == 1.0);
+    CHECK(start_s(regions[1]) == 2.95);  // note b with its margin
+    CHECK(end_s(regions[1]) == 4.05);
+    CHECK(start_s(regions[2]) == 6.0);
+    CHECK(end_s(regions[2]) == 10.0);
+}
+
+TEST_CASE("undoing_a_gap_edit_dirties_the_gap_again", "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    const EditList edited = list_of({gap_gain_on(gap_id("b", "c"), -6.0)});
+    const auto regions =
+        dirty_regions(three_notes(), edited, edited.undo().value(), with_timeline(t)).value();
+    REQUIRE(regions.size() == 1);
+    CHECK(start_s(regions[0]) == 4.0);
+    CHECK(end_s(regions[0]) == 5.0);
+}
+
+TEST_CASE("a_gap_edit_without_a_matching_gap_is_a_named_error_and_orphans_are_ignored",
+          "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    const SegmentId missing = gap_id("x", "y");
+    const EditList edited = list_of({gap_gain_on(missing, -6.0)});
+    const auto unknown =
+        dirty_regions(three_notes(), EditList{TrackId{"t1"}}, edited, with_timeline(t));
+    REQUIRE_FALSE(unknown.has_value());
+    CHECK(unknown.error().code == ErrorCode::invalid_argument);
+    CHECK(unknown.error().message.find(missing.value) != std::string::npos);
+    // no timeline at all
+    CHECK(dirty_regions(three_notes(), EditList{TrackId{"t1"}}, edited, params()).error().code ==
+          ErrorCode::invalid_argument);
+    // without a gap edit a null timeline is fine, as before
+    CHECK(dirty_regions(three_notes(), EditList{TrackId{"t1"}}, list_of({pitch_add("a", 5)}),
+                        params())
+              .has_value());
+
+    EditSpec spec = gap_gain_on(missing, -6.0);
+    spec.target.orphaned_segment_ids = spec.target.segment_ids;
+    spec.target.segment_ids.clear();
+    const EditList orphaned =
+        EditList::from_parts(
+            {.track = TrackId{"t1"},
+             .edits = {Edit{
+                 .seq = EditSeq{1}, .group = GroupId{1}, .created_at = k_t0, .spec = spec}},
+             .cursor = 1,
+             .discarded = {},
+             .next_seq = EditSeq{2}})
+            .value();
+    CHECK(dirty_regions(three_notes(), EditList{TrackId{"t1"}}, orphaned, with_timeline(t))
+              .value()
+              .empty());
+}
+
+TEST_CASE("a_timing_change_is_still_origin_to_end_with_a_gap_edit_present", "[dirty_regions]") {
+    const SegmentTimeline t = timeline();
+    EditSpec shift =
+        make_spec("b", EditCategory::time, EditParam::onset_shift, EditOp::set, Seconds{0.1});
+    const auto regions =
+        dirty_regions(three_notes(), EditList{TrackId{"t1"}},
+                      list_of({shift, gap_gain_on(gap_id("a", "b"), -6.0)}), with_timeline(t))
+            .value();
+    REQUIRE(regions.size() == 1);
+    CHECK(start_s(regions[0]) == 0.0);
+    CHECK(end_s(regions[0]) == 10.0);
 }

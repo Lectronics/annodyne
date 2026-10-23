@@ -35,8 +35,10 @@ Result<void> write_text(const std::filesystem::path& path, const std::string& te
 Result<std::vector<bool>> dirty_mask(const LoadedScenario& run, std::int64_t frames) {
     const Hz rate = run.source.sample_rate();
     const SourceTime end = to_time_point<SourceAxis>(Samples{frames}, rate);
-    auto regions = dirty_regions(run.analysis->notes, EditList{scenario_track()}, *run.edits,
-                                 DirtyParams{.source_end = end});
+    auto regions = dirty_regions(
+        run.analysis->notes, EditList{scenario_track()}, *run.edits,
+        DirtyParams{.source_end = end,
+                    .timeline = run.analysis->timeline ? &*run.analysis->timeline : nullptr});
     if (!regions) {
         return Unexpected{regions.error()};
     }
