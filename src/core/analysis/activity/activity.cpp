@@ -10,9 +10,8 @@ namespace anno {
 
 namespace {
 
-constexpr double k_level_floor_db = -120.0;  // dBFS reported for an empty or all-zero window
-constexpr double k_tiny_power = 1e-12;       // keeps log10 finite; equals k_level_floor_db
-constexpr double k_run_epsilon_s = 1e-9;     // run-length comparisons in seconds
+constexpr double k_tiny_power = 1e-12;    // keeps log10 finite; equals k_level_floor_db.value()
+constexpr double k_run_epsilon_s = 1e-9;  // run-length comparisons in seconds
 
 bool positive(double v) {
     return std::isfinite(v) && v > 0.0;
@@ -43,17 +42,17 @@ Result<void> validate_params(const ActivityParams& p, const FrameGrid& grid, Hz 
 /// dBFS of the RMS of `power_sum` over `count` samples.
 double level_db(double power_sum, std::int64_t count) {
     if (count <= 0) {
-        return k_level_floor_db;
+        return k_level_floor_db.value();
     }
     const double ms = power_sum / static_cast<double>(count);
-    return std::max(k_level_floor_db, 10.0 * std::log10(ms + k_tiny_power));
+    return std::max(k_level_floor_db.value(), 10.0 * std::log10(ms + k_tiny_power));
 }
 
 /// Level of every grid frame: RMS of the high-passed signal in a window centred on the frame.
 Result<std::vector<Decibels>> frame_levels(const MonoAudio& mono, const FrameGrid& grid,
                                            const ActivityParams& params) {
     const auto n_frames = static_cast<std::size_t>(grid.n_frames);
-    std::vector<Decibels> out(n_frames, Decibels{k_level_floor_db});
+    std::vector<Decibels> out(n_frames, Decibels{k_level_floor_db.value()});
     if (mono.samples.empty() || n_frames == 0) {
         return out;
     }

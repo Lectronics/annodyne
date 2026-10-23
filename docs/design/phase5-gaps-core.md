@@ -98,6 +98,18 @@ struct NoiseFloorParams {
     double percentile_prob = 0.1; // of the frame levels inside the window that are not in a note
     int bands = 24;
     Hz band_low{80.0};
+    Hz band_high{12000.0};        // bands whose upper edge exceeds 0.45 x the sample rate are dropped
+    Seconds min_support{0.1};     // slice 4 build: a window needs this much outside-note time to give
+                                  // an estimate (a quantile of a few frames is noise, and the
+                                  // zero-phase high-pass rings ahead of a loud onset)
+    Seconds note_guard{0.015};    // slice 4 build: frames this close to a note are not outside it
+    Seconds spectrum_window{0.025};  // the band spectrum's analysis frame (Hann)
+    Decibels spectrum_margin{3.0};   // floor frames: outside the notes, level <= curve + this
+    int max_spectrum_frames = 1000;  // cost cap: floor frames evenly strided to this many
+};          // sliding window of the floor curve; clamped to the recording
+    double percentile_prob = 0.1; // of the frame levels inside the window that are not in a note
+    int bands = 24;
+    Hz band_low{80.0};
     Hz band_high{12000.0};        // clamped to 0.45 x the sample rate; bands above are dropped
 };
 /// The time-varying noise floor and the average floor spectrum of `source`.

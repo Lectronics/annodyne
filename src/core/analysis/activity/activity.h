@@ -15,6 +15,9 @@
 
 namespace anno {
 
+/// The lowest level the activity stage reports (an empty or all-zero window), dBFS.
+inline constexpr Decibels k_level_floor_db{-120.0};
+
 enum class FrameActivity : std::uint8_t { silent, active };
 
 struct ActivityParams {
