@@ -6,6 +6,10 @@
 - **Folders / CMake targets:** `src/core/synthesis/grain/` (new, layer 2), `src/core/synthesis/stretch/` (new, layer 2), `src/core/synthesis/psola/` (refactor onto `grain`, output unchanged), `src/core/synthesis/engine/` (`only_timing_edited`), `src/core/timemap/` (whole-sample anchors), `src/core/render/` (stretched spans).
 - **Relation to `note-stretching.md`:** that note is the full plan (segments, allocation, vibrato regeneration, splices). This note is its first slice. See "What this changes".
 
+## Revision 4 (owner, 2026-10-22): read this first
+
+ADR-0023 amendment 1 changes four things in the text below. (a) The result of `render_unedited` is the **base clip**: timing edits belong to it, not to the source. (b) Start and end are **silent anchors**; `keep_length` is the default for `render_region` once the layout path lands (the `shift` policy of rule 5 stays as an option, and is used until then). (c) Shifts are quantised to a **shift grid** (1/512 note, normalised to whole samples), not to a single sample. (d) The cache key hashes only the spans a block reads and `dirty_regions` returns the intervals whose spans changed, so rule 7 ("a stretch invalidates every block after it") no longer holds for the layout path. Spans are whole numbers on both axes (N source samples to M output samples).
+
 ## Purpose
 
 A `TimeMap` warp with slope != 1 is `not_implemented` today in `read_through_map`, the three engines and `render_region`, although `build_time_map` already produces such maps (length, attack time and handle edits). This slice renders them: audio played through the map, slope-1 stretches copied bit for bit, stretched stretches re-synthesised from grains of the source so pitch and timbre stay while the duration changes.

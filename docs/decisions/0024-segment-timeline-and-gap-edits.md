@@ -1,7 +1,7 @@
 # ADR-0024: Segment timeline types and the gap gain edit
 
 - **Date:** 2026-10-22
-- **Status:** proposed 2026-10-22 (owner chose the core subset of the gap work for Phase 5); structure review round 2 answered in revision 2
+- **Status:** accepted 2026-10-22 (owner: "fine")
 - **Phase:** 5
 - **Amends:** ADR-0008 (§1, §6: the timeline lives in `core/types`; gap ids; `AnalysisResult` gains `timeline` and `noise_floor`); ADR-0005 (record: new `EditParam` and a target-kind rule)
 
