@@ -177,7 +177,8 @@ const GapRegion* silence_for(const Context& c, const Gap& gap, double need_s, bo
     const GapRegion* nearest = nullptr;
     const GapRegion* longest = nullptr;
     for (const GapRegion& r : gap.regions) {
-        if (r.kind != GapRegionKind::silence) {
+        if (r.kind != GapRegionKind::silence ||
+            region_length(r) < (*c.params).min_cut_silence.value()) {
             continue;
         }
         const bool fits =
@@ -409,6 +410,48 @@ Attempt solve_attempt(const Context& c, const std::vector<LayoutMarker>& list, L
     return Attempt{.solved = true, .release = std::nullopt};
 }
 
+/// True if the gap on the pin's side holds a silence long enough to cut or lengthen (a "safe
+/// anchor": the pin stays); otherwise the pin is dropped before solving and the material beside
+/// the edit flexes.
+bool pin_has_safe_gap(const Context& c, const LayoutMarker& m) {
+    if (std::abs(seconds_of(m.source) - seconds_of((*c.timeline).source_end())) < k_match_s) {
+        return true;  // a note ending the recording is the fixed end
+    }
+    std::optional<std::size_t> gap;
+    if (m.kind == MarkerKind::note_start) {
+        gap = gap_ending_at(*c.timeline, seconds_of(m.source));
+    } else if (m.kind == MarkerKind::note_end) {
+        gap = gap_starting_at(*c.timeline, seconds_of(m.source));
+    }
+    if (!gap) {
+        return false;
+    }
+    return std::ranges::any_of((*c.timeline).gaps()[*gap].regions, [&](const GapRegion& r) {
+        return r.kind == GapRegionKind::silence &&
+               region_length(r) >= (*c.params).min_cut_silence.value();
+    });
+}
+
+/// The first pinned marker bounding an interval of the solved layout whose stretched audio lies
+/// outside the soft band: releasing it spreads the change over more notes.
+std::optional<std::size_t> band_violation(const Context& c, const std::vector<LayoutMarker>& list,
+                                          const Layout& layout) {
+    for (std::size_t k = 0; k < layout.intervals.size(); ++k) {
+        const double slope = layout.intervals[k].residual_slope;
+        if (slope >= (*c.params).flex_slope_min - k_slope_dust &&
+            slope <= (*c.params).flex_slope_max + k_slope_dust) {
+            continue;
+        }
+        if (list[k + 1].pinned) {
+            return k + 1;
+        }
+        if (list[k].pinned) {
+            return k;
+        }
+    }
+    return std::nullopt;
+}
+
 /// `list` without the markers of the pinned note at `index`.
 std::vector<LayoutMarker> without_note(const std::vector<LayoutMarker>& list, std::size_t index) {
     const std::size_t note = list[index].note;
@@ -435,16 +478,27 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
                     .step_samples = std::max<std::int64_t>(1, time_map.shift_step.value()),
                     .min_segment_s = time_map.min_segment.value()};
     std::vector<LayoutMarker> list = markers.markers;
+    if ((*c.params).mode == LayoutMode::absorb_then_stretch) {
+        std::erase_if(list,
+                      [&](const LayoutMarker& m) { return m.pinned && !pin_has_safe_gap(c, m); });
+    }
     Layout layout;
     layout.repaired = markers.repaired;
     for (;;) {
         Layout trial;
         trial.repaired = layout.repaired;
         const Attempt attempt = solve_attempt(c, list, trial);
-        if (attempt.solved || !attempt.release) {
-            return trial;
+        if (!attempt.solved && attempt.release) {
+            list = without_note(list, *attempt.release);
+            continue;
         }
-        list = without_note(list, *attempt.release);
+        if (attempt.solved) {
+            if (const auto violated = band_violation(c, list, trial)) {
+                list = without_note(list, *violated);
+                continue;
+            }
+        }
+        return trial;
     }
 }
 

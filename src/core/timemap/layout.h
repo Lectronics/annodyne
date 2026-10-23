@@ -31,7 +31,14 @@ struct LayoutParams {
     Seconds splice_fade{0.005};  // crossfade at a cut, fade at an insert
     Seconds note_margin{0.010};  // the renderer's crossfade_length: a cut keeps this + splice_fade
                                  // away from a note edge
-    ShiftGridParams grid = {};   // the shift step (tempo, 1/512 note); see shift_grid.h
+    Seconds min_cut_silence{
+        0.100};                    // a silence region shorter than this is never cut or lengthened
+                                   // (a splice in a few milliseconds of gap is audible); the
+                                   // change flexes the material beside it instead (ADR-0025 am. 3)
+    double flex_slope_min = 0.8;   // soft band of the audio between pins: an interval outside it
+    double flex_slope_max = 1.25;  // releases its nearest pin, so the change spreads over more
+                                   // notes, up to the recording's ends
+    ShiftGridParams grid = {};     // the shift step (tempo, 1/512 note); see shift_grid.h
 };
 
 enum class MarkerKind { origin, note_start, attack_end, handle, note_end, end };

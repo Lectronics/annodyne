@@ -462,22 +462,44 @@ TEST_CASE("the_cut_goes_in_the_silence_nearest_the_edited_note", "[solve_layout]
 
 TEST_CASE("when_the_pause_is_used_up_the_notes_beside_it_stretch_and_squish", "[solve_layout]") {
     // gA is 1 s; a lengthened by 1.9 s cannot be absorbed there: b is released from its pin and
-    // squished (Flex), and nothing falls back.
+    // squished (Flex); squishing b alone would leave the soft band, so c is released too and the
+    // change spreads to the recording's end. Nothing falls back.
     const auto f = fixture3();
     const Layout layout = solve(f, edits_of({scale_of("a", 2.9)}));
     CHECK(!layout.fell_back);
     check_conserved(layout, f.timeline);
     bool squished = false;
     for (const IntervalPlan& i : layout.intervals) {
-        if (s_of(i.from) >= 2.0 && s_of(i.to) <= 5.0 + k_eps && i.residual_slope < 1.0) {
+        if (s_of(i.from) >= 2.0 && i.residual_slope < 1.0) {
             squished = true;
+            CHECK(i.residual_slope >= k_min_layout_slope - k_eps);
         }
     }
     CHECK(squished);
-    // c, further on, is still pinned
-    for (const IntervalPlan& i : layout.intervals) {
-        if (s_of(i.from) >= 5.0 && s_of(i.to) <= 6.0 + k_eps) {
-            CHECK(near(delta_of(i), 0.0));
+}
+
+TEST_CASE("a_change_spreads_over_notes_until_the_slope_is_in_the_soft_band", "[solve_layout]") {
+    // gA is 1 s of silence: a lengthened by 0.5 s is cut there and nothing else moves.
+    const auto f = fixture3();
+    const Layout cut = solve(f, edits_of({scale_of("a", 1.5)}));
+    for (const IntervalPlan& i : cut.intervals) {
+        if (s_of(i.from) >= 2.0) {  // after the edited note
+            CHECK(near(i.residual_slope, 1.0));
+        }
+    }
+    // short gaps (50 ms) cannot take a cut: the change flexes the notes, spread until the slope is
+    // within 0.8..1.25 (a 0.3 s change over 5 s of audio is a slope of 0.94)
+    const auto tight = fixture_of({make_note("a", 0.5, 1.5), make_note("b", 1.55, 2.5),
+                                   make_note("c", 2.55, 3.5), make_note("d", 3.55, 4.5)},
+                                  5.0);
+    const Layout flex = solve(tight, edits_of({scale_of("a", 1.3)}));
+    CHECK(!flex.fell_back);
+    check_conserved(flex, tight.timeline);
+    for (const IntervalPlan& i : flex.intervals) {
+        CHECK(!i.gap);              // no splice in a 50 ms gap
+        if (s_of(i.from) >= 1.5) {  // after the edited note
+            CHECK(i.residual_slope >= 0.8 - 1e-6);
+            CHECK(i.residual_slope <= 1.25 + 1e-6);
         }
     }
 }
