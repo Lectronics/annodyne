@@ -415,7 +415,7 @@ std::vector<LayoutMarker> without_note(const std::vector<LayoutMarker>& list, st
     std::vector<LayoutMarker> out;
     out.reserve(list.size());
     for (const LayoutMarker& m : list) {
-        if (!(m.pinned && m.note == note)) {
+        if (!m.pinned || m.note != note) {
             out.push_back(m);
         }
     }
