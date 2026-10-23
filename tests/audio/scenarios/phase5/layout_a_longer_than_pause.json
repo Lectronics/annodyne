@@ -7,7 +7,7 @@
       "category": "time",
       "op": "set",
       "param": "length_scale",
-      "value": 2.0,
+      "value": 2.6,
       "target": {
         "note_id": "n000506"
       }

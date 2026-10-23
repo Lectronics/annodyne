@@ -3,6 +3,7 @@
 #include "core/synthesis/grain/period_curve.h"
 #include "core/synthesis/grain/signal.h"
 #include "core/synthesis/stretch/detail/geometry.h"
+#include "core/synthesis/stretch/detail/vibrato.h"
 
 #include <cstdint>
 #include <optional>
@@ -17,9 +18,13 @@ namespace anno::stretch_detail {
 /// adjoining slope-1 copy in phase; the spacing between is scaled to fit), each taking the
 /// analysis mark nearest its source time, Hann grains overlap-added and divided by the window sum.
 /// Samples no grain reaches are 0. Returns nullopt if the interval holds fewer than two analysis
-/// marks (the caller sends it through the noise path). Pure; thread-safe; not real-time safe.
+/// marks (the caller sends it through the noise path). `period` is the source's pitch (analysis
+/// marks, grain sizes); `output` the pitch the synthesis marks follow: the same curve re-timed, or
+/// the slow part plus a regenerated vibrato (ADR-0023 amendment 3). Pure; thread-safe; not
+/// real-time safe.
 [[nodiscard]] std::optional<std::vector<double>>
 synthesise_voiced_run(const grain::Signal& x, const grain::PeriodCurve& period,
-                      const SpanGeometry& geometry, std::int64_t begin, std::int64_t end);
+                      const OutputPitch& output, const SpanGeometry& geometry, std::int64_t begin,
+                      std::int64_t end);
 
 }  // namespace anno::stretch_detail

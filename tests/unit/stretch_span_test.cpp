@@ -314,3 +314,106 @@ TEST_CASE("a_noise_burst_before_a_vowel_does_not_enter_the_voiced_path", "[stret
     }
     CHECK(std::abs(dot / e) < 0.4);
 }
+
+namespace {
+
+/// 0.2 .. 1.4 s of a harmonic voice with a sinusoidal vibrato of `rate_hz` and `depth_cents`.
+Fixture vibrato_voice(double rate_hz, double depth_cents) {
+    return Fixture{voice(
+        [=](double t) {
+            return 220.0 * std::pow(2.0, depth_cents * std::sin(2.0 * M_PI * rate_hz * t) / 1200.0);
+        },
+        harmonic_amps(10, 0.5))};
+}
+
+/// Peak of the DFT of the analysed fast pitch component (cents) of the longest note of `out`,
+/// 3..9 Hz in 0.05 Hz steps: {rate_hz, depth_cents}; {0, 0} if there is no note.
+std::pair<double, double> vibrato_of(const OutputAudio& out) {
+    const std::vector<float> mono = samples_of(out);
+    const auto src = AudioSource::from_buffer(to_buffer(mono, k_rate));
+    const auto analysis = analyse(src, engine_analysis_params()).value();
+    if (analysis->notes.empty()) {
+        return {0.0, 0.0};
+    }
+    const Note& n = *std::max_element(
+        analysis->notes.begin(), analysis->notes.end(),
+        [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+    const double hop = n.grid.hop.value();
+    std::pair<double, double> best{0.0, 0.0};
+    for (int k = 60; k <= 180; ++k) {
+        const double f = k * 0.05;
+        double re = 0.0;
+        double im = 0.0;
+        for (std::size_t i = 0; i < n.pitch_mod.size(); ++i) {
+            const double v = n.pitch_mod[i].value();
+            re += v * std::cos(2.0 * M_PI * f * static_cast<double>(i) * hop);
+            im += v * std::sin(2.0 * M_PI * f * static_cast<double>(i) * hop);
+        }
+        const double amp = 2.0 * std::hypot(re, im) / static_cast<double>(n.pitch_mod.size());
+        if (amp > best.second) {
+            best = {f, amp};
+        }
+    }
+    return best;
+}
+
+OutputAudio stretch_whole_note(const Fixture& fx, double ratio, VibratoMode mode) {
+    StretchParams params;
+    params.vibrato = mode;
+    const TimeSpan span = stretched(0.2, 1.4, ratio);
+    return stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+}
+
+}  // namespace
+
+TEST_CASE("a_stretched_note_keeps_its_vibrato_rate_within_half_a_hertz", "[stretch][vibrato]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const auto source =
+        vibrato_of(OutputAudio{.audio = to_buffer(fx.mono, k_rate), .start = out_t(0.0)});
+    REQUIRE(std::abs(source.first - 5.5) < 0.3);
+    for (const double ratio : {0.6, 1.4, 2.0}) {
+        const auto kept = vibrato_of(stretch_whole_note(fx, ratio, VibratoMode::preserve));
+        INFO("ratio " << ratio << " rate " << kept.first << " depth " << kept.second);
+        CHECK(std::abs(kept.first - source.first) <= 0.5);
+        CHECK(kept.second > 0.7 * source.second);
+        CHECK(kept.second < 1.3 * source.second);
+    }
+    // the old behaviour moves the rate with the slope (the test discriminates)
+    const auto retimed = vibrato_of(stretch_whole_note(fx, 2.0, VibratoMode::retime));
+    CHECK(std::abs(retimed.first - source.first) > 1.0);
+}
+
+TEST_CASE("a_note_without_vibrato_renders_the_same_in_both_modes", "[stretch][vibrato]") {
+    const Fixture fx = steady_voice();
+    for (const double ratio : {0.7, 1.6}) {
+        const auto a = samples_of(stretch_whole_note(fx, ratio, VibratoMode::preserve));
+        const auto b = samples_of(stretch_whole_note(fx, ratio, VibratoMode::retime));
+        REQUIRE(a.size() == b.size());
+        CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    }
+}
+
+TEST_CASE("vibrato_preserving_stretch_is_deterministic_and_range_independent",
+          "[stretch][vibrato]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    StretchParams params;
+    const auto whole_run = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto again = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto a = samples_of(whole_run);
+    const auto b = samples_of(again);
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    // a sub-range equals the same samples of the whole render
+    const auto part = stretch_span(fx.src, *fx.analysis, span,
+                                   OutputRange::from_start(out_t(0.9), Seconds{0.3}), params)
+                          .value();
+    const auto p = samples_of(part);
+    const auto offset = static_cast<std::size_t>(std::llround((0.9 - 0.2) * k_rate));
+    CHECK(std::memcmp(p.data(), a.data() + offset, p.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("an_unsupported_vibrato_mode_is_an_invalid_argument", "[stretch][vibrato]") {
+    StretchParams p;
+    p.vibrato = static_cast<VibratoMode>(7);
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}

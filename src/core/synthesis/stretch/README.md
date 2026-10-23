@@ -9,4 +9,6 @@ Renders a TimeMap warp with slope != 1 from the source, pitch and timbre kept (A
 
 **Files.** `stretch.{h,cpp}` (params, `stretch_span`, mix), `detail/class_map` (voiced indicator, runs, pitch points), `detail/voiced_stretch`, `detail/noise_stretch`, `detail/geometry.h`.
 
-**Known limits.** Vibrato rate changes with the slope (the contour is re-timed, not regenerated); plosives and sibilants are stretched where the map says; transients inside a stretched span are smeared; a voiced run is rendered from its start each call (cost O(run)); mono only. Built with `-ffp-contract=off`.
+**Vibrato (ADR-0023 amendment 3).** With `VibratoMode::preserve` (default) the vibrato of a voiced run is regenerated at the source's rate and depth (`detail/vibrato`: windowed DFT for `f_v` in 3..9 Hz, demodulated amplitude and phase, phase closed on a whole cycle where the run joins neighbouring voiced audio); the synthesis marks follow `slow + vibrato`, the grains stay the source's. `retime` keeps the old behaviour.
+
+**Known limits.** A run under one output second that joins voiced audio at its end can change the vibrato rate by up to `0.5/L` Hz; the vibrato is modelled as a sinusoid; pitch and formant edits inside a stretched span still read the re-timed analysis; plosives and sibilants are stretched where the map says; transients inside a stretched span are smeared; a voiced run is rendered from its start each call (cost O(run)); mono only. Built with `-ffp-contract=off`.

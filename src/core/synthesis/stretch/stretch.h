@@ -16,7 +16,14 @@
 
 namespace anno {
 
+/// What happens to a vibrato in a stretched run (ADR-0023 amendment 3): `preserve` regenerates it
+/// at the source's rate and depth (phase-continuous, the rate within 0.5 / L Hz of the source's for
+/// an output run of L seconds that joins slope-1 audio, exactly the source's otherwise); `retime`
+/// re-times the contour with the audio, so the rate scales with 1 / slope (the Phase 5 behaviour).
+enum class VibratoMode : std::uint8_t { preserve, retime };
+
 struct StretchParams {
+    VibratoMode vibrato = VibratoMode::preserve;
     // Equal-power crossfade where voiced frames meet the others; >= 0, finite.
     Seconds class_edge_fade{0.004};
     // Unvoiced grain length (sine window, 50 % overlap); finite, > 0.

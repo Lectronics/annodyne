@@ -10,9 +10,10 @@ namespace anno {
 
 namespace {
 
-constexpr std::uint32_t k_key_format_version = 5;  // 5: local map spans, the splice fade; 4: edited
-                                                   // gaps; 3: the stretch settings;
-                                                   // 2: the whole TimeMap is part of the key
+constexpr std::uint32_t k_key_format_version =
+    6;  // 6: the stretch vibrato mode; 5: local map spans, the splice fade; 4: edited
+        // gaps; 3: the stretch settings;
+        // 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -202,6 +203,7 @@ void put(Writer& w, const StretchParams* p) {
     w.f64(p->min_slope.value());
     w.f64(p->max_slope.value());
     w.u64(p->voiced_classes.bits());
+    w.u64(static_cast<std::uint64_t>(p->vibrato));
 }
 
 }  // namespace

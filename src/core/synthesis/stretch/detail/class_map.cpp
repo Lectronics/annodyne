@@ -85,8 +85,41 @@ std::vector<Run> voiced_runs(const std::vector<std::uint8_t>& indicator, std::in
     return runs;
 }
 
+bool voiced_at(const AnalysisResult& analysis, double source_sample, double rate_hz,
+               const StretchParams& params) {
+    const Note* note = note_at(analysis, source_sample / rate_hz);
+    if (note == nullptr || note->grid.n_frames <= 0) {
+        return false;
+    }
+    const std::int64_t i = frame_index(*note, source_sample / rate_hz);
+    const bool voiced_class =
+        note->noise.frame_class.empty() ||
+        params.voiced_classes.contains(note->noise.frame_class[static_cast<std::size_t>(i)]);
+    return voiced_class && std::isfinite(cents_at(*note, i));
+}
+
+std::vector<grain::CentsPoint> vibrato_points(const AnalysisResult& analysis, double rate_hz,
+                                              double from, double to) {
+    std::vector<grain::CentsPoint> points;
+    for (const Note& n : analysis.notes) {
+        if (!n.is_active || n.grid.n_frames <= 0 || raw_seconds(n.source_end) * rate_hz < from ||
+            raw_seconds(n.source_start) * rate_hz > to) {
+            continue;
+        }
+        for (std::int64_t i = 0; i < n.grid.n_frames; ++i) {
+            const double position = raw_seconds(frame_time(n.grid, i)) * rate_hz;
+            if (position >= from && position <= to && std::isfinite(cents_at(n, i))) {
+                points.push_back({.position = position,
+                                  .cents = n.pitch_mod[static_cast<std::size_t>(i)].value()});
+            }
+        }
+    }
+    std::ranges::sort(points, std::ranges::less{}, &grain::CentsPoint::position);
+    return points;
+}
+
 std::vector<grain::CentsPoint> pitch_points(const AnalysisResult& analysis, double rate_hz,
-                                            double from, double to) {
+                                            double from, double to, PitchPart part) {
     std::vector<grain::CentsPoint> points;
     for (const Note& n : analysis.notes) {
         if (!n.is_active || n.grid.n_frames <= 0 || raw_seconds(n.source_end) * rate_hz < from ||
@@ -96,8 +129,9 @@ std::vector<grain::CentsPoint> pitch_points(const AnalysisResult& analysis, doub
         for (std::int64_t i = 0; i < n.grid.n_frames; ++i) {
             const double cents = cents_at(n, i);
             if (std::isfinite(cents)) {
-                points.push_back(
-                    {.position = raw_seconds(frame_time(n.grid, i)) * rate_hz, .cents = cents});
+                const double slow = cents - n.pitch_mod[static_cast<std::size_t>(i)].value();
+                points.push_back({.position = raw_seconds(frame_time(n.grid, i)) * rate_hz,
+                                  .cents = part == PitchPart::slow ? slow : cents});
             }
         }
     }

@@ -112,11 +112,37 @@ std::vector<double> smoothed(const std::vector<std::uint8_t>& indicator, std::in
     return out;
 }
 
+/// The vibrato clock of the true run (not the halo-padded interval), or nullopt: `retime`, or no
+/// vibrato to preserve. A join is where the run touches the span's edge and the source frame just
+/// outside is voiced too (slope-1 or another stretched span follows).
+std::optional<stretch_detail::VibratoClock> vibrato_clock_of(const AnalysisResult& analysis,
+                                                             const SpanGeometry& g,
+                                                             const stretch_detail::Run& run,
+                                                             const StretchParams& params) {
+    if (params.vibrato != VibratoMode::preserve) {
+        return std::nullopt;
+    }
+    const double from = g.source_at(static_cast<double>(run.begin));
+    const double to = g.source_at(static_cast<double>(run.end));
+    const bool join_begin =
+        run.begin == g.first &&
+        stretch_detail::voiced_at(analysis, g.source_at(static_cast<double>(g.first) - 1.0),
+                                  g.rate_hz, params);
+    const bool join_end =
+        run.end == g.last &&
+        stretch_detail::voiced_at(analysis, g.source_at(static_cast<double>(g.last)), g.rate_hz,
+                                  params);
+    return stretch_detail::VibratoClock::make(
+        stretch_detail::vibrato_points(analysis, g.rate_hz, from, to), g, run, join_begin,
+        join_end);
+}
+
 /// The voiced signal over the whole span (absolute index n at [n - first]); runs that cannot be
 /// synthesised are cleared from the indicator, which then goes through the noise path.
 std::vector<double> render_voiced(const grain::Signal& x, const AnalysisResult& analysis,
                                   const SpanGeometry& g, std::vector<std::uint8_t>& indicator,
-                                  std::pair<std::int64_t, std::int64_t> wanted, std::int64_t halo) {
+                                  std::pair<std::int64_t, std::int64_t> wanted, std::int64_t halo,
+                                  const StretchParams& params) {
     std::vector<double> voiced(indicator.size(), 0.0);
     for (const Run& run : stretch_detail::voiced_runs(indicator, g.first)) {
         const std::int64_t begin = std::max(g.first, run.begin - halo);
@@ -130,7 +156,18 @@ std::vector<double> render_voiced(const grain::Signal& x, const AnalysisResult& 
         std::optional<std::vector<double>> run_signal;
         if (!points.empty()) {
             const grain::PeriodCurve period{std::move(points), g.rate_hz};
-            run_signal = stretch_detail::synthesise_voiced_run(x, period, g, begin, end);
+            const auto clock = vibrato_clock_of(analysis, g, run, params);
+            std::optional<grain::PeriodCurve> slow;
+            if (clock) {
+                auto slow_points = stretch_detail::pitch_points(analysis, g.rate_hz, from, to,
+                                                                stretch_detail::PitchPart::slow);
+                slow.emplace(std::move(slow_points), g.rate_hz);
+            }
+            const stretch_detail::OutputPitch output{.curve = clock ? &*slow : &period,
+                                                     .geometry = &g,
+                                                     .clock = clock ? &*clock : nullptr,
+                                                     .rate_hz = g.rate_hz};
+            run_signal = stretch_detail::synthesise_voiced_run(x, period, output, g, begin, end);
         }
         if (!run_signal) {
             std::fill(indicator.begin() + (run.begin - g.first),
@@ -180,6 +217,9 @@ Result<void> check_stretch_params(const StretchParams& p) {
     if (!std::isfinite(p.class_edge_fade.value()) || p.class_edge_fade.value() < 0.0) {
         return bad("class_edge_fade must be finite and >= 0");
     }
+    if (p.vibrato != VibratoMode::preserve && p.vibrato != VibratoMode::retime) {
+        return bad("vibrato must be preserve or retime");
+    }
     if (!finite_positive(p.noise_grain.value())) {
         return bad("noise_grain must be finite and > 0");
     }
@@ -224,7 +264,7 @@ Result<OutputAudio> stretch_span(const AudioSource& src, const AnalysisResult& a
     const auto fade_samples =
         static_cast<std::int64_t>(std::llround(params.class_edge_fade.value() * g.rate_hz));
     const std::vector<double> voiced =
-        render_voiced(x, analysis, g, *indicator, *wanted, fade_samples / 2 + 1);
+        render_voiced(x, analysis, g, *indicator, *wanted, fade_samples / 2 + 1, params);
     const std::vector<double> weight = smoothed(*indicator, fade_samples);
     const bool all_voiced =
         std::ranges::all_of(std::ranges::subrange(weight.begin() + (wanted->first - g.first),

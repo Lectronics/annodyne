@@ -4,6 +4,7 @@ anno_add_library(core/synthesis/stretch
         stretch.cpp
         detail/class_map.cpp
         detail/noise_stretch.cpp
+        detail/vibrato.cpp
         detail/voiced_stretch.cpp
     PUBLIC_DEPS anno::core_synthesis_grain anno::core_types)
 # Bit-for-bit reproducible renders (render cache keys, ADR-0006): no fused multiply-add.
