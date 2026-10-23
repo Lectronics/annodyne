@@ -9,7 +9,17 @@ set_target_properties(anno_rubberband PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(APPLE)
     target_link_libraries(anno_rubberband PUBLIC "-framework Accelerate")
 endif()
+# GCC's libstdc++ implements some std::atomic operations in libatomic (the library asks whether a
+# 64-bit atomic is lock free); link it where it exists.
+if(NOT APPLE AND NOT MSVC)
+    find_library(ANNO_ATOMIC_LIBRARY atomic)
+    if(ANNO_ATOMIC_LIBRARY)
+        target_link_libraries(anno_rubberband PUBLIC "${ANNO_ATOMIC_LIBRARY}")
+    endif()
+endif()
 if(MSVC)
+    # <windows.h> must not define min and max: the library writes std::numeric_limits<T>::max().
+    target_compile_definitions(anno_rubberband PRIVATE NOMINMAX)
     target_compile_options(anno_rubberband PRIVATE /w)   # upstream code, not ours to warn about
 else()
     target_compile_options(anno_rubberband PRIVATE -w -ffp-contract=off)
