@@ -154,7 +154,8 @@ std::vector<double> curve_cents(const Note& note, const EffectiveNote& eff, doub
 /// delay discarded and a tail of zeros flushed, so the result is exactly as long as `in`.
 std::vector<std::vector<float>> shift_curve(const std::vector<std::vector<float>>& in,
                                             double rate_hz, const std::vector<double>& cents,
-                                            PitchFormants formants, std::int64_t lead_samples) {
+                                            PitchFormants formants, std::int64_t lead_samples,
+                                            double formant_scale) {
     namespace rb = RubberBand;
     const std::size_t channels = in.size();
     const std::size_t n = in.front().size();
@@ -168,6 +169,9 @@ std::vector<std::vector<float>> shift_curve(const std::vector<std::vector<float>
     rb::RubberBandLiveShifter shifter(static_cast<std::size_t>(std::llround(rate_hz)), channels,
                                       std::make_shared<SilentShifterLogger>(), options);
     shifter.setDebugLevel(0);
+    if (formant_scale != 0.0) {
+        shifter.setFormantScale(formant_scale);
+    }
     const std::size_t block = shifter.getBlockSize();
     shifter.setPitchScale(std::exp2(cents.front() / 1200.0));
     const std::size_t delay = shifter.getStartDelay();
@@ -199,6 +203,35 @@ std::vector<std::vector<float>> shift_curve(const std::vector<std::vector<float>
     return result;
 }
 
+/// What the engine can realise: errors in the order not_implemented (other edits, an inactive
+/// note, a shift above max_shift) and invalid_argument (non-finite values).
+Result<void> check_request(const RubberBandPitchParams& params, const Note& note,
+                           const EffectiveNote& eff) {
+    const auto no = [](const char* what) {
+        return fail(ErrorCode::not_implemented, std::string{"RubberBandPitchEngine: "} + what);
+    };
+    EffectiveNote pitch_only = eff;
+    pitch_only.mod_scale = Ratio{1.0};
+    pitch_only.drift_scale = Ratio{1.0};
+    pitch_only.formant_offset = Cents{};
+    if (!only_pitch_edited(pitch_only)) {
+        return no("only a pitch offset, the modulation and drift scales, the formant offset (and a "
+                  "timing shift through the time map) are realised");
+    }
+    if (!std::isfinite(eff.mod_scale.value()) || !std::isfinite(eff.drift_scale.value()) ||
+        !std::isfinite(eff.formant_offset.value()) || !std::isfinite(eff.center.value())) {
+        return fail(ErrorCode::invalid_argument,
+                    "RubberBandPitchEngine: a value of the effective state is not finite");
+    }
+    if (!note.is_active) {
+        return no("the note is inactive");
+    }
+    if (std::abs((eff.center - note.pitch_center).value()) > params.max_shift.value()) {
+        return no("the shift is larger than max_shift");
+    }
+    return {};
+}
+
 }  // namespace
 
 std::string RubberBandPitchEngine::settings_key() const {
@@ -216,26 +249,8 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
     if (auto ok = check_params(params_); !ok) {
         return Unexpected{ok.error()};
     }
-    const auto no = [](const char* what) {
-        return fail(ErrorCode::not_implemented, std::string{"RubberBandPitchEngine: "} + what);
-    };
-    EffectiveNote pitch_only = eff;
-    pitch_only.mod_scale = Ratio{1.0};
-    pitch_only.drift_scale = Ratio{1.0};
-    if (!only_pitch_edited(pitch_only)) {
-        return no(
-            "only a pitch offset, the modulation and drift scales (and a timing shift through the "
-            "time map) are realised");
-    }
-    if (!std::isfinite(eff.mod_scale.value()) || !std::isfinite(eff.drift_scale.value())) {
-        return fail(ErrorCode::invalid_argument, "RubberBandPitchEngine: a scale is not finite");
-    }
-    if (!note.is_active) {
-        return no("the note is inactive");
-    }
-    if (!std::isfinite(eff.center.value())) {
-        return fail(ErrorCode::invalid_argument,
-                    "RubberBandPitchEngine: the effective center is not finite");
+    if (auto ok = check_request(params_, note, eff); !ok) {
+        return Unexpected{ok.error()};
     }
     const Hz rate = src.sample_rate();
     const Samples first = to_sample_index(out_range.start(), rate, Rounding::nearest);
@@ -244,9 +259,6 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
         return fail(ErrorCode::invalid_argument, "RubberBandPitchEngine: a negative range");
     }
     const double shift_cents = (eff.center - note.pitch_center).value();
-    if (std::abs(shift_cents) > params_.max_shift.value()) {
-        return no("the shift is larger than max_shift");
-    }
     auto shift_samples = zone_shift(time_map, rate, out_range, "RubberBandPitchEngine");
     if (!shift_samples) {
         return Unexpected{shift_samples.error()};
@@ -266,7 +278,8 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
         return Unexpected{result.error()};
     }
     const auto offset = static_cast<std::ptrdiff_t>(first.value() - ext_first);
-    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0;
+    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 ||
+                        eff.formant_offset.value() != 0.0;
     const bool neutral = std::abs(shift_cents) <= k_neutral_snap_offset && !curved;
     std::vector<std::vector<float>> shifted;
     if (!neutral && last > first) {
@@ -281,7 +294,10 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
                               curve_cents(note, eff, shift_cents, ext_first, ext_last - ext_first,
                                           rate.value(), *shift_samples, params_.curve_gain.value()),
                               params_.formants,
-                              std::llround(params_.curve_lead.value() * rate.value()))
+                              std::llround(params_.curve_lead.value() * rate.value()),
+                              eff.formant_offset.value() != 0.0
+                                  ? std::exp2(eff.formant_offset.value() / 1200.0)
+                                  : 0.0)
                 : shift(in, rate.value(), std::exp2(shift_cents / 1200.0), params_.formants);
     }
     for (int c = 0; c < result->channel_count(); ++c) {

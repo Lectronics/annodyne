@@ -1,0 +1,19 @@
+{
+  "name": "formant_up300",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "formant",
+      "op": "set",
+      "param": "formant_offset",
+      "value": 300.0,
+      "target": {
+        "note_id": "n003102"
+      }
+    }
+  ],
+  "expect": {
+    "formant": "vocadito_2 note at 3.10 s, formant envelope +300 cents, pitch unchanged"
+  }
+}
