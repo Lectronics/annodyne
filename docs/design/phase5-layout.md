@@ -16,6 +16,14 @@ Where this block and the text below differ, this block wins (ADR-0025 revision 2
 - **Base clip** is the output of `build_layout_map` + `render_unedited`; pitch, level and formant edits are applied on top and never recompute it.
 - **Group moves** are one `note_move_edit` per note with the same delta (see `clips-layers-and-groups.md`).
 
+## Slice 8c as built (solve_layout)
+
+- `GapEdit.length` is `Seconds` (exact when `sample_rate` is 0, an integral sample count otherwise), not `Samples`; `at` is rounded to a sample when a rate is given. `IntervalPlan` carries `out_from`/`out_to` (absolute, after repair) so `build_layout_map` needs no second pass; `Layout::fell_back` says the unedited layout was used.
+- A gap that cannot take anything (no `silence` region, or a cut with no room) is not an edit: the whole interval, gap included, is stretched by one slope. With an edit the gap's remnants keep slope 1 and only the rest is stretched.
+- `stretch` mode runs the same marker repair but no gap and no slope limit.
+- The shift grid (8d) replaces `sample_rate` as the whole-sample source.
+- Rule order follows ADR-0025 literally: for an interval that starts at the origin the leading gap absorbs (rule b) even when the right marker is a later note, so an unedited note between moves with it. The worked table's third row ("else gB") reads the other way; this is an open question for the owner.
+
 ## The model (the owner's)
 
 Every timing edit places **markers**: pinned positions, each a source time with the output time it must play at. They are the anchors `build_time_map` builds today (a note's start, attack end, handles, end), in source order. The audio between two consecutive markers is one **interval**. The rules:

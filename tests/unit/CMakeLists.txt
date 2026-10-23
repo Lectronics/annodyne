@@ -13,6 +13,7 @@ anno_add_test(NAME dirty_regions_test SOURCES dirty_regions_test.cpp LABELS unit
 anno_add_test(NAME remap_test SOURCES remap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME build_time_map_test SOURCES build_time_map_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME layout_markers_test SOURCES layout_markers_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME solve_layout_test SOURCES solve_layout_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME crossfade_test SOURCES crossfade_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME blend_plan_test SOURCES blend_plan_test.cpp LABELS unit DEPS anno::core_render)
 anno_add_test(NAME render_cache_test SOURCES render_cache_test.cpp LABELS unit DEPS anno::cli_checks anno::core_render)
