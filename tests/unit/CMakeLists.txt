@@ -8,6 +8,7 @@ anno_add_test(NAME edit_types_test SOURCES edit_types_test.cpp LABELS unit DEPS 
 anno_add_test(NAME time_map_test SOURCES time_map_test.cpp LABELS unit DEPS anno::core_types)
 anno_add_test(NAME edit_list_test SOURCES edit_list_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME effective_state_test SOURCES effective_state_test.cpp LABELS unit DEPS anno::core_edits)
+anno_add_test(NAME effective_gap_test SOURCES effective_gap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME dirty_regions_test SOURCES dirty_regions_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME remap_test SOURCES remap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME build_time_map_test SOURCES build_time_map_test.cpp LABELS unit DEPS anno::core_timemap)
