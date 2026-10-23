@@ -36,8 +36,8 @@ void anchor_edges(const grain::Signal& x, const SpanGeometry& g, std::int64_t be
     const auto end_source =
         static_cast<std::int64_t>(std::llround(g.source_at(static_cast<double>(g.last))));
     for (std::int64_t n = begin; n < end; ++n) {
-        const double from_start = static_cast<double>(n - g.first);
-        const double from_end = static_cast<double>(g.last - 1 - n);
+        const auto from_start = static_cast<double>(n - g.first);
+        const auto from_end = static_cast<double>(g.last - 1 - n);
         const bool at_start = from_start < zone_samples;
         const bool at_end = from_end < zone_samples;
         if (!at_start && !at_end) {

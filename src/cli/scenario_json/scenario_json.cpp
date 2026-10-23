@@ -434,7 +434,7 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         return Unexpected{vibrato.error()};
     }
     if (!vibrato->empty() && *vibrato != "retime" && *vibrato != "preserve") {
-        return bad("$.stretch_vibrato", "must be \"preserve\" or \"retime\"");
+        return bad("$.stretch_vibrato", R"(must be "preserve" or "retime")");
     }
     scenario.stretch_vibrato_retime = *vibrato == "retime";
     auto analysis = string_field(root, "analysis", "$", false);
