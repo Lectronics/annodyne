@@ -13,6 +13,9 @@ Written while the owner was away; nothing here is a phase close-out. Branch `pha
 | Sibilant | per-class noise gains (sibilant, breath, plosive) in the renderer gain curve; `tools/sibilant` | ADR-0028 amendment 1 |
 | CLI | scenario key `macros` (correct_pitch, leveling) for end-to-end demos | `audition/phase6-macros` |
 
+## Tests
+debug-asan: 1023/1023 on the build before the sibilant slice and the CI fixes (the later slices and fixes were run as unit tests: `level_test`, `expression_tools_test`, `stretch_span_test`, `scenario_test`; clang-tidy and `check_includes` clean). PR #4 CI: see the PR.
+
 ## Measured, not listened
 - Rubber Band against PSOLA for pitch edits (`audition/phase6-pitch-engine`): no clear objective gain on the single real-voice notes of Phase 4; on a whole-song Correct Pitch (`audition/phase6-macros`, 49 notes edited) PSOLA leaves 5-6 click detections and Rubber Band 0, and Rubber Band's pitch round trip is within 0.5 cents on most notes.
 - Level: +6 dB lands at 6.00 dB; a fade, mute and flatten change only the note and its 10 ms margins (`audition/phase6-level`).
