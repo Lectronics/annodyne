@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "note 1 body stretched 2.6x with its vibrato rate kept (about 5.5 Hz against 5.7 Hz): the pause is cut by what it can give, the pin of vowel 2 is released (Flex) and vowel 2 and the audio after it are squished, vowel 2 starting about 0.7 s late"
+    "layout": "note 1 body stretched 2.6x with its vibrato rate kept (about 5.5 Hz against 5.7 Hz): the pause is cut by what it can give, the pin of vowel 2 is released (Flex) and vowel 2 and the audio after it are squished, vowel 2 starting about 0.8 s late"
   }
 }
