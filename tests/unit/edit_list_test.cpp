@@ -276,14 +276,21 @@ TEST_CASE("from_parts_rejects_a_group_with_non_consecutive_seqs", "[edit_list]")
 }
 
 TEST_CASE("gap_targets_pass_through_retargeting_unchanged", "[edit_list]") {
-    EditSpec spec =
-        make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::add, Cents{1.0});
-    const SegmentId gap{.kind = SegmentKind::gap, .value = "a"};  // same text as the note
-    spec.target.segment_ids.push_back(gap);
-    const EditList list = added(empty_list(), {spec});
+    // ADR-0024: a gap edit targets gaps only and a note edit notes only, so the two live in
+    // separate edits. The gap id has the same text as the note id on purpose.
+    const SegmentId gap{.kind = SegmentKind::gap, .value = "a"};
+    EditSpec gap_edit =
+        make_spec("a", EditCategory::gap, EditParam::gap_gain, EditOp::set, Decibels{-6.0});
+    gap_edit.target.segment_ids = {gap};
+    const EditList list = added(empty_list(), {pitch_add("a", 1.0), gap_edit});
     NoteIdMap map;  // the note "a" has no continuation: orphaned; the gap "a" is untouched
     map[NoteId{"a"}] = {};
-    const auto out = list.retargeted(map).active()[0].spec.target;
-    CHECK(out.segment_ids == std::vector<SegmentId>{gap});
-    CHECK(out.orphaned_segment_ids == std::vector<SegmentId>{segment_id(NoteId{"a"})});
+    const EditList retargeted = list.retargeted(map);
+    const auto edits = retargeted.active();
+    REQUIRE(edits.size() == 2);
+    CHECK(edits[0].spec.target.segment_ids.empty());
+    CHECK(edits[0].spec.target.orphaned_segment_ids ==
+          std::vector<SegmentId>{segment_id(NoteId{"a"})});
+    CHECK(edits[1].spec.target.segment_ids == std::vector<SegmentId>{gap});
+    CHECK(edits[1].spec.target.orphaned_segment_ids.empty());
 }

@@ -133,8 +133,8 @@ TEST_CASE("set_overrides_every_earlier_edit_of_its_parameter", "[edit_contract]"
     for (int seed = 0; seed < 40; ++seed) {
         for (int pi = 0; pi < k_edit_param_count; ++pi) {
             const auto p = static_cast<EditParam>(pi);
-            if (p == EditParam::time_handle) {
-                continue;  // keyed collection, tested in unit tests
+            if (p == EditParam::time_handle || p == EditParam::gap_gain) {
+                continue;  // keyed collection, tested in unit tests; gap edits target gaps (3c)
             }
             INFO("seed " << seed << " param " << pi);
             Rng rng{static_cast<std::uint64_t>(seed * 100 + pi)};
