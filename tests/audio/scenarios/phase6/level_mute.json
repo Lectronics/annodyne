@@ -1,0 +1,19 @@
+{
+  "name": "level_mute",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "amplitude",
+      "op": "set",
+      "param": "gain",
+      "value": -120.0,
+      "target": {
+        "note_id": "n003102"
+      }
+    }
+  ],
+  "expect": {
+    "level": "the note at 3.10 s muted; the gaps and the other notes are bit-identical"
+  }
+}
