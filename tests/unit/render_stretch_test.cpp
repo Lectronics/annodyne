@@ -139,10 +139,15 @@ TEST_CASE("an_edited_note_whose_margin_meets_a_stretched_neighbour_is_not_implem
 TEST_CASE("a_stereo_source_with_a_stretch_is_not_implemented", "[render_stretch]") {
     const Fixture f = make_fixture({make_note("a", 0.5, 1.0)}, 3.0, 2, k_rate)
                           .with_edits(edits_of({length_edit("a", 1.5)}));
+    RenderParams psola;
+    psola.stretch.engine = StretchEngine::psola;  // mono only; the default (Rubber Band) renders it
     const auto r = render_region(f.inputs(), OutputRange::from_start(OutputTime{}, Seconds{1.0}),
-                                 PassthroughEngine{}, {});
+                                 PassthroughEngine{}, psola);
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().code == ErrorCode::not_implemented);
+    CHECK(render_region(f.inputs(), OutputRange::from_start(OutputTime{}, Seconds{1.0}),
+                        PassthroughEngine{}, {})
+              .has_value());
 }
 
 TEST_CASE("the_cache_key_follows_the_stretch_settings_and_a_second_render_hits",
@@ -164,9 +169,9 @@ TEST_CASE("the_cache_key_follows_the_stretch_settings_and_a_second_render_hits",
     const auto retimed = render_region(f.inputs(), range, PassthroughEngine{}, params).value();
     CHECK(retimed->cache_id != a->cache_id);
     params.stretch.vibrato = VibratoMode::preserve;
-    params.stretch.engine = StretchEngine::rubberband;
-    const auto rubber = render_region(f.inputs(), range, PassthroughEngine{}, params).value();
-    CHECK(rubber->cache_id != a->cache_id);
+    params.stretch.engine = StretchEngine::psola;
+    const auto psola = render_region(f.inputs(), range, PassthroughEngine{}, params).value();
+    CHECK(psola->cache_id != a->cache_id);
 }
 
 TEST_CASE("a_region_before_the_stretch_is_not_marked_stretched", "[render_stretch]") {

@@ -630,3 +630,16 @@ TEST_CASE("the_rubber_band_edge_blend_does_not_dip_or_bump_the_level", "[stretch
         CHECK(std::abs(db(tail / body)) < 1.0);
     }
 }
+
+TEST_CASE("rubber_band_really_stretches_the_audio_in_time", "[stretch][rubberband]") {
+    // A vibrato that is 5.5 Hz in the source is 5.5 / ratio Hz in a re-timed render: unstretched
+    // audio (cut or padded to the right length) would keep 5.5 Hz.
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto out = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto measured = vibrato_of(out);
+    INFO("rate " << measured.first);
+    CHECK(std::abs(measured.first - 5.5 / 1.5) < 0.6);
+}

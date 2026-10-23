@@ -175,9 +175,11 @@ TEST_CASE("a_supplied_map_wins_over_timing_edits", "[render_spans]") {
     REQUIRE(
         r.has_value());  // without the map the stereo source cannot be stretched (not_implemented)
     CHECK(bit_identical(audio_of(*r), expected_output(f)));
-    CHECK(render_region(f.inputs(), whole(f.source), PassthroughEngine{}, hard_joins())
-              .error()
-              .code == ErrorCode::not_implemented);
+    // without the map the stereo source cannot be stretched by the PSOLA engine (mono only)
+    RenderParams psola = hard_joins();
+    psola.stretch.engine = StretchEngine::psola;
+    CHECK(render_region(f.inputs(), whole(f.source), PassthroughEngine{}, psola).error().code ==
+          ErrorCode::not_implemented);
 }
 
 TEST_CASE("the_cache_key_includes_the_map", "[render_spans]") {

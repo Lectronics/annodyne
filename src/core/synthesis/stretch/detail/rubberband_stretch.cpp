@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -14,6 +15,15 @@ namespace {
 using Planar = std::vector<std::vector<float>>;  // [channel][frame]
 
 constexpr std::size_t k_block = 2048;  // frames per study/process call
+
+/// Rubber Band writes its warnings to stderr unless it is given a logger; a render is not the place
+/// for console output (the offline stretch with a key frame map reports a NaN ratio it recovers
+/// from, and the output is the stretched audio all the same: see the really_stretches test).
+struct SilentLogger final : RubberBand::RubberBandStretcher::Logger {
+    void log(const char* /*message*/) override {}
+    void log(const char* /*message*/, double /*a*/) override {}
+    void log(const char* /*message*/, double /*a*/, double /*b*/) override {}
+};
 
 /// Source samples [from, to) of every channel, zero where the recording does not reach.
 Result<Planar> read_channels(const AudioSource& src, std::int64_t from, std::int64_t to) {
@@ -66,7 +76,7 @@ Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz, std::
         rb::RubberBandStretcher::OptionChannelsTogether;
     // NOLINTEND(bugprone-signed-bitwise)
     rb::RubberBandStretcher stretcher(static_cast<std::size_t>(std::llround(rate_hz)), channels,
-                                      options,
+                                      std::make_shared<SilentLogger>(), options,
                                       static_cast<double>(n_out) / static_cast<double>(n_in), 1.0);
     stretcher.setDebugLevel(0);
     // Slope 1 for the context and for `ramp` samples inside each end of the span: there the output
