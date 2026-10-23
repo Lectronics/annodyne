@@ -15,6 +15,7 @@ anno_add_test(NAME build_time_map_test SOURCES build_time_map_test.cpp LABELS un
 anno_add_test(NAME layout_markers_test SOURCES layout_markers_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME shift_grid_test SOURCES shift_grid_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME build_layout_map_test SOURCES build_layout_map_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME map_diff_test SOURCES map_diff_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME solve_layout_test SOURCES solve_layout_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME crossfade_test SOURCES crossfade_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME blend_plan_test SOURCES blend_plan_test.cpp LABELS unit DEPS anno::core_render)
