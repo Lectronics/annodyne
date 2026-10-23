@@ -407,7 +407,7 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         return bad("$", "must be an object");
     }
     static const std::set<std::string> keys{"name",  "source", "algorithm", "analysis",
-                                            "notes", "edits",  "expect"};
+                                            "notes", "edits",  "expect",    "stretch_vibrato"};
     for (const auto& [key, value] : root.items()) {
         if (!keys.contains(key)) {
             return bad("$." + key, "unknown key");
@@ -429,6 +429,14 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     scenario.name = *name;
     scenario.source = resolve_source(*source, base_dir, repo_root);
     scenario.algorithm = algorithm->empty() ? "melodic" : *algorithm;
+    auto vibrato = string_field(root, "stretch_vibrato", "$", false);
+    if (!vibrato) {
+        return Unexpected{vibrato.error()};
+    }
+    if (!vibrato->empty() && *vibrato != "retime" && *vibrato != "preserve") {
+        return bad("$.stretch_vibrato", "must be \"preserve\" or \"retime\"");
+    }
+    scenario.stretch_vibrato_retime = *vibrato == "retime";
     auto analysis = string_field(root, "analysis", "$", false);
     if (!analysis) {
         return Unexpected{analysis.error()};

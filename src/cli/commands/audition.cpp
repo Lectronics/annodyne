@@ -255,12 +255,12 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
                                     .edits = std::make_shared<const EditList>(scenario_track()),
                                     .time_map = nullptr};
 
-    auto edited = render_region(edited_inputs, whole, chosen, RenderParams{});
+    auto edited = render_region(edited_inputs, whole, chosen, render_params_of(*run));
     if (!edited) {
         return Unexpected{edited.error()};
     }
-    auto again = render_region(edited_inputs, whole, chosen, RenderParams{});
-    auto empty = render_region(empty_inputs, whole, chosen, RenderParams{});
+    auto again = render_region(edited_inputs, whole, chosen, render_params_of(*run));
+    auto empty = render_region(empty_inputs, whole, chosen, render_params_of(*run));
     if (!again) {
         return Unexpected{again.error()};
     }

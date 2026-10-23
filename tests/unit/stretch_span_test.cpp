@@ -417,3 +417,26 @@ TEST_CASE("an_unsupported_vibrato_mode_is_an_invalid_argument", "[stretch][vibra
     p.vibrato = static_cast<VibratoMode>(7);
     CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("the_noise_path_joins_the_source_exactly_at_both_span_edges", "[stretch]") {
+    // Tonal material sent through the noise path (no voiced classes): a stretched span must start
+    // and end on the source's own samples, or it steps against its slope-1 neighbours.
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.voiced_classes = FrameClassSet{};
+    const TimeSpan span = stretched(0.5, 0.9, 1.5);
+    const auto out =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto first_out = static_cast<std::int64_t>(std::llround(0.5 * k_rate));
+    const auto last_out = static_cast<std::int64_t>(std::llround(1.1 * k_rate));
+    REQUIRE(static_cast<std::int64_t>(out.size()) == last_out - first_out);
+    const auto src_first = static_cast<std::size_t>(std::llround(0.5 * k_rate));
+    const double src_end = 0.5 * k_rate + (static_cast<double>(last_out) - 0.5 * k_rate) / 1.5;
+    const auto src_last = static_cast<std::size_t>(std::llround(src_end));
+    CHECK(out.front() == fx.mono[src_first]);  // the edge samples are the source's own
+    CHECK(out.back() == fx.mono[src_last - 1]);
+    for (std::size_t i = 1; i < 8; ++i) {  // and the blend leaves no step next to them
+        CHECK(std::abs(out[i] - fx.mono[src_first + i]) < 0.02f);
+        CHECK(std::abs(out[out.size() - 1 - i] - fx.mono[src_last - 1 - i]) < 0.02f);
+    }
+}

@@ -174,8 +174,17 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
                           .edits = std::make_shared<EditList>(std::move(edits)),
                           .name = scenario->name,
                           .algorithm = scenario->algorithm,
+                          .stretch_vibrato_retime = scenario->stretch_vibrato_retime,
                           .edits_json = scenario->edits_json,
                           .expect_json = scenario->expect_json};
+}
+
+RenderParams render_params_of(const LoadedScenario& scenario) {
+    RenderParams params;
+    if (scenario.stretch_vibrato_retime) {
+        params.stretch.vibrato = VibratoMode::retime;
+    }
+    return params;
 }
 
 Result<void> run_render(const std::filesystem::path& scenario_path,
@@ -193,7 +202,7 @@ Result<void> run_render(const std::filesystem::path& scenario_path,
                                                .analysis = run->analysis,
                                                .edits = run->edits,
                                                .time_map = nullptr},
-                                  whole, chosen, RenderParams{});
+                                  whole, chosen, render_params_of(*run));
     if (!rendered) {
         return Unexpected{rendered.error()};
     }

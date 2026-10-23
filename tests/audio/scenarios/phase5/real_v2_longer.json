@@ -1,0 +1,19 @@
+{
+  "name": "real_v2_longer",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "length_scale",
+      "value": 1.4,
+      "target": {
+        "note_id": "n003102"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "vocadito_2, note at 3.10 s stretched 1.4x: the pause after it is cut where it can, otherwise the next note is squished; the vibrato rate is kept"
+  }
+}
