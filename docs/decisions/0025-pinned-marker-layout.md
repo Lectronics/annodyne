@@ -1,7 +1,7 @@
 # ADR-0025: Pinned markers and the absorb-first layout
 
 - **Date:** 2026-10-22
-- **Status:** proposed 2026-10-22, revision 2 (owner's model and answers of the same day; updated after the owner's review of ADR-0023 and the clips conversation)
+- **Status:** accepted 2026-10-22, revision 2 (owner: "ADR25 is good"; whole numbers = whole samples on both axes and a single global tempo step confirmed)
 - **Phase:** 5
 - **Amends:** ADR-0008 §4 (fallback order) and §5 (ripple wording); ADR-0005 §16 (the default mode); ADR-0023 §3 (the layout path ignores `TailPolicy` and keeps the length; `shift` stays for callers without a timeline)
 

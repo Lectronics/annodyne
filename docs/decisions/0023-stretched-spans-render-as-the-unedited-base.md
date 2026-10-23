@@ -1,7 +1,7 @@
 # ADR-0023: Stretched TimeMap spans render as part of the unedited base
 
 - **Date:** 2026-10-22
-- **Status:** accepted 2026-10-22 with the owner's amendments below (decisions 2, 3, 3a, 5 and 7 are amended; the owner's readings of the grid and of "whole numbers" are marked for confirmation)
+- **Status:** accepted 2026-10-22 with the owner's amendments below (decisions 2, 3, 3a, 5 and 7 are amended; the readings of the grid, of "whole numbers" and of one global tempo step were confirmed by the owner 2026-10-22)
 - **Phase:** 5
 - **Amends:** ADR-0008 §7 (a warp with slope != 1 renders from Phase 5, not Phase 6), ADR-0006 (`RenderResult` gains `repaired_notes`; the pristine base is `render_unedited`)
 
