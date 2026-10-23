@@ -83,4 +83,8 @@ struct GroupId {
 /// deterministic.
 using NoteIdMap = std::map<NoteId, std::vector<NoteId>>;
 
+/// Re-analysis lineage of gaps (ADR-0024): old gap id -> the one new gap that continues it. A gap
+/// absent from the map has no continuation (its edits become orphans). Built by gap_id_map.
+using GapIdMap = std::map<SegmentId, SegmentId>;
+
 }  // namespace anno

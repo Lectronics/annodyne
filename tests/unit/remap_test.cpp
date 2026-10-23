@@ -1,5 +1,6 @@
 #include "core/edits/remap.h"
 #include "support/test_data.h"
+#include "support/timeline_data.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -167,4 +168,128 @@ TEST_CASE("remapped_effective_state_follows_the_new_note", "[remap]") {
     const auto new_a = analysis_of({make_note("n", 1.02, 2.02)});
     const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
     CHECK(result.edits.active()[0].spec.target.segment_ids == segments_of(ids({"n"})));
+}
+
+namespace {
+
+SegmentId gap_for(const char* before, const char* after) {
+    return gap_segment_id(before != nullptr ? std::optional<NoteId>{NoteId{before}} : std::nullopt,
+                          after != nullptr ? std::optional<NoteId>{NoteId{after}} : std::nullopt);
+}
+
+/// An analysis with its timeline: gaps between the notes and at both ends of a 10 s recording.
+AnalysisResult analysis_with_timeline(std::vector<Note> notes, const char* source = "src1") {
+    AnalysisResult a = analysis_of(std::move(notes), source);
+    a.timeline = timeline_of(a.notes, 10.0);
+    return a;
+}
+
+EditSpec gap_gain_on(const SegmentId& gap, double db) {
+    EditSpec spec =
+        make_spec("unused", EditCategory::gap, EditParam::gap_gain, EditOp::set, Decibels{db});
+    spec.target.segment_ids = {gap};
+    return spec;
+}
+
+}  // namespace
+
+TEST_CASE("gap_edits_survive_when_only_the_note_ids_change", "[remap]") {
+    const auto old_a = analysis_with_timeline({make_note("a", 1, 2), make_note("b", 3, 4)});
+    const auto new_a =
+        analysis_with_timeline({make_note("n1", 1.0, 2.0), make_note("n2", 3.0, 4.0)});
+    const GapIdMap map = gap_id_map(*old_a.timeline, *new_a.timeline,
+                                    match_notes(old_a.notes, new_a.notes, MatchParams{}).id_map());
+    CHECK(map.at(gap_for(nullptr, "a")) == gap_for(nullptr, "n1"));
+    CHECK(map.at(gap_for("a", "b")) == gap_for("n1", "n2"));
+    CHECK(map.at(gap_for("b", nullptr)) == gap_for("n2", nullptr));
+
+    EditList edits{TrackId{"t1"}};
+    edits = edits.add(std::vector{gap_gain_on(gap_for("a", "b"), -12.0)}, k_t0).value();
+    const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
+    CHECK(result.edits.active()[0].spec.target.segment_ids ==
+          std::vector<SegmentId>{gap_for("n1", "n2")});
+    REQUIRE(result.gap_report.size() == 1);
+    CHECK(result.gap_report[0].old_gap == gap_for("a", "b"));
+    CHECK(result.gap_report[0].new_gap == gap_for("n1", "n2"));
+}
+
+TEST_CASE("a_split_note_gives_its_last_child_to_the_gap_after_and_its_first_to_the_gap_before",
+          "[remap]") {
+    const auto old_a = analysis_with_timeline({make_note("a", 1, 3), make_note("b", 4, 5)});
+    const auto new_a = analysis_with_timeline(
+        {make_note("a1", 1, 2), make_note("a2", 2, 3), make_note("b", 4, 5)});
+    const GapIdMap map = gap_id_map(*old_a.timeline, *new_a.timeline,
+                                    match_notes(old_a.notes, new_a.notes, MatchParams{}).id_map());
+    CHECK(map.at(gap_for(nullptr, "a")) == gap_for(nullptr, "a1"));
+    CHECK(map.at(gap_for("a", "b")) == gap_for("a2", "b"));
+}
+
+TEST_CASE("a_gap_between_notes_that_were_merged_is_orphaned", "[remap]") {
+    // a is the shorter parent: merged_away (no image); b is longer and keeps the merged note m.
+    const auto old_a = analysis_with_timeline({make_note("a", 1, 1.5), make_note("b", 2.2, 3)});
+    const auto new_a = analysis_with_timeline({make_note("m", 1, 3)});
+    const GapIdMap map = gap_id_map(*old_a.timeline, *new_a.timeline,
+                                    match_notes(old_a.notes, new_a.notes, MatchParams{}).id_map());
+    CHECK_FALSE(map.contains(gap_for("a", "b")));      // no gap inside the merged note
+    CHECK_FALSE(map.contains(gap_for(nullptr, "a")));  // a has no continuation
+    CHECK(map.at(gap_for("b", nullptr)) == gap_for("m", nullptr));
+
+    EditList edits{TrackId{"t1"}};
+    edits = edits.add(std::vector{gap_gain_on(gap_for("a", "b"), -12.0)}, k_t0).value();
+    const auto result = remap_after_reanalysis(edits, old_a, new_a, MatchParams{}).value();
+    CHECK(result.edits.active()[0].spec.target.segment_ids.empty());
+    CHECK(result.edits.active()[0].spec.target.orphaned_segment_ids ==
+          std::vector<SegmentId>{gap_for("a", "b")});
+    REQUIRE(result.gap_report.size() == 1);
+    CHECK_FALSE(result.gap_report[0].new_gap.has_value());
+}
+
+TEST_CASE("a_gap_whose_neighbour_vanished_or_whose_notes_are_no_longer_adjacent_is_orphaned",
+          "[remap]") {
+    const auto old_a = analysis_with_timeline({make_note("a", 1, 2), make_note("b", 3, 4)});
+    // b is gone; a new note c appears elsewhere
+    const auto gone = analysis_with_timeline({make_note("a", 1, 2), make_note("c", 8, 9)});
+    const GapIdMap map1 = gap_id_map(*old_a.timeline, *gone.timeline,
+                                     match_notes(old_a.notes, gone.notes, MatchParams{}).id_map());
+    CHECK_FALSE(map1.contains(gap_for("a", "b")));
+    CHECK_FALSE(map1.contains(gap_for("b", nullptr)));
+    // a new note d lies between a and b: the old gap's images are no longer neighbours
+    const auto between = analysis_with_timeline(
+        {make_note("a", 1, 2), make_note("d", 2.4, 2.6), make_note("b", 3, 4)});
+    const GapIdMap map2 =
+        gap_id_map(*old_a.timeline, *between.timeline,
+                   match_notes(old_a.notes, between.notes, MatchParams{}).id_map());
+    CHECK_FALSE(map2.contains(gap_for("a", "b")));
+    CHECK(map2.contains(gap_for(nullptr, "a")));
+}
+
+TEST_CASE("ids_that_would_collide_without_the_length_prefix_stay_apart", "[remap]") {
+    // Without the length prefix gap(a, 1b) and gap(a1, b) would both read "a1b".
+    const auto old_a = analysis_with_timeline({make_note("a", 1, 2), make_note("1b", 3, 4)});
+    const auto new_a = analysis_with_timeline({make_note("a", 1, 2), make_note("1b", 3, 4)});
+    const GapIdMap map = gap_id_map(*old_a.timeline, *new_a.timeline,
+                                    match_notes(old_a.notes, new_a.notes, MatchParams{}).id_map());
+    CHECK(map.at(gap_for("a", "1b")) == gap_for("a", "1b"));
+    CHECK(gap_for("a", "1b") != gap_for("a1", "b"));
+    CHECK(gap_for("a", "1b").value != gap_for("a1", "b").value);
+}
+
+TEST_CASE("an_absent_timeline_orphans_every_gap_edit_but_note_edits_follow", "[remap]") {
+    EditList edits{TrackId{"t1"}};
+    edits = edits.add(std::vector{gap_gain_on(gap_for("a", "b"), -12.0), pitch_add("a", 10)}, k_t0)
+                .value();
+    const auto with = analysis_with_timeline({make_note("a", 1, 2), make_note("b", 3, 4)});
+    const auto without = analysis_of({make_note("a", 1, 2), make_note("b", 3, 4)});
+    for (const auto& pair :
+         {std::pair{&with, &without}, std::pair{&without, &with}, std::pair{&without, &without}}) {
+        const auto result =
+            remap_after_reanalysis(edits, *pair.first, *pair.second, MatchParams{}).value();
+        CHECK(result.edits.active()[0].spec.target.segment_ids.empty());
+        CHECK(result.edits.active()[0].spec.target.orphaned_segment_ids ==
+              std::vector<SegmentId>{gap_for("a", "b")});
+        CHECK(result.edits.active()[1].spec.target.segment_ids ==
+              std::vector<SegmentId>{segment_id(NoteId{"a"})});
+        REQUIRE(result.gap_report.size() == 1);
+        CHECK_FALSE(result.gap_report[0].new_gap.has_value());
+    }
 }

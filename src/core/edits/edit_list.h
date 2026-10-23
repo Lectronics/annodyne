@@ -79,7 +79,15 @@ public:
     /// groups, cursor and next_seq are unchanged. A pure bookkeeping step: nothing is dropped.
     [[nodiscard]] EditList retargeted(const NoteIdMap& mapping) const;
 
+    /// As above, and gap targets follow `gaps` too: a gap present in the map is replaced by its
+    /// image, a gap absent from it (no continuation, or no timeline to map with) moves to
+    /// orphaned_segment_ids, with the same revival rule as notes. The overload without `gaps`
+    /// leaves gap targets untouched.
+    [[nodiscard]] EditList retargeted(const NoteIdMap& mapping, const GapIdMap& gaps) const;
+
 private:
+    [[nodiscard]] EditList retargeted_with(const NoteIdMap& mapping, const GapIdMap* gaps) const;
+
     EditList(TrackId track, std::vector<Edit> edits, std::size_t cursor,
              std::vector<Edit> discarded, EditSeq next_seq);
 

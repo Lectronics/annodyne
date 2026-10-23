@@ -3,8 +3,10 @@
 #include "core/edits/edit_list.h"
 #include "core/types/analysis_result.h"
 #include "core/types/ids.h"
+#include "core/types/segments.h"
 #include "core/types/units.h"
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -49,15 +51,33 @@ struct NoteMatching {
 [[nodiscard]] NoteMatching match_notes(std::span<const Note> old_notes,
                                        std::span<const Note> new_notes, const MatchParams& params);
 
+/// What became of a gap that an edit targets.
+struct GapRemapEntry {
+    SegmentId old_gap;
+    std::optional<SegmentId> new_gap;  // empty: no continuation, the edits are orphaned
+};
+
 struct RemapResult {
     EditList edits;                  // same history, targets rewritten; nothing dropped
     std::vector<RemapEntry> report;  // one entry per old note id that any edit targets, by id
+    std::vector<GapRemapEntry> gap_report;  // one entry per old gap id that any edit targets
 };
 
-/// match_notes + EditList::retargeted + a report. Ids that edits target but old_analysis does not
-/// contain, or contains only as an inactive note, are reported as orphaned. Errors:
-/// invalid_argument if the analyses have different source_ids or the old notes are on another
-/// track than the edit list. Pure; thread-safe; not real-time safe.
+/// The gap lineage (ADR-0024): an old gap follows the new gap whose neighbours are the images of
+/// its own: the last child of its `before` note, the first child of its `after` note (an absent
+/// side stays absent: a leading or trailing gap stays at the recording's edge). A gap is left out
+/// (orphaned) when a present neighbour has no image in `notes`, or the new timeline has no gap
+/// between the two images (they were merged, or another note lies between them). The children of a
+/// note are in time order, as NoteMatching::id_map gives them. Pure; thread-safe; not real-time
+/// safe.
+[[nodiscard]] GapIdMap gap_id_map(const SegmentTimeline& old_timeline,
+                                  const SegmentTimeline& new_timeline, const NoteIdMap& notes);
+
+/// match_notes + gap_id_map + EditList::retargeted + a report. Gap edits follow the gaps when both
+/// analyses have a timeline; if either has none, every gap edit is orphaned (never dropped). Ids
+/// that edits target but old_analysis does not contain, or contains only as an inactive note, are
+/// reported as orphaned. Errors: invalid_argument if the analyses have different source_ids or the
+/// old notes are on another track than the edit list. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<RemapResult> remap_after_reanalysis(const EditList& edits,
                                                          const AnalysisResult& old_analysis,
                                                          const AnalysisResult& new_analysis,

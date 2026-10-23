@@ -154,6 +154,34 @@ NoteMatching match_notes(std::span<const Note> old_notes, std::span<const Note> 
     return matching;
 }
 
+GapIdMap gap_id_map(const SegmentTimeline& old_timeline, const SegmentTimeline& new_timeline,
+                    const NoteIdMap& notes) {
+    GapIdMap out;
+    for (const Gap& gap : old_timeline.gaps()) {
+        std::optional<NoteId> before;
+        std::optional<NoteId> after;
+        if (gap.before) {
+            const auto it = notes.find(*gap.before);
+            if (it == notes.end() || it->second.empty()) {
+                continue;
+            }
+            before = it->second.back();
+        }
+        if (gap.after) {
+            const auto it = notes.find(*gap.after);
+            if (it == notes.end() || it->second.empty()) {
+                continue;
+            }
+            after = it->second.front();
+        }
+        const SegmentId id = gap_segment_id(before, after);
+        if (std::ranges::find(new_timeline.gaps(), id, &Gap::id) != new_timeline.gaps().end()) {
+            out.emplace(gap.id, id);
+        }
+    }
+    return out;
+}
+
 Result<RemapResult> remap_after_reanalysis(const EditList& edits,
                                            const AnalysisResult& old_analysis,
                                            const AnalysisResult& new_analysis,
@@ -170,12 +198,20 @@ Result<RemapResult> remap_after_reanalysis(const EditList& edits,
     const NoteMatching matching = match_notes(old_analysis.notes, new_analysis.notes, params);
     const NoteIdMap map = matching.id_map();
 
+    GapIdMap gaps;  // empty without both timelines: every gap edit is orphaned
+    if (old_analysis.timeline && new_analysis.timeline) {
+        gaps = gap_id_map(*old_analysis.timeline, *new_analysis.timeline, map);
+    }
+
     std::set<NoteId> targeted;
+    std::set<SegmentId> targeted_gaps;
     const auto collect = [&](std::span<const Edit> list) {
         for (const Edit& e : list) {
             for (const SegmentId& id : e.spec.target.segment_ids) {
                 if (const auto note = as_note_id(id)) {
                     targeted.insert(*note);
+                } else if (id.kind == SegmentKind::gap) {
+                    targeted_gaps.insert(id);
                 }
             }
         }
@@ -184,13 +220,19 @@ Result<RemapResult> remap_after_reanalysis(const EditList& edits,
     collect(parts.edits);
     collect(parts.discarded);
 
-    RemapResult result{.edits = edits.retargeted(map), .report = {}};
+    RemapResult result{.edits = edits.retargeted(map, gaps), .report = {}, .gap_report = {}};
     for (const NoteId& id : targeted) {
         const auto it = std::ranges::find(matching.entries, id, &RemapEntry::old_id);
         result.report.push_back(
             it != matching.entries.end()
                 ? *it
                 : RemapEntry{.old_id = id, .outcome = RemapOutcome::orphaned, .new_ids = {}});
+    }
+    for (const SegmentId& id : targeted_gaps) {
+        const auto it = gaps.find(id);
+        result.gap_report.push_back(GapRemapEntry{
+            .old_gap = id,
+            .new_gap = it != gaps.end() ? std::optional<SegmentId>{it->second} : std::nullopt});
     }
     return result;
 }
