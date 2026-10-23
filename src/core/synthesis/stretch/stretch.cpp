@@ -4,6 +4,7 @@
 #include "core/synthesis/stretch/detail/class_map.h"
 #include "core/synthesis/stretch/detail/geometry.h"
 #include "core/synthesis/stretch/detail/noise_stretch.h"
+#include "core/synthesis/stretch/detail/rubberband_stretch.h"
 #include "core/synthesis/stretch/detail/voiced_stretch.h"
 
 #include <algorithm>
@@ -237,6 +238,9 @@ Result<void> check_stretch_params(const StretchParams& p) {
     if (!std::isfinite(p.class_edge_fade.value()) || p.class_edge_fade.value() < 0.0) {
         return bad("class_edge_fade must be finite and >= 0");
     }
+    if (p.engine != StretchEngine::psola && p.engine != StretchEngine::rubberband) {
+        return bad("engine must be psola or rubberband");
+    }
     if (p.vibrato != VibratoMode::preserve && p.vibrato != VibratoMode::retime) {
         return bad("vibrato must be preserve or retime");
     }
@@ -263,7 +267,7 @@ Result<OutputAudio> stretch_span(const AudioSource& src, const AnalysisResult& a
     if (auto r = check_stretch_params(params); !r) {
         return Unexpected{r.error()};
     }
-    if (src.channel_count() != 1) {
+    if (src.channel_count() != 1 && params.engine == StretchEngine::psola) {
         return fail(ErrorCode::not_implemented, "stretch_span: mono sources only");
     }
     auto geometry = make_geometry(span, src.sample_rate().value(), params);
@@ -274,6 +278,9 @@ Result<OutputAudio> stretch_span(const AudioSource& src, const AnalysisResult& a
     auto wanted = range_samples(g, out_range);
     if (!wanted) {
         return Unexpected{wanted.error()};
+    }
+    if (params.engine == StretchEngine::rubberband) {
+        return stretch_detail::rubberband_span(src, g, *wanted, out_range.start());
     }
     auto window = read_window(src, g);
     if (!window) {

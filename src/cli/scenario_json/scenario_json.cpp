@@ -406,8 +406,9 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     if (!root.is_object()) {
         return bad("$", "must be an object");
     }
-    static const std::set<std::string> keys{"name",  "source", "algorithm", "analysis",
-                                            "notes", "edits",  "expect",    "stretch_vibrato"};
+    static const std::set<std::string> keys{"name",     "source",          "algorithm",
+                                            "analysis", "notes",           "edits",
+                                            "expect",   "stretch_vibrato", "stretch_engine"};
     for (const auto& [key, value] : root.items()) {
         if (!keys.contains(key)) {
             return bad("$." + key, "unknown key");
@@ -437,6 +438,14 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         return bad("$.stretch_vibrato", R"(must be "preserve" or "retime")");
     }
     scenario.stretch_vibrato_retime = *vibrato == "retime";
+    auto engine = string_field(root, "stretch_engine", "$", false);
+    if (!engine) {
+        return Unexpected{engine.error()};
+    }
+    if (!engine->empty() && *engine != "psola" && *engine != "rubberband") {
+        return bad("$.stretch_engine", R"(must be "psola" or "rubberband")");
+    }
+    scenario.stretch_rubberband = *engine == "rubberband";
     auto analysis = string_field(root, "analysis", "$", false);
     if (!analysis) {
         return Unexpected{analysis.error()};

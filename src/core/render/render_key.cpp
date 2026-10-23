@@ -203,6 +203,7 @@ void put(Writer& w, const StretchParams* p) {
     w.f64(p->min_slope.value());
     w.f64(p->max_slope.value());
     w.u64(p->voiced_classes.bits());
+    w.u64(static_cast<std::uint64_t>(p->engine));
     w.u64(static_cast<std::uint64_t>(p->vibrato));
     w.f64(p->voiced_bridge.value());
 }

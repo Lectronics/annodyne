@@ -163,6 +163,10 @@ TEST_CASE("the_cache_key_follows_the_stretch_settings_and_a_second_render_hits",
     params.stretch.vibrato = VibratoMode::retime;
     const auto retimed = render_region(f.inputs(), range, PassthroughEngine{}, params).value();
     CHECK(retimed->cache_id != a->cache_id);
+    params.stretch.vibrato = VibratoMode::preserve;
+    params.stretch.engine = StretchEngine::rubberband;
+    const auto rubber = render_region(f.inputs(), range, PassthroughEngine{}, params).value();
+    CHECK(rubber->cache_id != a->cache_id);
 }
 
 TEST_CASE("a_region_before_the_stretch_is_not_marked_stretched", "[render_stretch]") {

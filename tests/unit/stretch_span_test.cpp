@@ -519,3 +519,90 @@ TEST_CASE("a_fast_pitch_glide_inside_a_vibrato_note_stays_with_the_audio", "[str
     INFO("preserve " << kept << " retime " << retimed);
     CHECK(kept > 0.8 * retimed);
 }
+
+namespace {
+
+OutputAudio rubberband_whole_note(const Fixture& fx, double ratio) {
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, ratio);
+    return stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+}
+
+}  // namespace
+
+TEST_CASE("rubber_band_returns_exactly_the_samples_of_the_range_and_keeps_the_pitch",
+          "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    for (const double ratio : {0.7, 1.5, 2.0}) {
+        const auto out = rubberband_whole_note(fx, ratio);
+        const auto expected = static_cast<std::int64_t>(std::llround(1.4 * ratio * 1.0 * k_rate)) -
+                              static_cast<std::int64_t>(std::llround(0.2 * k_rate));
+        // the span covers output [0.2, 0.2 + 1.2 * ratio) seconds
+        const auto first = std::llround(0.2 * k_rate);
+        const auto last = std::llround((0.2 + 1.2 * ratio) * k_rate);
+        CHECK(static_cast<std::int64_t>(out.audio.frame_count().value()) == last - first);
+        (void)expected;
+        const auto samples = samples_of(out);
+        const auto quarter = static_cast<std::ptrdiff_t>(samples.size() / 4);
+        const std::vector<float> middle(samples.begin() + quarter, samples.begin() + 3 * quarter);
+        CHECK(std::abs(autocorrelation_hz(middle, k_rate) - 220.0) < 2.0);
+    }
+}
+
+TEST_CASE("rubber_band_meets_its_neighbours_on_the_source_samples", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    const auto samples = samples_of(rubberband_whole_note(fx, 1.5));
+    const auto first = static_cast<std::size_t>(std::llround(0.2 * k_rate));
+    CHECK(samples.front() == fx.mono[first]);
+    const double source_end = 0.2 * k_rate + 1.2 * k_rate;  // the span's source end
+    CHECK(samples.back() == fx.mono[static_cast<std::size_t>(std::llround(source_end)) - 1]);
+}
+
+TEST_CASE("rubber_band_is_deterministic_and_range_independent", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto a =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto b =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    const auto part =
+        samples_of(stretch_span(fx.src, *fx.analysis, span,
+                                OutputRange::from_start(out_t(0.9), Seconds{0.3}), params)
+                       .value());
+    const auto offset = static_cast<std::size_t>(std::llround((0.9 - 0.2) * k_rate));
+    CHECK(std::memcmp(part.data(), a.data() + offset, part.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("rubber_band_stretches_every_channel_of_a_stereo_source", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    auto stereo =
+        AudioBuffer::create(2, Samples{static_cast<std::int64_t>(fx.mono.size())}, Hz{k_rate})
+            .value();
+    for (std::size_t i = 0; i < fx.mono.size(); ++i) {
+        stereo.channel(0)[i] = fx.mono[i];
+        stereo.channel(1)[i] = -0.5F * fx.mono[i];
+    }
+    const AudioSource src = AudioSource::from_buffer(std::move(stereo));
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto out = stretch_span(src, *fx.analysis, span, whole(span), params).value();
+    REQUIRE(out.audio.channel_count() == 2);
+    // channel 1 is channel 0 scaled by -0.5: the stretcher keeps them in step
+    double worst = 0.0;
+    for (std::size_t i = 1000; i < 30000; ++i) {
+        worst = std::max(worst, std::abs(static_cast<double>(out.audio.channel(1)[i]) +
+                                         0.5 * static_cast<double>(out.audio.channel(0)[i])));
+    }
+    CHECK(worst < 0.02);
+}
+
+TEST_CASE("psola_still_refuses_stereo_and_an_unknown_engine_is_invalid", "[stretch][rubberband]") {
+    StretchParams p;
+    p.engine = static_cast<StretchEngine>(9);
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}

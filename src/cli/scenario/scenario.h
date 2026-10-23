@@ -47,6 +47,7 @@ struct Scenario {
     std::vector<EditSpec> edits;  // each one is its own EditList::add group, in order
     std::vector<ScenarioPitchDrag>
         drags;  // the edits of an analyse-mode scenario (never mixed with `edits`)
+    bool stretch_rubberband = false;      // "stretch_engine": "rubberband" (A/B against PSOLA)
     bool stretch_vibrato_retime = false;  // "stretch_vibrato": "retime" (A/B against the default)
     std::string edits_json;               // the "edits" array as written, for the audition package
     std::string expect_json;              // the "expect" object as written ("" if absent)

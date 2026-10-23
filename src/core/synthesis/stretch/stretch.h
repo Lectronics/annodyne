@@ -22,7 +22,12 @@ namespace anno {
 /// re-times the contour with the audio, so the rate scales with 1 / slope (the Phase 5 behaviour).
 enum class VibratoMode : std::uint8_t { preserve, retime };
 
+/// Which renderer makes a stretched voiced span: this module's TD-PSOLA path (mono only, the
+/// default) or Rubber Band R3 (ADR-0026: any channel count, a phase vocoder, an A/B engine).
+enum class StretchEngine : std::uint8_t { psola, rubberband };
+
 struct StretchParams {
+    StretchEngine engine = StretchEngine::psola;
     VibratoMode vibrato = VibratoMode::preserve;
     // A stretch of non-voiced frames shorter than this (source time) with voiced frames on both
     // sides stays in the voiced run: a one-frame dropout of the classifier must not switch the
