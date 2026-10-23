@@ -237,3 +237,70 @@ TEST_CASE("a_drift_scale_and_bad_curve_parameters", "[rubberband_pitch]") {
               .error()
               .code == ErrorCode::invalid_argument);
 }
+
+namespace {
+
+/// Autocorrelation pitch of samples [from_s, to_s) of a rendered buffer.
+double pitch_between(const OutputAudio& out, double from_s, double to_s) {
+    const auto samples = samples_of(out);
+    return autocorrelation_hz(
+        std::vector<float>(samples.begin() + static_cast<std::ptrdiff_t>(from_s * k_rate),
+                           samples.begin() + static_cast<std::ptrdiff_t>(to_s * k_rate)),
+        k_rate);
+}
+
+}  // namespace
+
+TEST_CASE("an_unedited_touching_neighbour_makes_the_offset_glide_in_and_out",
+          "[rubberband_pitch]") {
+    // A steady 220 Hz tone 0.2 .. 1.4 s; the note under edit is 0.6 .. 1.0 s, +300 cents, with
+    // unedited notes touching it on both sides. Outside the note the pitch must stay 220 Hz, inside
+    // (after the 40 ms glide) 220 x 2^(300/1200).
+    const Fixture fx = steady_voice();
+    Note note = fx.note;
+    note.source_start = SourceTime::unchecked_from_origin(Seconds{0.6});
+    note.source_end = SourceTime::unchecked_from_origin(Seconds{1.0});
+    const RubberBandPitchEngine engine;
+    TouchingNotes touching;
+    touching.previous = NeighbourOffset{.offset = Cents{0.0}, .rendered = false};
+    touching.next = NeighbourOffset{.offset = Cents{0.0}, .rendered = false};
+    const auto out = engine
+                         .render_note_in_context(
+                             fx.src, note, fx.effective(300.0), fx.map,
+                             OutputRange::from_start(OutputTime{}, Seconds{k_total_s}), touching)
+                         .value();
+    const double shifted = 220.0 * std::pow(2.0, 300.0 / 1200.0);
+    CHECK(std::abs(pitch_between(out, 0.40, 0.55) / 220.0 - 1.0) < 0.015);
+    CHECK(std::abs(pitch_between(out, 0.72, 0.90) / shifted - 1.0) < 0.015);
+    CHECK(std::abs(pitch_between(out, 1.08, 1.25) / 220.0 - 1.0) < 0.015);
+}
+
+TEST_CASE("no_touching_neighbour_or_equal_offsets_render_exactly_like_render_note",
+          "[rubberband_pitch]") {
+    const Fixture fx = steady_voice();
+    const RubberBandPitchEngine engine;
+    const OutputRange all = OutputRange::from_start(OutputTime{}, Seconds{k_total_s});
+    const auto plain = samples_of(fx.render(engine, fx.effective(200.0)).value());
+    const auto none = samples_of(
+        engine.render_note_in_context(fx.src, fx.note, fx.effective(200.0), fx.map, all, {})
+            .value());
+    CHECK(std::memcmp(plain.data(), none.data(), plain.size() * sizeof(float)) == 0);
+    TouchingNotes same;
+    same.previous = NeighbourOffset{.offset = Cents{200.0}, .rendered = true};
+    same.next = NeighbourOffset{.offset = Cents{200.0}, .rendered = true};
+    const auto equal = samples_of(
+        engine.render_note_in_context(fx.src, fx.note, fx.effective(200.0), fx.map, all, same)
+            .value());
+    CHECK(std::memcmp(plain.data(), equal.data(), plain.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("a_negative_glide_time_is_an_invalid_argument", "[rubberband_pitch]") {
+    const Fixture fx = steady_voice();
+    RubberBandPitchParams bad;
+    bad.glide_time = Seconds{-0.01};
+    CHECK(RubberBandPitchEngine{bad}
+              .render_note(fx.src, fx.note, fx.effective(100.0), fx.map,
+                           OutputRange::from_start(OutputTime{}, Seconds{1.0}))
+              .error()
+              .code == ErrorCode::invalid_argument);
+}

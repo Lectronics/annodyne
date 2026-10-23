@@ -10,6 +10,8 @@
 #include <bit>
 #include <cmath>
 #include <memory>
+#include <numbers>
+#include <optional>
 #include <vector>
 
 namespace anno {
@@ -28,6 +30,10 @@ Result<void> check_params(const RubberBandPitchParams& p) {
     if (!std::isfinite(p.context.value()) || p.context.value() < 0.0) {
         return fail(ErrorCode::invalid_argument,
                     "RubberBandPitchEngine: context must be finite and >= 0");
+    }
+    if (!std::isfinite(p.glide_time.value()) || p.glide_time.value() < 0.0) {
+        return fail(ErrorCode::invalid_argument,
+                    "RubberBandPitchEngine: glide_time must be finite and >= 0");
     }
     if (!std::isfinite(p.curve_gain.value()) || !(p.curve_gain.value() > 0.0)) {
         return fail(ErrorCode::invalid_argument,
@@ -115,13 +121,69 @@ struct SilentShifterLogger final : RubberBand::RubberBandLiveShifter::Logger {
     void log(const char* /*message*/, double /*a*/, double /*b*/) override {}
 };
 
+/// How the offset moves at the note's boundaries (ADR-0030). Positions are output samples.
+struct Glide {
+    double own_cents = 0.0;
+    double note_first = 0.0;  // the note's first output sample
+    double note_last = 0.0;   // one past its last
+    double time_samples = 0.0;
+    TouchingNotes context;
+};
+
+double raised_cosine(double x) {
+    const double c = std::clamp(x, 0.0, 1.0);
+    return 0.5 * (1.0 - std::cos(std::numbers::pi * c));
+}
+
+/// True if a touching neighbour's offset differs from the note's own (so a constant offset would
+/// step at that boundary).
+bool needs_glide(const TouchingNotes& context, double own_cents) {
+    const auto differs = [&](const std::optional<NeighbourOffset>& n) {
+        return n && std::abs(own_cents - (n->rendered ? n->offset.value() : 0.0)) >
+                        k_neutral_snap_offset;
+    };
+    return differs(context.previous) || differs(context.next);
+}
+
+/// The offset (cents) at output sample `n`: the note's own, moved toward a touching neighbour's
+/// across the boundary. A rendered neighbour follows the same curve, so the glide is centred on the
+/// boundary (each note renders its half); an unrendered one plays the base audio, so the note
+/// ramps from 0 at the boundary.
+double offset_at(const Glide& g, double n) {
+    double value = g.own_cents;
+    const double half = 0.5 * g.time_samples;
+    if (g.context.previous) {
+        const NeighbourOffset& p = *g.context.previous;
+        if (p.rendered) {
+            value =
+                p.offset.value() + (g.own_cents - p.offset.value()) *
+                                       raised_cosine((n - (g.note_first - half)) / g.time_samples);
+        } else {
+            value = g.own_cents * raised_cosine((n - g.note_first) / g.time_samples);
+        }
+    }
+    if (g.context.next) {
+        const NeighbourOffset& x = *g.context.next;
+        if (x.rendered) {
+            value += (x.offset.value() - value) *
+                     raised_cosine((n - (g.note_last - half)) / g.time_samples);
+        } else {
+            value *= 1.0 - raised_cosine((n - (g.note_last - g.time_samples)) / g.time_samples);
+        }
+    }
+    return value;
+}
+
 /// Pitch change in cents at each of `count` samples starting at output sample `first`: the static
 /// centre offset plus (mod_scale - 1) x the note's modulation and (drift_scale - 1) x its drift,
 /// both read from the note's frames (linear between frame centres, zero outside the note).
-std::vector<double> curve_cents(const Note& note, const EffectiveNote& eff, double offset_cents,
+std::vector<double> curve_cents(const Note& note, const EffectiveNote& eff, const Glide& glide,
                                 std::int64_t first, std::int64_t count, double rate_hz,
                                 std::int64_t shift_samples, double gain) {
-    std::vector<double> out(static_cast<std::size_t>(count), offset_cents);
+    std::vector<double> out(static_cast<std::size_t>(count), glide.own_cents);
+    for (std::int64_t i = 0; i < count; ++i) {
+        out[static_cast<std::size_t>(i)] = offset_at(glide, static_cast<double>(first + i));
+    }
     const double mod_extra = (eff.mod_scale.value() - 1.0) * gain;
     const double drift_extra = (eff.drift_scale.value() - 1.0) * gain;
     if ((mod_extra == 0.0 && drift_extra == 0.0) || note.grid.n_frames < 2 ||
@@ -239,13 +301,20 @@ std::string RubberBandPitchEngine::settings_key() const {
            ";context=" + hex64(std::bit_cast<std::uint64_t>(params_.context.value())) +
            ";max=" + hex64(std::bit_cast<std::uint64_t>(params_.max_shift.value())) +
            ";lead=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_lead.value())) +
-           ";gain=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_gain.value()));
+           ";gain=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_gain.value())) +
+           ";glide=" + hex64(std::bit_cast<std::uint64_t>(params_.glide_time.value()));
 }
 
 Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, const Note& note,
                                                        const EffectiveNote& eff,
                                                        const TimeMap& time_map,
                                                        OutputRange out_range) const {
+    return render_note_in_context(src, note, eff, time_map, out_range, TouchingNotes{});
+}
+
+Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
+    const AudioSource& src, const Note& note, const EffectiveNote& eff, const TimeMap& time_map,
+    OutputRange out_range, const TouchingNotes& touching) const {
     if (auto ok = check_params(params_); !ok) {
         return Unexpected{ok.error()};
     }
@@ -278,8 +347,16 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
         return Unexpected{result.error()};
     }
     const auto offset = static_cast<std::ptrdiff_t>(first.value() - ext_first);
+    const bool gliding = needs_glide(touching, shift_cents);
     const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 ||
-                        eff.formant_offset.value() != 0.0;
+                        eff.formant_offset.value() != 0.0 || gliding;
+    const Glide glide{.own_cents = shift_cents,
+                      .note_first = (note.source_start - SourceTime{}).value() * rate.value() +
+                                    static_cast<double>(*shift_samples),
+                      .note_last = (note.source_end - SourceTime{}).value() * rate.value() +
+                                   static_cast<double>(*shift_samples),
+                      .time_samples = std::max(1.0, params_.glide_time.value() * rate.value()),
+                      .context = gliding ? touching : TouchingNotes{}};
     const bool neutral = std::abs(shift_cents) <= k_neutral_snap_offset && !curved;
     std::vector<std::vector<float>> shifted;
     if (!neutral && last > first) {
@@ -291,7 +368,7 @@ Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, c
         shifted =
             curved
                 ? shift_curve(in, rate.value(),
-                              curve_cents(note, eff, shift_cents, ext_first, ext_last - ext_first,
+                              curve_cents(note, eff, glide, ext_first, ext_last - ext_first,
                                           rate.value(), *shift_samples, params_.curve_gain.value()),
                               params_.formants,
                               std::llround(params_.curve_lead.value() * rate.value()),

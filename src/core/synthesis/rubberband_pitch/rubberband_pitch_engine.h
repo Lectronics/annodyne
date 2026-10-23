@@ -27,6 +27,8 @@ struct RubberBandPitchParams {
     Ratio curve_gain{1.5};    // the live shifter follows a changing pitch scale with a gain below 1
                             // (about 0.67 for a 5.5 Hz vibrato, measured); the modulation and drift
                             // terms are multiplied by this to compensate; > 0, finite
+    Seconds glide_time{0.040};   // the pitch offset moves between two touching notes over this long
+                                 // (raised cosine, centred on the boundary); >= 0, finite
     Seconds curve_lead{-0.030};  // a time-varying pitch curve is read this far ahead of the content
                                  // (the live shifter applies a scale late); >= 0, finite
 };
@@ -52,11 +54,18 @@ public:
     explicit RubberBandPitchEngine(RubberBandPitchParams params = {}) : params_{params} {}
 
     [[nodiscard]] std::string_view name() const noexcept override { return "rubberband"; }
-    [[nodiscard]] std::uint32_t version() const noexcept override { return 2; }
+    [[nodiscard]] std::uint32_t version() const noexcept override { return 3; }
     [[nodiscard]] std::string settings_key() const override;
     [[nodiscard]] Result<OutputAudio> render_note(const AudioSource& src, const Note& note,
                                                   const EffectiveNote& eff, const TimeMap& time_map,
                                                   OutputRange out_range) const override;
+    /// With a touching neighbour whose offset differs, the offset glides across the boundary
+    /// instead of stepping (ADR-0030): both notes follow one curve, so their zones agree where
+    /// they overlap. Without one this is render_note.
+    [[nodiscard]] Result<OutputAudio>
+    render_note_in_context(const AudioSource& src, const Note& note, const EffectiveNote& eff,
+                           const TimeMap& time_map, OutputRange out_range,
+                           const TouchingNotes& context) const override;
 
 private:
     RubberBandPitchParams params_;

@@ -12,9 +12,9 @@ namespace {
 
 // Every new hashed field bumps the version.
 constexpr std::uint32_t k_key_format_version =
-    7;  // 7: the stretch engine, voiced_bridge and the vibrato mode (6); 5: local map spans, the
-        // splice fade; 4: edited gaps; 3: the stretch settings; 2: the whole TimeMap is part of
-        // the key
+    8;  // 8: the touching neighbours of an edited note; 7: the stretch engine, voiced_bridge and
+        // the vibrato mode (6); 5: local map spans, the splice fade; 4: edited gaps; 3: the stretch
+        // settings; 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -294,6 +294,13 @@ std::string make_render_key(const RenderKeyInputs& in) {
         w.i64(e->span.begin);
         w.i64(e->span.end);
         put(w, e->eff);
+        for (const std::optional<NeighbourOffset>& n : {e->context.previous, e->context.next}) {
+            w.boolean(n.has_value());
+            if (n) {
+                w.f64(n->offset.value());
+                w.boolean(n->rendered);
+            }
+        }
         w.text(note_fingerprint(*e->note));
     }
 
