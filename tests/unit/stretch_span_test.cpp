@@ -478,3 +478,44 @@ TEST_CASE("a_negative_voiced_bridge_is_an_invalid_argument", "[stretch]") {
     p.voiced_bridge = Seconds{-0.001};
     CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("a_fast_pitch_glide_inside_a_vibrato_note_stays_with_the_audio", "[stretch][vibrato]") {
+    // 5.5 Hz, 40 cent vibrato plus a 150 cent rise over 25 ms at 0.8 s: only the sinusoid is
+    // regenerated; the glide is not vibrato and must survive the stretch (at 1.1 s, the time it
+    // plays at after 1.5x from 0.2 s).
+    const Fixture fx{voice(
+        [](double t) {
+            const double glide = 150.0 * std::clamp((t - 0.8) / 0.025, 0.0, 1.0);
+            return 220.0 * std::pow(2.0, (40.0 * std::sin(2.0 * M_PI * 5.5 * t) + glide) / 1200.0);
+        },
+        harmonic_amps(10, 0.5))};
+    const auto rise_of = [&](VibratoMode mode) {
+        const auto out = stretch_whole_note(fx, 1.5, mode);
+        const std::vector<float> mono = samples_of(out);
+        const auto src = AudioSource::from_buffer(to_buffer(mono, k_rate));
+        const auto analysis = analyse(src, engine_analysis_params()).value();
+        REQUIRE_FALSE(analysis->notes.empty());
+        const Note& n = *std::max_element(
+            analysis->notes.begin(), analysis->notes.end(),
+            [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+        // absolute pitch, frame by frame; the largest rise within 30 ms around the glide's time
+        const double hop = n.grid.hop.value();
+        const double t0 = (out.start - OutputTime{}).value();
+        double rise = 0.0;
+        for (std::size_t i = 0; i + 6 < n.pitch_mod.size(); ++i) {
+            const double t = (n.grid.start - SourceTime{}).value() + static_cast<double>(i) * hop;
+            if (std::abs((t + t0) - 1.1) > 0.06) {
+                continue;
+            }
+            const auto cents = [&](std::size_t k) {
+                return n.pitch_drift[k].value() + n.pitch_mod[k].value();
+            };
+            rise = std::max(rise, cents(i + 6) - cents(i));
+        }
+        return rise;
+    };
+    const double kept = rise_of(VibratoMode::preserve);
+    const double retimed = rise_of(VibratoMode::retime);
+    INFO("preserve " << kept << " retime " << retimed);
+    CHECK(kept > 0.8 * retimed);
+}

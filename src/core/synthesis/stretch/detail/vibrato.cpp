@@ -37,6 +37,19 @@ std::complex<double> dft_at(const std::vector<double>& t_s, const std::vector<do
 
 }  // namespace
 
+double Demod::fast_at(double t) const {
+    const auto upper = std::ranges::upper_bound(t_s, t);
+    if (upper == t_s.begin()) {
+        return v.front() + mean;
+    }
+    if (upper == t_s.end()) {
+        return v.back() + mean;
+    }
+    const auto k = static_cast<std::size_t>(upper - t_s.begin());
+    const double w = (t - t_s[k - 1]) / (t_s[k] - t_s[k - 1]);
+    return (1.0 - w) * v[k - 1] + w * v[k] + mean;
+}
+
 std::pair<double, double> Demod::amplitude_and_phase(double t) const {
     const double window = k_demod_cycles / f_hz;
     const double lo = t_s.front() + 0.5 * window;
@@ -76,6 +89,7 @@ std::optional<VibratoClock> VibratoClock::make(const VibratoSource& source,
     for (double& x : d.v) {
         x -= mean;
     }
+    d.mean = mean;
     const double span_s = d.t_s.back() - d.t_s.front();
     if (!(span_s > 0.0)) {
         return std::nullopt;
@@ -126,8 +140,11 @@ std::optional<VibratoClock> VibratoClock::make(const VibratoSource& source,
 
 double VibratoClock::cents(double out_position) const {
     const double tau_s = geometry_.source_at(out_position) / geometry_.rate_hz;
-    const double amplitude = demod_.amplitude_and_phase(tau_s).first;
-    return amplitude * std::cos(phase_begin_rad_ + phase_step_rad_ * (out_position - run_begin_));
+    const auto [amplitude, source_phase] = demod_.amplitude_and_phase(tau_s);
+    const double regenerated =
+        amplitude * std::cos(phase_begin_rad_ + phase_step_rad_ * (out_position - run_begin_));
+    // the source's fast component with its sinusoid swapped for the regenerated one
+    return demod_.fast_at(tau_s) - amplitude * std::cos(source_phase) + regenerated;
 }
 
 double OutputPitch::period_samples(double out_position) const {

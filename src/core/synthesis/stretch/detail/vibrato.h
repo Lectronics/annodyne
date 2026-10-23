@@ -35,12 +35,16 @@ using VibratoSource = std::vector<grain::CentsPoint>;
 struct Demod {
     std::vector<double> t_s;  // frame times, source seconds, sorted
     std::vector<double> v;    // fast pitch component, cents, mean removed
+    double mean = 0.0;        // what was removed from `v`
     double f_hz = 0.0;
 
     /// {amplitude in cents, total phase 2 pi f t + arg z at `t_s`}: z is the Hann-windowed
     /// (1.5 cycles) complex demodulation, taken half a window inside the frames when `t_s` is
     /// nearer an edge (so the window is whole there and the values are held, not extrapolated).
     [[nodiscard]] std::pair<double, double> amplitude_and_phase(double t_s) const;
+
+    /// The fast component (cents, mean included) at `t_s`, linear between frames, held at the ends.
+    [[nodiscard]] double fast_at(double t_s) const;
 };
 
 class VibratoClock {
@@ -55,7 +59,10 @@ public:
                                                           const SpanGeometry& geometry, Run run,
                                                           bool join_begin, bool join_end);
 
-    /// The vibrato term (cents) at output position `out_position` (fractional output samples).
+    /// The fast pitch term (cents) at output position `out_position` (fractional output samples):
+    /// the source's fast component at the time the audio plays, with its fitted sinusoid taken out
+    /// and the sinusoid regenerated at the source's rate. What is not vibrato (glides, jitter)
+    /// stays with the audio; at slope 1 the term is the source's own, exactly.
     [[nodiscard]] double cents(double out_position) const;
 
     [[nodiscard]] const ClockInfo& info() const { return info_; }
