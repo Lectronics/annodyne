@@ -17,8 +17,7 @@ using Planar = std::vector<std::vector<float>>;  // [channel][frame]
 constexpr std::size_t k_block = 2048;  // frames per study/process call
 
 /// Rubber Band writes its warnings to stderr unless it is given a logger; a render is not the place
-/// for console output (the offline stretch with a key frame map reports a NaN ratio it recovers
-/// from, and the output is the stretched audio all the same: see the really_stretches test).
+/// for console output.
 struct SilentLogger final : RubberBand::RubberBandStretcher::Logger {
     void log(const char* /*message*/) override {}
     void log(const char* /*message*/, double /*a*/) override {}
@@ -83,8 +82,10 @@ Planar run_rubberband(const Planar& in, std::size_t n_out, double rate_hz, std::
     // is nearly the source, so blending it into the source copy cannot cancel or add.
     const std::size_t span_in = n_in - head - tail;
     const std::size_t span_out = n_out - head - tail;
-    stretcher.setKeyFrameMap({{0, 0},
-                              {head + ramp, head + ramp},
+    // The map starts at the first change of slope: Rubber Band takes its initial ratio from the
+    // first pair as target / source, so a pair {0, 0} would make it 0 / 0 (NaN; reset to 1, the
+    // same ratio, with a warning).
+    stretcher.setKeyFrameMap({{head + ramp, head + ramp},
                               {head + span_in - ramp, head + span_out - ramp},
                               {head + span_in, head + span_out},
                               {n_in, n_out}});
