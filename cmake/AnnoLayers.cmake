@@ -72,7 +72,8 @@ function(anno_external_allowed folder dep out_var)
         set(allowed TRUE)
     endif()
     # Rubber Band (ADR-0026): the optional R3 stretch engine, core/synthesis/stretch only.
-    if(folder STREQUAL "core/synthesis/stretch" AND dep STREQUAL "anno_rubberband")
+    if((folder STREQUAL "core/synthesis/stretch" OR folder STREQUAL "core/synthesis/rubberband_pitch")
+       AND dep STREQUAL "anno_rubberband")
         set(allowed TRUE)
     endif()
     # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).

@@ -14,7 +14,7 @@
 namespace anno::cli {
 
 /// The engines the CLI can select (the test gain engine is deliberately not among them).
-enum class EngineChoice { passthrough, harmonic_noise, psola };
+enum class EngineChoice { passthrough, harmonic_noise, psola, rubberband };
 
 /// Errors: invalid_argument for an unknown name. Pure.
 [[nodiscard]] Result<EngineChoice> parse_engine(std::string_view name);

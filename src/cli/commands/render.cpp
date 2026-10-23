@@ -9,6 +9,7 @@
 #include "core/synthesis/harmonic_noise/harmonic_noise_engine.h"
 #include "core/synthesis/passthrough/passthrough_engine.h"
 #include "core/synthesis/psola/psola_engine.h"
+#include "core/synthesis/rubberband_pitch/rubberband_pitch_engine.h"
 #include "core/tuning/chromatic_grid.h"
 #include "tools/main_tool/main_tool.h"
 
@@ -62,8 +63,8 @@ Result<void> add_scenario_gaps(const AudioSource& source, AnalysisResult& analys
 }  // namespace
 
 Result<EngineChoice> parse_engine(std::string_view name) {
-    for (const EngineChoice choice :
-         {EngineChoice::passthrough, EngineChoice::harmonic_noise, EngineChoice::psola}) {
+    for (const EngineChoice choice : {EngineChoice::passthrough, EngineChoice::harmonic_noise,
+                                      EngineChoice::psola, EngineChoice::rubberband}) {
         if (name == to_string(choice)) {
             return choice;
         }
@@ -78,6 +79,7 @@ std::string_view to_string(EngineChoice engine) noexcept {
     case EngineChoice::passthrough: return "passthrough";
     case EngineChoice::harmonic_noise: return "harmonic_noise";
     case EngineChoice::psola: return "psola";
+    case EngineChoice::rubberband: return "rubberband";
     }
     return "passthrough";
 }
@@ -87,6 +89,7 @@ std::unique_ptr<const SynthesisEngine> make_engine(EngineChoice engine) {
     case EngineChoice::passthrough: return std::make_unique<PassthroughEngine>();
     case EngineChoice::harmonic_noise: return std::make_unique<HarmonicNoiseEngine>();
     case EngineChoice::psola: return std::make_unique<PsolaEngine>();
+    case EngineChoice::rubberband: return std::make_unique<RubberBandPitchEngine>();
     }
     return std::make_unique<PassthroughEngine>();
 }

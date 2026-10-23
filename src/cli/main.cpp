@@ -22,9 +22,9 @@ constexpr int k_exit_usage = 2;
 void print_usage() {
     std::fputs("usage: anno-cli info <file.wav>\n"
                "       anno-cli render <scenario.json> --out <out.wav> [--engine "
-               "passthrough|harmonic_noise|psola]\n"
+               "passthrough|harmonic_noise|psola|rubberband]\n"
                "       anno-cli audition <scenario.json> --out <dir> [--engine "
-               "passthrough|harmonic_noise|psola]\n"
+               "passthrough|harmonic_noise|psola|rubberband]\n"
                "       anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] "
                "[--pitch-track]\n"
                "                        [--track-id <id>] [--onsets adaptive|pipeline]\n",
