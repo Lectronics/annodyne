@@ -1,19 +1,7 @@
 {
   "name": "layout_a_shorter",
   "source": "tests/audio/scenarios/sources/gap_fricative.wav",
-  "analysis": "given",
-  "notes": [
-    {
-      "id": "a",
-      "start_s": 0.5,
-      "end_s": 1.2
-    },
-    {
-      "id": "b",
-      "start_s": 2.0,
-      "end_s": 2.7
-    }
-  ],
+  "analysis": "analyse",
   "edits": [
     {
       "category": "time",
@@ -21,7 +9,7 @@
       "param": "length_scale",
       "value": 0.6,
       "target": {
-        "note_id": "a"
+        "note_id": "n000506"
       }
     }
   ],
