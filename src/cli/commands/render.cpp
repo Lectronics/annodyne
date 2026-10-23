@@ -1,7 +1,10 @@
 #include "cli/commands/render.h"
 
 #include "cli/scenario_json/scenario_json.h"
+#include "core/analysis/activity/activity.h"
+#include "core/analysis/gaps/analyse_gaps.h"
 #include "core/analysis/orchestrator/analyse.h"
+#include "core/dsp/mono.h"
 #include "core/io/wav.h"
 #include "core/synthesis/harmonic_noise/harmonic_noise_engine.h"
 #include "core/synthesis/passthrough/passthrough_engine.h"
@@ -9,9 +12,52 @@
 #include "core/tuning/chromatic_grid.h"
 #include "tools/main_tool/main_tool.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace anno::cli {
+
+namespace {
+
+/// True if any edit targets a gap.
+bool targets_a_gap(const std::vector<EditSpec>& edits) {
+    return std::ranges::any_of(edits, [](const EditSpec& e) {
+        return std::ranges::any_of(e.target.segment_ids,
+                                   [](const SegmentId& id) { return id.kind == SegmentKind::gap; });
+    });
+}
+
+constexpr double k_scenario_hop_s = 0.005;  // the activity grid of a scenario's gap analysis
+
+/// The noise floor and the segment timeline of a hand-given analysis, built from the audio the way
+/// analyse() builds them, so a scenario can address the gaps between its notes (ADR-0024).
+Result<void> add_scenario_gaps(const AudioSource& source, AnalysisResult& analysis) {
+    auto mono = read_mono(source);
+    if (!mono) {
+        return Unexpected{mono.error()};
+    }
+    FrameGrid grid;
+    grid.hop = Seconds{k_scenario_hop_s};
+    grid.start = SourceTime{};
+    grid.n_frames =
+        static_cast<std::int64_t>(std::floor(
+            to_seconds(source.frame_count(), source.sample_rate()).value() / k_scenario_hop_s)) +
+        1;
+    auto activity = detect_activity(*mono, grid, ActivityParams{});
+    if (!activity) {
+        return Unexpected{activity.error()};
+    }
+    auto gaps = analyse_gaps(source, *mono, analysis.notes, *activity, GapAnalysisParams{});
+    if (!gaps) {
+        return Unexpected{gaps.error()};
+    }
+    analysis.noise_floor = std::move(gaps->noise_floor);
+    analysis.timeline = std::move(gaps->timeline);
+    return {};
+}
+
+}  // namespace
 
 Result<EngineChoice> parse_engine(std::string_view name) {
     for (const EngineChoice choice :
@@ -97,6 +143,11 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
         auto synthetic = make_scenario_analysis(*scenario, source);
         if (!synthetic) {
             return Unexpected{synthetic.error()};
+        }
+        if (targets_a_gap(scenario->edits)) {
+            if (auto r = add_scenario_gaps(source, *synthetic); !r) {
+                return Unexpected{r.error()};
+            }
         }
         analysis = std::make_shared<AnalysisResult>(std::move(*synthetic));
     }

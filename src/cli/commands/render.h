@@ -36,8 +36,9 @@ struct LoadedScenario {
 
 /// Reads the scenario and its source WAV, builds the analysis (the synthetic one for the given
 /// notes, or analyse() of the source for `"analysis": "analyse"`) and the edit list (one group per
-/// scenario edit; pitch drags are resolved against the analysed notes with pitch_drag_edit and
-/// added after the raw edits). Errors: those of load_scenario, io::read_wav,
+/// scenario edit; a hand-given scenario with a gap target also gets the noise floor and segment
+/// timeline built from its audio; pitch drags are resolved against the analysed notes with
+/// pitch_drag_edit and added after the raw edits). Errors: those of load_scenario, io::read_wav,
 /// make_scenario_analysis, analyse, pitch_drag_edit, target_pitch, EditList::add; invalid_argument
 /// for a drag whose note_index is past the analysed notes. Not real-time safe.
 [[nodiscard]] Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,

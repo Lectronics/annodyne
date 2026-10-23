@@ -155,6 +155,7 @@ anno_add_test(NAME main_tool_test SOURCES main_tool_test.cpp LABELS unit DEPS an
 anno_add_test(NAME gap_tools_test SOURCES gap_tools_test.cpp LABELS unit DEPS anno::tools_gap anno::macros_strip_silence anno::core_edits)
 anno_add_test(NAME time_tools_test SOURCES time_tools_test.cpp LABELS unit DEPS anno::tools_time anno::tools_attack_speed anno::core_edits anno::core_timemap)
 anno_add_test(NAME engine_support_test SOURCES engine_support_test.cpp LABELS unit DEPS anno::core_synthesis_engine)
+anno_add_test(NAME cli_gap_scenario_test SOURCES cli_gap_scenario_test.cpp LABELS unit DEPS anno::cli_commands anno::core_io)
 anno_add_test(NAME cli_engines_test SOURCES cli_engines_test.cpp LABELS unit DEPS anno::cli_commands anno::core_io nlohmann_json::nlohmann_json)
 anno_add_test(NAME pitch_checks_test SOURCES pitch_checks_test.cpp LABELS unit DEPS anno::cli_checks anno::core_analysis_orchestrator)
 anno_add_test(NAME voicing_probes_test SOURCES voicing_probes_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator anno::core_dsp)

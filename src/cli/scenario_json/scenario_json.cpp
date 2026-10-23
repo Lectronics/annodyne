@@ -1,8 +1,10 @@
 #include "cli/scenario_json/scenario_json.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -121,28 +123,66 @@ Result<EditValue> parse_value(const Json& j, ValueKind kind, const std::string& 
     return bad(vpath, "unsupported value kind");
 }
 
-Result<std::vector<NoteId>> parse_target(const Json& j, const std::vector<ScenarioNote>& notes,
-                                         const std::string& path) {
+/// {"gap": {"before": id | null, "after": id | null}}: the gap between two notes (null: the
+/// recording's edge).
+Result<SegmentId> parse_gap_target(const Json& gap, const std::string& path) {
+    if (!gap.is_object()) {
+        return bad(path, R"(must be {"before": id | null, "after": id | null})");
+    }
+    for (const auto& [key, value] : gap.items()) {
+        if (key != "before" && key != "after") {
+            return bad(at(path, key), "unknown key");
+        }
+    }
+    std::array<std::optional<NoteId>, 2> sides;
+    const std::array<const char*, 2> names{"before", "after"};
+    for (std::size_t i = 0; i < 2; ++i) {
+        const auto it = gap.find(names[i]);
+        if (it == gap.end()) {
+            return bad(path, R"(needs both "before" and "after" (null at the recording's edge))");
+        }
+        if (it->is_string()) {
+            sides[i] = NoteId{it->get<std::string>()};
+        } else if (!it->is_null()) {
+            return bad(at(path, names[i]), "must be a note id or null");
+        }
+    }
+    return gap_segment_id(sides[0], sides[1]);
+}
+
+Result<std::vector<SegmentId>> parse_target(const Json& j, const std::vector<ScenarioNote>& notes,
+                                            const std::string& path) {
     const auto it = j.find("target");
     if (it == j.end() || !it->is_object()) {
         return bad(at(path, "target"), "is required and must be an object");
     }
     const std::string tpath = at(path, "target");
-    if (it->contains("note_id") == it->contains("note_index")) {
-        return bad(tpath, "needs exactly one of note_id, note_index");
+    const int named = static_cast<int>(it->contains("note_id")) +
+                      static_cast<int>(it->contains("note_index")) +
+                      static_cast<int>(it->contains("gap"));
+    if (named != 1) {
+        return bad(tpath, "needs exactly one of note_id, note_index, gap");
+    }
+    if (it->contains("gap")) {
+        auto gap = parse_gap_target((*it)["gap"], at(tpath, "gap"));
+        if (!gap) {
+            return Unexpected{gap.error()};
+        }
+        return std::vector<SegmentId>{*gap};
     }
     if (it->contains("note_id")) {
         if (!(*it)["note_id"].is_string()) {
             return bad(at(tpath, "note_id"), "must be a string");
         }
-        return std::vector<NoteId>{NoteId{(*it)["note_id"].get<std::string>()}};
+        return std::vector<SegmentId>{segment_id(NoteId{(*it)["note_id"].get<std::string>()})};
     }
     const Json& index = (*it)["note_index"];
     if (!index.is_number_integer() || index.get<long long>() < 0 ||
         index.get<long long>() >= static_cast<long long>(notes.size())) {
         return bad(at(tpath, "note_index"), "must be an index into notes");
     }
-    return std::vector<NoteId>{NoteId{notes[static_cast<std::size_t>(index.get<long long>())].id}};
+    return std::vector<SegmentId>{
+        segment_id(NoteId{notes[static_cast<std::size_t>(index.get<long long>())].id})};
 }
 
 /// category, op and param of an edit.
@@ -229,9 +269,7 @@ Result<EditSpec> parse_edit(const Json& j, const std::vector<ScenarioNote>& note
     if (!target) {
         return Unexpected{target.error()};
     }
-    for (const NoteId& id : *target) {
-        spec.target.segment_ids.push_back(segment_id(id));
-    }
+    spec.target.segment_ids = std::move(*target);
     if (auto r = validate_for_add(spec); !r) {
         return bad(path, r.error().message);
     }

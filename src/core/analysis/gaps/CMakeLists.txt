@@ -1,5 +1,6 @@
 anno_add_library(core/analysis/gaps
     SOURCES
+        analyse_gaps.cpp
         build_segment_timeline.cpp
         classify_gap_frames.cpp
         estimate_noise_floor.cpp

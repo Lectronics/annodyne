@@ -153,23 +153,12 @@ Result<void> add_gap_analysis(const AudioSource& src, const MonoAudio& mono,
     if (src.frame_count().value() == 0 || active_notes_overlap(result.notes)) {
         return {};
     }
-    auto floor = estimate_noise_floor(src, activity, result.notes, params.noise_floor);
-    if (!floor) {
-        return stage_error("noise floor", floor.error());
+    auto gaps = analyse_gaps(src, mono, result.notes, activity, params.gaps);
+    if (!gaps) {
+        return Unexpected{gaps.error()};
     }
-    const SourceTime end = SourceTime{} + Seconds{static_cast<double>(src.frame_count().value()) /
-                                                  src.sample_rate().value()};
-    auto evidence = classify_gap_frames(mono, activity, *floor, params.gap_evidence);
-    if (!evidence) {
-        return stage_error("gap evidence", evidence.error());
-    }
-    auto timeline =
-        build_segment_timeline(result.notes, end, activity, *floor, *evidence, params.gaps);
-    if (!timeline) {
-        return stage_error("segment timeline", timeline.error());
-    }
-    result.noise_floor = std::move(*floor);
-    result.timeline = std::move(*timeline);
+    result.noise_floor = std::move(gaps->noise_floor);
+    result.timeline = std::move(gaps->timeline);
     return {};
 }
 

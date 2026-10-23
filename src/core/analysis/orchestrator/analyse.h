@@ -2,9 +2,7 @@
 
 #include "core/analysis/activity/activity.h"
 #include "core/analysis/envelope/envelope.h"
-#include "core/analysis/gaps/build_segment_timeline.h"
-#include "core/analysis/gaps/classify_gap_frames.h"
-#include "core/analysis/gaps/estimate_noise_floor.h"
+#include "core/analysis/gaps/analyse_gaps.h"
 #include "core/analysis/harmonic_noise/harmonic_noise.h"
 #include "core/analysis/loudness/loudness.h"
 #include "core/analysis/onsets/onsets.h"
@@ -49,9 +47,8 @@ struct AnalyseParams {
     PartialsParams partials;             // Phase 4: harmonic tracks (ADR-0016)
     HarmonicNoiseParams harmonic_noise;  // Phase 4: noise bands and sound classes (ADR-0017)
     EnvelopeParams envelope;             // Phase 4: spectral envelope
-    NoiseFloorParams noise_floor;        // Phase 5: the floor curve and spectrum (ADR-0024)
-    GapEvidenceParams gap_evidence;  // Phase 5: consonant and breath evidence (ADR-0017 features)
-    GapParams gaps;                  // Phase 5: the segment timeline
+    GapAnalysisParams
+        gaps;  // Phase 5: noise floor, consonant evidence, segment timeline (ADR-0024)
 };
 
 /// Runs, in order: read_mono + k_weight (once), detect pitch (params.engine: the vendored c4dm/pyin
