@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 anno_add_library(core/render
     SOURCES
         blend_plan.cpp
+        gate.cpp
         render.cpp
         render_cache.cpp
         render_key.cpp
