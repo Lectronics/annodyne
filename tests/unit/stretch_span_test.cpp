@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <numeric>
 #include <vector>
 
@@ -321,7 +322,9 @@ namespace {
 Fixture vibrato_voice(double rate_hz, double depth_cents) {
     return Fixture{voice(
         [=](double t) {
-            return 220.0 * std::pow(2.0, depth_cents * std::sin(2.0 * M_PI * rate_hz * t) / 1200.0);
+            return 220.0 *
+                   std::pow(2.0,
+                            depth_cents * std::sin(2.0 * std::numbers::pi * rate_hz * t) / 1200.0);
         },
         harmonic_amps(10, 0.5))};
 }
@@ -346,8 +349,8 @@ std::pair<double, double> vibrato_of(const OutputAudio& out) {
         double im = 0.0;
         for (std::size_t i = 0; i < n.pitch_mod.size(); ++i) {
             const double v = n.pitch_mod[i].value();
-            re += v * std::cos(2.0 * M_PI * f * static_cast<double>(i) * hop);
-            im += v * std::sin(2.0 * M_PI * f * static_cast<double>(i) * hop);
+            re += v * std::cos(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
+            im += v * std::sin(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
         }
         const double amp = 2.0 * std::hypot(re, im) / static_cast<double>(n.pitch_mod.size());
         if (amp > best.second) {
@@ -486,7 +489,9 @@ TEST_CASE("a_fast_pitch_glide_inside_a_vibrato_note_stays_with_the_audio", "[str
     const Fixture fx{voice(
         [](double t) {
             const double glide = 150.0 * std::clamp((t - 0.8) / 0.025, 0.0, 1.0);
-            return 220.0 * std::pow(2.0, (40.0 * std::sin(2.0 * M_PI * 5.5 * t) + glide) / 1200.0);
+            return 220.0 *
+                   std::pow(2.0,
+                            (40.0 * std::sin(2.0 * std::numbers::pi * 5.5 * t) + glide) / 1200.0);
         },
         harmonic_amps(10, 0.5))};
     const auto rise_of = [&](VibratoMode mode) {
