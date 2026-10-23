@@ -7,13 +7,13 @@
       "category": "time",
       "op": "set",
       "param": "length_scale",
-      "value": 2.6,
+      "value": 2.0,
       "target": {
         "note_id": "n000506"
       }
     }
   ],
   "expect": {
-    "layout": "note 1 body stretched 2.6x: the pause is cut to its minimum and vowel 2 and the rest are squished (vowel 2 starts about 0.83 s late and plays at about 0.31x)"
+    "layout": "note 1 body stretched 2.0x (a 2.6x request does not fit the 3.2 s recording and is refused: the whole layout falls back to the source): the pause is cut by what it can give, vowel 2 is pushed about 0.42 s later at slope 1 (an unedited note moves as one body), and the audio after it is squished a little"
   }
 }

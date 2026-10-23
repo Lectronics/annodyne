@@ -14,6 +14,6 @@
     }
   ],
   "expect": {
-    "layout": "note 1 body stretched 1.4x; the pause is cut by what it can give (the cut is room-limited), the remainder squishes vowel 2 and the tail slightly (vowel 2 starts about 10 ms late)"
+    "layout": "note 1 body stretched 1.4x: the pause is cut by what it can give (room-limited, 11868 samples), the rest of the growth pushes vowel 2 about 8 ms later at slope 1 and the silence after it gives that back"
   }
 }
