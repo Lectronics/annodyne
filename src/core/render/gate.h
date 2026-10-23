@@ -7,6 +7,7 @@
 #include "core/types/time_range.h"
 #include "core/types/units.h"
 
+#include <cstdint>
 #include <vector>
 
 // The gap gate: a per-sample gain for the `silence` regions of a gap with a gap_gain edit
@@ -14,9 +15,23 @@
 
 namespace anno {
 
+/// A `silence` region of a gap on the output axis, in whole samples [first, last), and which of its
+/// edges ramp (the edge borders an ungated neighbour).
+struct GatedSpan {
+    std::int64_t first = 0;
+    std::int64_t last = 0;
+    bool ramp_start = false;
+    bool ramp_end = false;
+};
+
 struct GateParams {
     Seconds gate_fade{0.005};  // >= 0; the ramp at a region edge that borders an ungated neighbour
 };
+
+/// The silence regions of `gap` through `map` at `rate`, in order. Errors: invalid_argument (a
+/// region's start or end maps into a cut, or the rate is not finite and > 0). Pure; thread-safe.
+[[nodiscard]] Result<std::vector<GatedSpan>> gated_spans(const Gap& gap, const TimeMap& map,
+                                                         Hz rate);
 
 /// The gain, one value per output sample of `range`, that `effective` applies to `gap`: 1 outside
 /// every gated region; inside a `silence` region the linear gain of `effective.gain` (exactly 0 at

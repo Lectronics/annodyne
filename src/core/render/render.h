@@ -2,6 +2,7 @@
 
 #include "core/edits/dirty_regions.h"
 #include "core/edits/edit_list.h"
+#include "core/render/gate.h"
 #include "core/render/render_cache.h"
 #include "core/render/render_result.h"
 #include "core/synthesis/engine/synthesis_engine.h"
@@ -37,6 +38,7 @@ struct RenderParams {
     FadeShape crossfade_shape = FadeShape::equal_power;
     RenderCache* cache = nullptr;  // optional, not owned
     StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
+    GateParams gate = {};        // the ramps of the gap gate (ADR-0024); part of the cache key
 };
 
 /// Renders [region) of the track's output. The result's buffer is the request snapped to whole
@@ -59,6 +61,11 @@ struct RenderParams {
 /// Stretched warps (slope != 1, from timing edits) are part of the unedited base: slope-1 warps and
 /// inserts as below, every slope != 1 warp rendered by `stretch_span` (pitch and timbre kept).
 /// A note whose edits are only timing edits is part of that base, not an edited note.
+/// Gap edits (gap_gain, ADR-0024) scale the `silence` regions of their gaps after the blend (see
+/// gate_curve); a gap edit whose id is not in `analysis->timeline`, or any gap edit when the
+/// timeline is absent, is invalid_argument naming the id (orphaned ids are ignored); samples with
+/// no gate are never multiplied. `RenderResult::gaps_rendered` lists the gated gaps that meet the
+/// region.
 /// Time axes: `region` is output time, within [0, output_length of the map]; with an identity
 /// TimeMap it equals source time. Cuts have no output and inserts are digital silence; every other
 /// sample outside blend zones is the source sample the map names, bit for bit. Thread-safe for

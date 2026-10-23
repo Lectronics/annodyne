@@ -1,16 +1,20 @@
 #pragma once
 
 #include "core/render/blend_plan.h"
+#include "core/render/gate.h"
 #include "core/synthesis/engine/synthesis_engine.h"
 #include "core/synthesis/stretch/stretch.h"
 #include "core/types/analysis_result.h"
+#include "core/types/effective_gap.h"
 #include "core/types/effective_note.h"
 #include "core/types/note.h"
+#include "core/types/segments.h"
 #include "core/types/time_map.h"
 
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 // The canonical cache key of one render (design note phase 2, "Cache key"; ADR-0006).
 
@@ -21,6 +25,13 @@ struct EditedNote {
     const Note* note = nullptr;
     EffectiveNote eff;
     SampleSpan span;  // snapped to whole samples
+};
+
+/// An edited gap taking part in a render (ADR-0024).
+struct GateInput {
+    const Gap* gap = nullptr;
+    EffectiveGap eff;
+    std::vector<GatedSpan> spans;  // its silence regions on the output axis, samples
 };
 
 struct RenderKeyInputs {
@@ -38,6 +49,9 @@ struct RenderKeyInputs {
     /// The settings of the stretched base (ADR-0023); null hashes as "none", for callers whose map
     /// has no stretched span.
     const StretchParams* stretch = nullptr;
+    // Edited gaps (ADR-0024) and the gate's fade in samples; appended last (key version 4).
+    std::span<const GateInput> gates;
+    std::int64_t gate_fade_samples = 0;
 };
 
 /// 128-bit content fingerprint of every field of a Note (two independent 64-bit FNV-style streams).

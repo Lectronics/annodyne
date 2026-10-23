@@ -9,8 +9,8 @@ namespace anno {
 
 namespace {
 
-constexpr std::uint32_t k_key_format_version =
-    3;  // 3: the stretch settings; 2: the whole TimeMap is part of the key
+constexpr std::uint32_t k_key_format_version = 4;  // 4: edited gaps; 3: the stretch settings;
+                                                   // 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -201,6 +201,30 @@ std::string note_fingerprint(const Note& note) {
     return out.data();
 }
 
+/// Edited gaps whose silence regions meet the region (ADR-0024), with the gate's fade.
+void put_gates(Writer& w, const RenderKeyInputs& in) {
+    std::vector<const GateInput*> gated;
+    for (const GateInput& g : in.gates) {
+        if (std::ranges::any_of(g.spans, [&](const GatedSpan& s) {
+                return s.first < in.region_end && s.last > in.region_begin;
+            })) {
+            gated.push_back(&g);
+        }
+    }
+    w.u64(gated.size());
+    w.i64(gated.empty() ? 0 : in.gate_fade_samples);
+    for (const GateInput* g : gated) {
+        w.text(g->gap->id.value);
+        w.f64(g->eff.gain.value());
+        w.u64(g->spans.size());
+        for (const GatedSpan& s : g->spans) {
+            w.i64(s.first);
+            w.i64(s.last);
+            w.u64((s.ramp_start ? 1U : 0U) | (s.ramp_end ? 2U : 0U));
+        }
+    }
+}
+
 std::string make_render_key(const RenderKeyInputs& in) {
     Writer w;
     w.u64(k_key_format_version);
@@ -251,6 +275,8 @@ std::string make_render_key(const RenderKeyInputs& in) {
         put(w, e->eff);
         w.text(note_fingerprint(*e->note));
     }
+
+    put_gates(w, in);
     return w.data();
 }
 
