@@ -3,13 +3,15 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdio>
 
 namespace anno {
 
 namespace {
 
-constexpr std::uint32_t k_key_format_version = 4;  // 4: edited gaps; 3: the stretch settings;
+constexpr std::uint32_t k_key_format_version = 5;  // 5: local map spans, the splice fade; 4: edited
+                                                   // gaps; 3: the stretch settings;
                                                    // 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
@@ -105,20 +107,32 @@ void put(Writer& w, const TimePair& p) {
     put(w, p.output);
 }
 
-void put(Writer& w, const TimeMap& map) {
+/// The map's lengths, and only the spans that meet [lo, hi] (output samples, inclusive): a block's
+/// samples depend on nothing else, so a timing edit elsewhere leaves its key alone (ADR-0023
+/// amendment 1, local invalidation). A cut has no output length, so it is kept when it sits inside.
+void put(Writer& w, const TimeMap& map, std::int64_t lo, std::int64_t hi, double rate_hz) {
     w.boolean(map.is_identity());
     put(w, map.source_length());
     put(w, map.output_length());
     if (map.is_identity()) {
         return;
     }
-    w.u64(map.spans().size());
+    const auto sample_of = [&](OutputTime t) {
+        return static_cast<std::int64_t>(std::llround((t - OutputTime{}).value() * rate_hz));
+    };
+    std::vector<const TimeSpan*> meeting;
     for (const TimeSpan& s : map.spans()) {
-        w.u64(static_cast<std::uint64_t>(s.kind));
-        put(w, s.source_start);
-        put(w, s.source_end);
-        put(w, s.output_start);
-        put(w, s.output_end);
+        if (sample_of(s.output_end) >= lo && sample_of(s.output_start) <= hi) {
+            meeting.push_back(&s);
+        }
+    }
+    w.u64(meeting.size());
+    for (const TimeSpan* s : meeting) {
+        w.u64(static_cast<std::uint64_t>(s->kind));
+        put(w, s->source_start);
+        put(w, s->source_end);
+        put(w, s->output_start);
+        put(w, s->output_end);
     }
 }
 
@@ -238,7 +252,9 @@ std::string make_render_key(const RenderKeyInputs& in) {
     w.i64(in.region_begin);
     w.i64(in.region_end);
     w.f64(in.sample_rate_hz);
-    put(w, *in.time_map);
+    const std::int64_t reach = in.margin_samples + in.splice_fade_samples;
+    put(w, *in.time_map, in.region_begin - reach, in.region_end + reach, in.sample_rate_hz);
+    w.i64(in.splice_fade_samples);
     put(w, in.stretch);
 
     const auto name_of = [&](int index) {

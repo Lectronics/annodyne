@@ -116,4 +116,31 @@ inline constexpr double k_max_layout_slope = 4.0;
                                           const LayoutMarkers& markers, const LayoutParams& params,
                                           const TimeMapParams& time_map);
 
+/// Turns a solved layout into the TimeMap (ADR-0025). Per interval, in the span order of the design
+/// note: the gap's left remnant, the cut (a cut span) or the insert (an insert span), the right
+/// remnant (all slope 1, whole-sample shifts) and the other audio as one warp of `residual_slope`.
+/// With `time_map.sample_rate` > 0 every source position is snapped to the nearest sample, so a
+/// stretched warp maps N whole source samples to M whole output samples and a slope-1 warp is a
+/// whole-sample shift. Adjacent slope-1 warps with the same shift are merged; a layout with no
+/// change gives TimeMap::identity. A first interval that starts later than output 0 (a note at the
+/// start of the recording pushed later) begins with an insert span. `repaired_notes` counts the
+/// notes `layout.repaired` marks.
+/// Errors: invalid_argument if a cut or insert does not lie inside a `silence` region of its gap or
+/// a gap index is out of range; internal if the spans do not tile.
+/// Pure; thread-safe; not real-time safe (allocates).
+[[nodiscard]] Result<TimeMapBuild> build_layout_map(const SegmentTimeline& timeline,
+                                                    const Layout& layout,
+                                                    const TimeMapParams& time_map);
+
+/// markers -> solve -> map. Mode `stretch` is build_time_map with a fixed end (bit-identical to
+/// it); `absorb_then_stretch` is layout_markers + solve_layout + build_layout_map. The recording's
+/// length is the timeline's source end; `time_map.source_end` and `tail` are ignored.
+/// Errors: those of layout_markers, solve_layout and build_layout_map.
+/// Pure; thread-safe; not real-time safe (allocates).
+[[nodiscard]] Result<TimeMapBuild> build_layout_time_map(std::span<const Note> notes,
+                                                         const SegmentTimeline& timeline,
+                                                         const EditList& edits,
+                                                         const LayoutParams& params,
+                                                         const TimeMapParams& time_map);
+
 }  // namespace anno

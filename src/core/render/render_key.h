@@ -45,13 +45,14 @@ struct RenderKeyInputs {
     double sample_rate_hz = 0.0;
     std::span<const EditedNote> edited;
     std::span<const Ramp> ramps;
-    const TimeMap* time_map = nullptr;  // never null; the whole map is part of the key (ADR-0008)
+    const TimeMap* time_map = nullptr;  // never null; its lengths and the spans near the region
     /// The settings of the stretched base (ADR-0023); null hashes as "none", for callers whose map
     /// has no stretched span.
     const StretchParams* stretch = nullptr;
     // Edited gaps (ADR-0024) and the gate's fade in samples; appended last (key version 4).
     std::span<const GateInput> gates;
     std::int64_t gate_fade_samples = 0;
+    std::int64_t splice_fade_samples = 0;  // the layout's splice fade (key version 5)
 };
 
 /// 128-bit content fingerprint of every field of a Note (two independent 64-bit FNV-style streams).
@@ -63,9 +64,9 @@ struct RenderKeyInputs {
 /// unambiguous. Everything except the note fingerprints compares exactly. Includes the ramps
 /// that meet the region (so a neighbour outside the region that changes a ramp length changes the
 /// key) and, for every edited note whose zone meets the region, its snapped span, its EffectiveNote
-/// and its fingerprint, and the whole TimeMap (its lengths, and every span unless it is the
-/// identity), so no span a zone reads can be missed.
-/// Pure; thread-safe; not real-time safe.
+/// and its fingerprint, and the TimeMap (its lengths, and the spans that meet the region widened by
+/// the margin and the splice fade, unless it is the identity), so no span a zone reads can be
+/// missed. Pure; thread-safe; not real-time safe.
 [[nodiscard]] std::string make_render_key(const RenderKeyInputs& in);
 
 /// Short hex identifier of a key, for reports. Not unique.

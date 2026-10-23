@@ -7,6 +7,7 @@
 #include "core/render/render_result.h"
 #include "core/synthesis/engine/synthesis_engine.h"
 #include "core/synthesis/stretch/stretch.h"
+#include "core/timemap/layout.h"
 #include "core/types/analysis_result.h"
 #include "core/types/audio_source.h"
 #include "core/types/result.h"
@@ -25,9 +26,11 @@ struct RenderInputs {
     std::shared_ptr<const AnalysisResult> analysis;  // must not be null
     std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
     /// Optional (ADR-0008). If set it is the track's TimeMap, authoritative over any timing edits
-    /// in `edits`; its source_length must match the recording (half a sample). If null the map is
-    /// built from the edits with the tail shifted (not squeezed) and whole-sample shifts
-    /// (ADR-0023); a supplied map must give every slope-1 warp a whole-sample shift.
+    /// in `edits`; its source_length must match the recording (half a sample). If null and the
+    /// analysis has a segment timeline the map is the layout of the edits (ADR-0025: gaps absorb
+    /// first, the recording keeps its length); without a timeline it is built with the tail shifted
+    /// (not squeezed). Either way shifts are whole samples (shift grid steps with a timeline,
+    /// ADR-0023); a supplied map must give every slope-1 warp a whole-sample shift.
     std::shared_ptr<const TimeMap> time_map;
 };
 
@@ -39,6 +42,10 @@ struct RenderParams {
     RenderCache* cache = nullptr;  // optional, not owned
     StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
     GateParams gate = {};        // the ramps of the gap gate (ADR-0024); part of the cache key
+    /// The layout of timing edits (ADR-0025), used when the analysis has a segment timeline and no
+    /// TimeMap is supplied. `note_margin` is replaced by `crossfade_length`. Part of the cache key
+    /// through the map and the splice fade.
+    LayoutParams layout = {};
 };
 
 /// Renders [region) of the track's output. The result's buffer is the request snapped to whole

@@ -98,7 +98,10 @@ Result<void> check_markers(const SegmentTimeline& tl, const LayoutMarkers& marke
     const auto& list = markers.markers;
     const bool ends_at_end =
         std::abs(seconds_of(list.back().source) - seconds_of(tl.source_end())) < k_match_s;
-    if (list.front().kind != MarkerKind::origin || !ends_at_end) {
+    const bool starts_at_origin =
+        seconds_of(list.front().source) == 0.0 &&
+        (list.front().kind == MarkerKind::origin || list.front().kind == MarkerKind::note_start);
+    if (!starts_at_origin || !ends_at_end) {
         return fail(ErrorCode::invalid_argument,
                     "solve_layout: markers must run from the origin to the timeline's end");
     }

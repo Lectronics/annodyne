@@ -22,8 +22,10 @@ struct RenderResult {
                                // with `stretched` it does not mean the audio equals the source
     bool stretched = false;    // a slope != 1 warp of the map meets the region and was
                                // rendered by stretch_span (ADR-0023)
-    int repaired_notes = 0;    // notes whose timing request build_time_map could not honour
+    int repaired_notes = 0;    // notes whose timing request the map builder could not honour
                                // exactly (only when the map was built from the edits)
+    bool layout_used = false;  // the map came from the layout (absorb-then-stretch, ADR-0025);
+                               // false: a supplied map, no timeline, or mode stretch
 };
 
 }  // namespace anno
