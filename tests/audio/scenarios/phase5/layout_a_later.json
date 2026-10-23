@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "note 1 plays 0.2 s later (landing on the shift grid, 0.199 s): the silence before it grows (digital zeros), the pause after it is cut by the same amount in the silence next to note 1's end (src 1.25-1.45 s); the fricative and vowel 2 and everything after the cut are in place and bit-identical; vibrato rate and depth of both notes unchanged"
-  }
+  },
+  "stretch_engine": "psola"
 }

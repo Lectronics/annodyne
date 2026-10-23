@@ -445,7 +445,7 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     if (!engine->empty() && *engine != "psola" && *engine != "rubberband") {
         return bad("$.stretch_engine", R"(must be "psola" or "rubberband")");
     }
-    scenario.stretch_rubberband = *engine == "rubberband";
+    scenario.stretch_psola = *engine == "psola";
     auto analysis = string_field(root, "analysis", "$", false);
     if (!analysis) {
         return Unexpected{analysis.error()};

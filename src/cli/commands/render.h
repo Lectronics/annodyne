@@ -35,7 +35,7 @@ struct LoadedScenario {
     std::string name;
     std::string algorithm;
     bool stretch_vibrato_retime = false;  // from the scenario's "stretch_vibrato"
-    bool stretch_rubberband = false;      // from the scenario's "stretch_engine"
+    bool stretch_psola = false;           // "stretch_engine": "psola" (the default is Rubber Band)
     std::string edits_json;               // the scenario's "edits" array as written
     std::string expect_json;              // the scenario's "expect" object as written, or empty
 };

@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "vocadito_2, note at 31.01 s (1.05 s) stretched 1.5x: the pause after it absorbs, the next note is released and squished if it is not enough; vibrato kept"
-  }
+  },
+  "stretch_engine": "psola"
 }

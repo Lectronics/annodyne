@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "vocadito_2, note at 3.10 s moved 0.15 s later: the pause before it grows, the one after it is cut next to the note's end, the rest stays"
-  }
+  },
+  "stretch_engine": "psola"
 }

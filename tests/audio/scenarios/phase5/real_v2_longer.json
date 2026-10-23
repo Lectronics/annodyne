@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "vocadito_2, note at 3.10 s stretched 1.4x: the pause after it is cut where it can, otherwise the next note is squished; the vibrato rate is kept"
-  }
+  },
+  "stretch_engine": "psola"
 }

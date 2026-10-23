@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "note 1 body stretched 1.4x with its vibrato rate and depth kept (about 5.6 Hz, 35 cents against 5.7 Hz, 37 cents): the pause is cut by what it can give (room-limited), and vowel 2 is released from its pin and squished very slightly (about 344 samples over 0.7 s)"
-  }
+  },
+  "stretch_engine": "psola"
 }

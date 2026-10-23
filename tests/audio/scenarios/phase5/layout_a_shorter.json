@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "note 1 body squished to 0.6x with its vibrato rate kept (about 5.4 Hz against 5.7 Hz, depth 37 cents): the pause after it grows by the same amount as digital zeros inserted just before vowel 2; vowel 2 and everything after are in place and bit-identical"
-  }
+  },
+  "stretch_engine": "psola"
 }

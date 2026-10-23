@@ -40,8 +40,10 @@ struct RenderParams {
     Seconds crossfade_length{0.010};
     FadeShape crossfade_shape = FadeShape::equal_power;
     RenderCache* cache = nullptr;  // optional, not owned
-    StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
-    GateParams gate = {};        // the ramps of the gap gate (ADR-0024); part of the cache key
+    // Settings of the stretched base (ADR-0023); part of the cache key. A render defaults to Rubber
+    // Band R3 (ADR-0026, owner 2026-10-23: "phenomenal"); StretchParams itself defaults to PSOLA.
+    StretchParams stretch = {.engine = StretchEngine::rubberband};
+    GateParams gate = {};  // the ramps of the gap gate (ADR-0024); part of the cache key
     /// The layout of timing edits (ADR-0025), used when the analysis has a segment timeline and no
     /// TimeMap is supplied. `note_margin` is replaced by `crossfade_length`. Part of the cache key
     /// through the map and the splice fade.

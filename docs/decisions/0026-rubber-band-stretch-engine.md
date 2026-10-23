@@ -1,6 +1,6 @@
 # ADR-0026: Rubber Band R3 as an optional stretch engine (GPL-2.0-or-later, vendored)
 
-- **Status:** accepted for integration (owner, 2026-10-23: "implementing it now is probably better for dependency reasons"); the choice of default engine is open until the owner has listened to the A/B renders.
+- **Status:** accepted (owner, 2026-10-23). Amendment 1 (same day): after listening to the A/B renders the owner called Rubber Band "phenomenal" and set the project policy of reusing known, tested third-party code where it exists; renders now default to Rubber Band.
 - **Phase:** 5 (timing)
 - **Related:** ADR-0014 (the GPL-2.0-or-later consequence is already accepted), ADR-0023 (stretched spans), `docs/design/tsm-research.md`.
 
@@ -12,7 +12,7 @@
 2. **Layer rule:** only `core/synthesis/stretch` may link `anno_rubberband`, privately (AnnoLayers external allowlist); no Rubber Band header appears in a public header.
 3. **API:** `StretchParams::engine` (`enum class StretchEngine : uint8_t {psola (default), rubberband}`). With `rubberband`, `stretch_span` renders the span's source samples through R3 (offline, one thread, no pitch change, channels together), cut or padded to exactly the span's output samples, **any channel count**; over the first and last 8 ms the result is blended (equal power) into an exact slope-1 copy of the source, so the span meets its neighbours on the source's own samples; a span of under 2048 source samples is resampled linearly. The whole span is rendered whatever range is asked for, so a range is a slice of the same samples.
 4. **Cache:** `render_key` hashes the engine; `k_key_format_version` is 7.
-5. **Selection:** the CLI scenario key `"stretch_engine": "psola" | "rubberband"` (A/B). The default stays `psola` until the owner decides.
+5. **Selection:** `RenderParams::stretch` defaults to `engine = rubberband` (amendment 1); `StretchParams` itself still defaults to `psola`, which stays available (`"stretch_engine": "psola"` in a scenario) for A/B and for the vibrato regeneration of ADR-0023 amendment 3, which only the PSOLA path has.
 
 ## Consequences
 - Stereo and multi-channel material can be stretched (with `rubberband`); PSOLA stays mono-only.

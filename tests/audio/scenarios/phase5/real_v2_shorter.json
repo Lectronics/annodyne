@@ -15,5 +15,6 @@
   ],
   "expect": {
     "layout": "vocadito_2, note at 3.10 s (1.21 s) squished to 0.7x: the pause after it grows, the next notes stay in place, the vibrato rate is kept"
-  }
+  },
+  "stretch_engine": "psola"
 }

@@ -175,15 +175,15 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
                           .name = scenario->name,
                           .algorithm = scenario->algorithm,
                           .stretch_vibrato_retime = scenario->stretch_vibrato_retime,
-                          .stretch_rubberband = scenario->stretch_rubberband,
+                          .stretch_psola = scenario->stretch_psola,
                           .edits_json = scenario->edits_json,
                           .expect_json = scenario->expect_json};
 }
 
 RenderParams render_params_of(const LoadedScenario& scenario) {
     RenderParams params;
-    if (scenario.stretch_rubberband) {
-        params.stretch.engine = StretchEngine::rubberband;
+    if (scenario.stretch_psola) {
+        params.stretch.engine = StretchEngine::psola;
     }
     if (scenario.stretch_vibrato_retime) {
         params.stretch.vibrato = VibratoMode::retime;
