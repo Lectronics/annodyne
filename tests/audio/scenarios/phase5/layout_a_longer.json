@@ -1,0 +1,31 @@
+{
+  "name": "layout_a_longer",
+  "source": "tests/audio/scenarios/sources/gap_fricative.wav",
+  "analysis": "given",
+  "notes": [
+    {
+      "id": "a",
+      "start_s": 0.5,
+      "end_s": 1.2
+    },
+    {
+      "id": "b",
+      "start_s": 2.0,
+      "end_s": 2.7
+    }
+  ],
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "length_scale",
+      "value": 1.4,
+      "target": {
+        "note_id": "a"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "a is stretched 1.4x in its body (pitch and timbre kept); the pause gives the time back, b stays in place"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "layout_a_later",
+  "source": "tests/audio/scenarios/sources/gap_fricative.wav",
+  "analysis": "given",
+  "notes": [
+    {
+      "id": "a",
+      "start_s": 0.5,
+      "end_s": 1.2
+    },
+    {
+      "id": "b",
+      "start_s": 2.0,
+      "end_s": 2.7
+    }
+  ],
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "onset_shift",
+      "value": 0.2,
+      "target": {
+        "note_id": "a"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "a plays 0.2 s later: the leading silence gets longer, the pause after a gets shorter by the same, b and the fricative stay in place and bit-identical"
+  }
+}

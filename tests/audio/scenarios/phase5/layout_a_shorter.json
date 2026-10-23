@@ -1,0 +1,31 @@
+{
+  "name": "layout_a_shorter",
+  "source": "tests/audio/scenarios/sources/gap_fricative.wav",
+  "analysis": "given",
+  "notes": [
+    {
+      "id": "a",
+      "start_s": 0.5,
+      "end_s": 1.2
+    },
+    {
+      "id": "b",
+      "start_s": 2.0,
+      "end_s": 2.7
+    }
+  ],
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "length_scale",
+      "value": 0.6,
+      "target": {
+        "note_id": "a"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "a is squished to 0.6x; the audio after it is stretched slightly to keep b at its place and the recording's length"
+  }
+}

@@ -20,10 +20,12 @@ namespace anno::cli {
 
 namespace {
 
-/// True if any edit targets a gap.
-bool targets_a_gap(const std::vector<EditSpec>& edits) {
+/// True if any edit targets a gap or moves time: both need the segment timeline (the gate, and
+/// the layout of timing edits, ADR-0024 and ADR-0025).
+bool needs_timeline(const std::vector<EditSpec>& edits) {
     return std::ranges::any_of(edits, [](const EditSpec& e) {
-        return std::ranges::any_of(e.target.segment_ids,
+        return e.category == EditCategory::time || e.category == EditCategory::attack ||
+               std::ranges::any_of(e.target.segment_ids,
                                    [](const SegmentId& id) { return id.kind == SegmentKind::gap; });
     });
 }
@@ -144,7 +146,7 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
         if (!synthetic) {
             return Unexpected{synthetic.error()};
         }
-        if (targets_a_gap(scenario->edits)) {
+        if (needs_timeline(scenario->edits)) {
             if (auto r = add_scenario_gaps(source, *synthetic); !r) {
                 return Unexpected{r.error()};
             }
