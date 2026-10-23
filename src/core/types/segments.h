@@ -18,8 +18,11 @@
 namespace anno {
 
 /// What a stretch of a gap is. `tail` is the previous note's decay, `protected_preroll` the guard
-/// before the next note's start; both are left alone by the gate. `silence` is the rest.
-enum class GapRegionKind { tail, protected_preroll, silence };
+/// before the next note's start; both are left alone by the gate. `audible` is a stretch inside a
+/// gap that stands above the floor (a fricative, a breath, a room event) wherever it sits: the gate
+/// leaves it alone too, whatever it is (the consonant detector, a later slice, refines it into
+/// sibilant, breath and plosive kinds). `silence` is the rest.
+enum class GapRegionKind { tail, protected_preroll, silence, audible };
 
 struct GapRegion {
     GapRegionKind kind = GapRegionKind::silence;

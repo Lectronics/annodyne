@@ -220,3 +220,12 @@ Layout and ripple (slice 8 note; anchors, `layout` edits, ARA/host region questi
 ## Review log
 
 *(round 2 findings go here; round 1 findings B1-B12 and S1-S13 of `silence-and-gaps.md` are answered above: B1 existing types, B2 representation, B3 types in core/types, B4 narrow inputs and order, B5 no `allocate_stretch`, `build_time_map` kept (slice 8), B6 slice 8 note, B7 `StripSilence` clamps in the planner (slice 10), B8 ADR-0024, B9 `EffectiveGap` in types, B10 floor builds on `ActivityTrack`, B11 breaths deferred, B12 render integration for the gate, S3 preroll as a region.)*
+
+
+## Revision (owner, 2026-10-22): protect audible stretches, consonant detector before the gate
+
+Raised while building slice 5: unvoiced consonants (sibilants, fricatives, plosive bursts) and breaths sit in the gaps, so a gap of one `silence` region would let the gate mute them. Decisions:
+
+- **Slice 6 classifies by level as well as by position.** Regions of a gap, in order: `tail` (from the previous note's end while the activity level exceeds the floor curve + `tail_margin`, at most `max_tail`), `audible` (any later run of frames above floor + `tail_margin` that lasts at least `min_audible` (20 ms), padded by `audible_pad` (10 ms) each side, wherever it sits), `protected_preroll` (the last `preroll_guard` before the next note), `silence` (the rest). This is an engineering safety net from ordinary energy-based activity detection, not from a paper; the repo's research (implementation guide B6, ADR-0017) says level-independent features are needed for quiet fricatives, which is the next point. A level exactly at floor + margin is not above it.
+- **A consonant detector is pulled forward, before the gate (new slice 6b).** It runs the ADR-0017 features (centroid, ZCR, high-band ratio, aperiodicity, spectral flux) over the gap frames and refines `audible` into sibilant / breath / plosive kinds, and adds regions the level rule misses (quiet fricatives). Nothing can be muted before it exists. Breath chain and the breath macros stay in Phase 6; only the detection moves.
+- Slice order is now: 6 (levels), 6b (consonant detector), 7 (gate), then the layout.

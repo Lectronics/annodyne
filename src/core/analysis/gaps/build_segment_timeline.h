@@ -15,10 +15,11 @@
 namespace anno {
 
 struct GapParams {
-    // Used from slice 6 (tail and protected_preroll regions); validated now.
     Decibels tail_margin{6.0};  // a tail lasts while the floor curve + margin is exceeded
     Seconds max_tail{1.5};
-    Seconds preroll_guard{0.015};
+    Seconds preroll_guard{0.015};  // the protected_preroll region before a note
+    Seconds min_audible{0.02};     // a run above floor + tail_margin shorter than this is ignored
+    Seconds audible_pad{0.01};     // an audible region reaches this far each side of its run
 };
 
 /// Partitions [0, source_end] into the active notes (each exactly its source range) and the gaps

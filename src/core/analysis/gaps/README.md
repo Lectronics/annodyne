@@ -7,5 +7,6 @@ Design: `docs/design/phase5-gaps-core.md`, ADR-0024.
   the notes, in a sliding window) and the average floor spectrum in log-spaced bands. One level
   convention: RMS dBFS (a full-scale sine reads -3.01 dB).
 - `build_segment_timeline.h` — the recording as notes and the gaps between them (every positive space
-  is a gap; one `silence` region per gap until the tail and preroll regions of slice 6; a gap's floor
-  is the median of the floor curve over it). `analyse()` stores both results in `AnalysisResult`.
+  is a gap; regions in order: `tail` (the previous note's decay while the level is above floor + margin, capped), `audible` (any
+  later run above floor + margin, wherever it sits: a fricative or breath), `silence`, and the
+  `protected_preroll` before the next note; a gap's floor is the median of the floor curve over it). `analyse()` stores both results in `AnalysisResult`.

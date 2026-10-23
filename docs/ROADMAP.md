@@ -138,6 +138,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - *Carried (2026-10-22):* `tools/note_separation` moves to the phase that adds separation edits: it needs new `EditParam`s (a split position as `SourceTime`, a merge) with a `ValueKind`, re-analysis remapping of segment ids, and an ADR; `EditCategory::separation` exists with no parameters today.
 - `macros/quantize_time` (grid), with perceptual onsets.
 - *(ADR-0008)* Segment timeline (`analysis/gaps`): noise floor, gap detection and classification, `SegmentTimeline` in `AnalysisResult`. Gap layout (`solve_layout`, `plan_gap_layout`, `build_time_map` on spans; shift first, stretch only when a gap is exhausted). `gap` and `layout` edits, `tools/gap`, `macros/strip_silence`, `render_gap`. Breath detection (`analysis/breaths`). Note stretching (`docs/design/note-stretching.md`).
+- *(owner, 2026-10-22)* Consonant detection in gaps (sibilants, fricatives, plosive bursts, breaths: the ADR-0017 features over the gap frames) is part of Phase 5 and comes before the gate, so a `gap_gain` mute can never remove an unvoiced consonant. Breath chain and macros stay in Phase 6.
 - *(ADR-0018)* Research items for timing: protected consonant window, stretch vowels only, plosive bursts repositioned (not stretched), fricatives and breaths stretched as noise (randomised phase, never phase-locked), pre-echo check; `analysis/gaps` refines the recording-noise floor.
 
 **Verify:** timing round-trip, length check, click detector, no flams in overlap tests. Audition `phase5-timing`.

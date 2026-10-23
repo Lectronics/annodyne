@@ -119,7 +119,14 @@ TEST_CASE("analyse_json_reports_the_gaps_and_the_noise_floor", "[cli_analyse]") 
             CHECK(g.contains(key));
         }
         REQUIRE_FALSE(g["regions"].empty());
-        CHECK(g["regions"][0]["kind"] == "silence");
+        for (const auto& r : g["regions"]) {
+            const std::string kind = r["kind"];
+            CHECK((kind == "silence" || kind == "tail" || kind == "audible" ||
+                   kind == "protected_preroll"));
+        }
+        if (!g["after"].is_null()) {  // a note follows: its lead-in is protected
+            CHECK(g["regions"].back()["kind"] == "protected_preroll");
+        }
         CHECK(g["regions"][0]["start_s"] == g["start_s"]);
         CHECK(g["regions"].back()["end_s"] == g["end_s"]);
     }
