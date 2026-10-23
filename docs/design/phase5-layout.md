@@ -171,3 +171,5 @@ struct Layout { std::vector<IntervalPlan> intervals; std::vector<bool> repaired;
 
 ## Slice 8c amendment 2: unedited notes are pinned (2026-10-23)
 See ADR-0025 amendment 2. `layout_markers` adds a pinned start and end for every unedited active note when any note has a timing edit; `solve_layout` moves a pushed pinned note as one body (`follow_pinned`). Effect on the four layout audition scenarios: the second vowel keeps its place and speed unless the pause is used up (`layout_a_longer_than_pause`), when it is pushed later at slope 1 and the trailing pause gives the time back.
+
+Amendment 2 follow-up (same day, owner listening): a pinned note that the edit would push is released (Flex) instead of moved as a body; the cut or insert goes in the silence nearest the edited note. See ADR-0025 amendment 2.

@@ -173,10 +173,11 @@ TEST_CASE("the_cut_goes_in_the_longest_silence_region_not_in_other_kinds", "[sol
                                 {region(GapRegionKind::silence, 2.0, 2.3),
                                  region(GapRegionKind::sibilant, 2.3, 2.5),
                                  region(GapRegionKind::silence, 2.5, 3.0)});
-    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.25)}));
+    const Layout layout = solve_unpinned(f, edits_of({shift_of("a", 0.3)}));
     const IntervalPlan& tail = layout.intervals.back();
     REQUIRE(tail.gap);
-    CHECK(near(s_of(tail.gap->at), 2.75 - 0.125));  // centred in [2.5, 3.0]
+    // only [2.5, 3.0] has room for 0.3 s: the first silence (room 0.25) is too small
+    CHECK(near(s_of(tail.gap->at), 2.75 - 0.15));  // centred in [2.5, 3.0]
     check_conserved(layout, f.timeline);
 }
 
@@ -439,22 +440,50 @@ TEST_CASE("a_lengthened_note_is_taken_up_by_the_pause_after_it_before_b_moves", 
     CHECK(layout.repaired == std::vector<bool>(3, false));
 }
 
-TEST_CASE("a_note_pushed_by_the_edit_before_it_moves_as_one_body", "[solve_layout]") {
-    // gA is 1 s: a lengthened by 1.9 s (to end at 3.9) cannot be absorbed; b is pushed later
-    // but keeps its length and slope (its two markers share one shift).
-    const auto f = fixture3();
-    const Layout layout = solve(f, edits_of({scale_of("a", 2.9)}));
-    check_conserved(layout, f.timeline);
-    const IntervalPlan* body = nullptr;
+TEST_CASE("the_cut_goes_in_the_silence_nearest_the_edited_note", "[solve_layout]") {
+    // gA has two silences, [2.0, 2.4] and [2.6, 3.0], a sibilant between: a moved later by 0.1 s
+    // cuts the first (next to a's end), so the sibilant and b stay in place.
+    const auto f = with_regions(fixture3(), 1,
+                                {region(GapRegionKind::silence, 2.0, 2.4),
+                                 region(GapRegionKind::sibilant, 2.4, 2.6),
+                                 region(GapRegionKind::silence, 2.6, 3.0)});
+    const Layout layout = solve(f, edits_of({shift_of("a", 0.1)}));
+    const IntervalPlan* pause = nullptr;
     for (const IntervalPlan& i : layout.intervals) {
-        if (near(s_of(i.from), 3.0) && near(s_of(i.to), 4.0)) {
-            body = &i;
+        if (near(s_of(i.from), 2.0) && near(s_of(i.to), 3.0)) {
+            pause = &i;
         }
     }
-    REQUIRE(body != nullptr);
-    CHECK(near(body->residual_slope, 1.0));
-    CHECK(near(delta_of(*body), 0.0));
-    CHECK(o_of(body->out_from) > 3.0);
-    CHECK(layout.repaired[1]);
-    CHECK(!layout.repaired[0]);
+    REQUIRE(pause != nullptr);
+    REQUIRE(pause->gap);
+    CHECK(s_of(pause->gap->at) < 2.4);
+    check_conserved(layout, f.timeline);
+}
+
+TEST_CASE("when_the_pause_is_used_up_the_notes_beside_it_stretch_and_squish", "[solve_layout]") {
+    // gA is 1 s; a lengthened by 1.9 s cannot be absorbed there: b is released from its pin and
+    // squished (Flex), and nothing falls back.
+    const auto f = fixture3();
+    const Layout layout = solve(f, edits_of({scale_of("a", 2.9)}));
+    CHECK(!layout.fell_back);
+    check_conserved(layout, f.timeline);
+    bool squished = false;
+    for (const IntervalPlan& i : layout.intervals) {
+        if (s_of(i.from) >= 2.0 && s_of(i.to) <= 5.0 + k_eps && i.residual_slope < 1.0) {
+            squished = true;
+        }
+    }
+    CHECK(squished);
+    // c, further on, is still pinned
+    for (const IntervalPlan& i : layout.intervals) {
+        if (s_of(i.from) >= 5.0 && s_of(i.to) <= 6.0 + k_eps) {
+            CHECK(near(delta_of(i), 0.0));
+        }
+    }
+}
+
+TEST_CASE("a_request_no_release_can_fit_falls_back_to_the_unedited_layout", "[solve_layout]") {
+    const auto f = fixture_of({make_note("a", 1.0, 2.0), make_note("b", 2.2, 3.0)}, 4.0);
+    const Layout layout = solve(f, edits_of({scale_of("a", 6.0)}));
+    CHECK(layout.fell_back);
 }

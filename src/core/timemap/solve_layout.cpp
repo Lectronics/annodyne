@@ -135,38 +135,61 @@ std::optional<std::size_t> gap_ending_at(const SegmentTimeline& tl, double t) {
     return std::nullopt;
 }
 
-/// The gap that absorbs the interval's change: the first of rules a-d that finds a gap.
-std::optional<std::size_t> absorbing_gap(const SegmentTimeline& tl, const LayoutMarker& left,
-                                         const LayoutMarker& right) {
+/// The gap that absorbs an interval's change, and the end of it the edit is at: a cut or insert
+/// goes in the silence nearest the edited note, so what lies beyond (a consonant before the next
+/// note) keeps its place with that note.
+struct Absorber {
+    std::size_t gap = 0;
+    bool near_right = false;  // the edited marker is the right one: prefer the last silence
+};
+
+/// The first of rules a-d that finds a gap.
+std::optional<Absorber> absorbing_gap(const SegmentTimeline& tl, const LayoutMarker& left,
+                                      const LayoutMarker& right) {
     if (left.kind == MarkerKind::note_end) {
         if (auto g = gap_starting_at(tl, seconds_of(left.source))) {
-            return g;
+            return Absorber{.gap = *g, .near_right = false};
         }
     }
     if (left.kind == MarkerKind::origin) {
         if (auto g = gap_starting_at(tl, 0.0)) {
-            return g;
+            return Absorber{.gap = *g, .near_right = true};
         }
     }
     if (right.kind == MarkerKind::note_start || right.kind == MarkerKind::end) {
-        return gap_ending_at(tl, seconds_of(right.source));
+        if (auto g = gap_ending_at(tl, seconds_of(right.source))) {
+            return Absorber{.gap = *g, .near_right = right.kind == MarkerKind::note_start};
+        }
     }
     return std::nullopt;
 }
 
-/// The longest silence region of the gap (ties: the earliest).
-const GapRegion* longest_silence(const Gap& gap) {
-    const GapRegion* best = nullptr;
+double cut_room(const Context& c, double silence_s);
+
+double region_length(const GapRegion& r) {
+    return seconds_of(r.end) - seconds_of(r.start);
+}
+
+/// The silence region a change of `need_s` goes in: the one nearest the edit (`near_right`: the
+/// last, else the first) with room for all of it; if none has, the longest (ties: the earliest).
+/// Growth (`need_s` > 0) needs no room: the nearest silence.
+const GapRegion* silence_for(const Context& c, const Gap& gap, double need_s, bool near_right) {
+    const GapRegion* nearest = nullptr;
+    const GapRegion* longest = nullptr;
     for (const GapRegion& r : gap.regions) {
         if (r.kind != GapRegionKind::silence) {
             continue;
         }
-        if (best == nullptr || seconds_of(r.end) - seconds_of(r.start) >
-                                   seconds_of(best->end) - seconds_of(best->start)) {
-            best = &r;
+        const bool fits =
+            need_s >= 0.0 || cut_room(c, region_length(r)) >= -need_s - k_same_length_s;
+        if (fits && (nearest == nullptr || near_right)) {
+            nearest = &r;
+        }
+        if (longest == nullptr || region_length(r) > region_length(*longest)) {
+            longest = &r;
         }
     }
-    return best;
+    return nearest != nullptr ? nearest : longest;
 }
 
 /// What a cut can take out of `silence_s` of silence: it keeps min_gap, and a note margin plus the
@@ -183,9 +206,10 @@ double cut_room(const Context& c, double silence_s) {
 }
 
 /// The cut or insert for a change of `delta_s` in `gap`, or nullopt if the gap can take none of it.
-std::optional<GapEdit> gap_edit(const Context& c, std::size_t index, double delta_s) {
+std::optional<GapEdit> gap_edit(const Context& c, const Absorber& absorber, double delta_s) {
+    const std::size_t index = absorber.gap;
     const Gap& gap = (*c.timeline).gaps()[index];
-    const GapRegion* silence = longest_silence(gap);
+    const GapRegion* silence = silence_for(c, gap, delta_s, absorber.near_right);
     if (silence == nullptr) {
         return std::nullopt;
     }
@@ -249,10 +273,10 @@ Solved solve_interval(const Context& c, const LayoutMarker& left, const LayoutMa
     }
     double other_s = span_s;
     double rest_s = delta_s;
-    if (const auto index = absorbing_gap(*c.timeline, left, right)) {
-        plan.gap = gap_edit(c, *index, delta_s);
+    if (const auto absorber = absorbing_gap(*c.timeline, left, right)) {
+        plan.gap = gap_edit(c, *absorber, delta_s);
         if (plan.gap) {
-            const Gap& gap = c.timeline->gaps()[*index];
+            const Gap& gap = c.timeline->gaps()[absorber->gap];
             other_s = span_s - (seconds_of(gap.end) - seconds_of(gap.start));
             if (plan.gap->cut) {
                 rest_s = delta_s + plan.gap->length.value();
@@ -304,32 +328,98 @@ std::vector<Anchor> anchors_of(const LayoutMarkers& markers) {
     return anchors;
 }
 
-/// An unedited (pinned) note moves as one body: its start and end markers take the larger of their
-/// two shifts, so a push on one never squeezes the note. Marks the note repaired if it moved.
-void follow_pinned(const std::vector<LayoutMarker>& list, std::vector<Anchor>& anchors,
-                   Layout& layout) {
-    for (std::size_t k = 0; k + 1 < anchors.size(); ++k) {
-        const bool body = list[k].pinned && list[k + 1].pinned && list[k].note == list[k + 1].note;
-        if (!body) {
-            continue;
-        }
-        const double shift =
-            std::max(anchors[k].t - anchors[k].s, anchors[k + 1].t - anchors[k + 1].s);
-        for (const std::size_t i : {k, k + 1}) {
-            anchors[i].t = anchors[i].s + shift;
-        }
-        if (std::abs(shift) > k_same_length_s) {
-            layout.repaired[static_cast<std::size_t>(anchors[k].note)] = true;
-        }
-    }
-}
-
 void mark_changed(Layout& layout, const std::vector<Anchor>& now, const std::vector<Anchor>& was) {
     for (std::size_t k = 0; k < now.size(); ++k) {
         if (now[k].note != k_no_note && std::abs(now[k].t - was[k].t) > k_same_length_s) {
             layout.repaired[static_cast<std::size_t>(now[k].note)] = true;
         }
     }
+}
+
+/// What one solve attempt over a marker list ended with.
+struct Attempt {
+    bool solved = false;
+    std::optional<std::size_t> release;  // index of a pinned marker whose note to release, if any
+};
+
+/// The nearest pinned marker at or before `k` (the note an infeasible interval may be pushing).
+std::optional<std::size_t> pinned_at_or_before(const std::vector<LayoutMarker>& list,
+                                               std::size_t k) {
+    for (std::size_t j = k + 1; j-- > 0;) {
+        if (list[j].pinned) {
+            return j;
+        }
+    }
+    return std::nullopt;
+}
+
+/// One pass over `list`: repair, then per interval solve. When an interval cannot be solved, or
+/// the minimum segments do not fit, the attempt names the pinned note nearest to blame: the caller
+/// releases it (its pin is dropped, so the notes beside it stretch and squish instead: Flex) and
+/// tries again. Without a pinned note to blame the layout falls back to the unedited one.
+Attempt solve_attempt(const Context& c, const std::vector<LayoutMarker>& list, Layout& layout) {
+    LayoutMarkers current;
+    current.markers = list;
+    std::vector<Anchor> anchors = anchors_of(current);
+    const bool fixed_end = list.back().kind == MarkerKind::end;
+    const std::vector<Anchor> requested = anchors;
+    const auto fail_at = [&](std::size_t k) {
+        const auto blame = pinned_at_or_before(list, k);
+        if (!blame) {
+            unedited_layout(layout, list);
+        }
+        return Attempt{.solved = false, .release = blame};
+    };
+    if (!timemap_detail::enforce_min_segments(anchors, fixed_end, c.min_segment_s)) {
+        return fail_at(list.size() - 1);
+    }
+    // A pinned note is never pushed or pulled: if the repair moved one, it is released instead.
+    for (std::size_t k = 0; k < anchors.size(); ++k) {
+        if (list[k].pinned && std::abs(anchors[k].t - requested[k].t) > k_same_length_s) {
+            return fail_at(k);
+        }
+    }
+    mark_changed(layout, anchors, requested);
+    if (c.rate_hz > 0.0) {
+        (void)timemap_detail::quantise_shifts(anchors, fixed_end, c.rate_hz, c.step_samples);
+    }
+    layout.intervals.clear();
+    for (std::size_t k = 1; k < anchors.size(); ++k) {
+        Solved solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);
+        if (!solved.feasible) {
+            // The interval cannot give what is asked: move the right marker to what it can give.
+            if (fixed_end && k + 1 == anchors.size()) {
+                return fail_at(k);
+            }
+            if (list[k].pinned) {
+                return fail_at(k);  // release the note rather than move it
+            }
+            const double shift_left = anchors[k - 1].t - anchors[k - 1].s;
+            anchors[k].t = anchors[k].s + shift_left + solved.feasible_delta_s;
+            if (anchors[k].note != k_no_note) {
+                layout.repaired[static_cast<std::size_t>(anchors[k].note)] = true;
+            }
+            solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);
+            if (!solved.feasible) {
+                return fail_at(k);
+            }
+        }
+        layout.intervals.push_back(solved.plan);
+    }
+    return Attempt{.solved = true, .release = std::nullopt};
+}
+
+/// `list` without the markers of the pinned note at `index`.
+std::vector<LayoutMarker> without_note(const std::vector<LayoutMarker>& list, std::size_t index) {
+    const std::size_t note = list[index].note;
+    std::vector<LayoutMarker> out;
+    out.reserve(list.size());
+    for (const LayoutMarker& m : list) {
+        if (!(m.pinned && m.note == note)) {
+            out.push_back(m);
+        }
+    }
+    return out;
 }
 
 }  // namespace
@@ -344,49 +434,18 @@ Result<Layout> solve_layout(const SegmentTimeline& timeline, const LayoutMarkers
                     .rate_hz = time_map.sample_rate.value(),
                     .step_samples = std::max<std::int64_t>(1, time_map.shift_step.value()),
                     .min_segment_s = time_map.min_segment.value()};
-    const auto& list = markers.markers;
+    std::vector<LayoutMarker> list = markers.markers;
     Layout layout;
     layout.repaired = markers.repaired;
-    std::vector<Anchor> anchors = anchors_of(markers);
-    const bool fixed_end = list.back().kind == MarkerKind::end;
-    const std::vector<Anchor> requested = anchors;
-    if (!timemap_detail::enforce_min_segments(anchors, fixed_end, c.min_segment_s)) {
-        unedited_layout(layout, list);
-        return layout;
-    }
-    follow_pinned(list, anchors, layout);
-    if (!timemap_detail::enforce_min_segments(anchors, fixed_end, c.min_segment_s)) {
-        unedited_layout(layout, list);
-        return layout;
-    }
-    follow_pinned(list, anchors, layout);
-    mark_changed(layout, anchors, requested);
-    if (c.rate_hz > 0.0) {
-        (void)timemap_detail::quantise_shifts(anchors, fixed_end, c.rate_hz, c.step_samples);
-    }
-    for (std::size_t k = 1; k < anchors.size(); ++k) {
-        Solved solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);
-        if (!solved.feasible) {
-            // The interval cannot give what is asked: move the right marker to what it can give.
-            if (fixed_end && k + 1 == anchors.size()) {
-                unedited_layout(layout, list);
-                return layout;
-            }
-            const double shift_left = anchors[k - 1].t - anchors[k - 1].s;
-            anchors[k].t = anchors[k].s + shift_left + solved.feasible_delta_s;
-            if (anchors[k].note != k_no_note) {
-                layout.repaired[static_cast<std::size_t>(anchors[k].note)] = true;
-            }
-            follow_pinned(list, anchors, layout);
-            solved = solve_interval(c, list[k - 1], list[k], anchors[k - 1], anchors[k]);
-            if (!solved.feasible) {
-                unedited_layout(layout, list);
-                return layout;
-            }
+    for (;;) {
+        Layout trial;
+        trial.repaired = layout.repaired;
+        const Attempt attempt = solve_attempt(c, list, trial);
+        if (attempt.solved || !attempt.release) {
+            return trial;
         }
-        layout.intervals.push_back(solved.plan);
+        list = without_note(list, *attempt.release);
     }
-    return layout;
 }
 
 }  // namespace anno
