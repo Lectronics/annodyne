@@ -13,9 +13,11 @@
 #include <future>
 #include <iomanip>
 #include <map>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 using namespace anno;
 using namespace anno::test;
@@ -85,7 +87,33 @@ AnalyseParams params_from(const std::map<std::string, double>& o) {
     sec("preroll", p.segmentation.preroll_max);
     sec("stab_min", p.segmentation.stable_min);
     get("mstr", p.segmentation.merge_onset_strength);
+    // The staged onset pipeline (ADR-0022): method=1 selects it; the rest set its parameters.
+    if (const auto it = o.find("method"); it != o.end()) {
+        p.onsets.method =
+            it->second != 0.0 ? SpectralMethod::windowed_peaks : SpectralMethod::adaptive_threshold;
+    }
+    db("estep",
+       p.onsets.energy_step_db);  // legato level steps (ADR-0010a); a huge value turns them off
+    get("pgain", p.onsets.pipeline.log.log_gain);
+    get("pdelta", p.onsets.pipeline.peaks.delta_activation);
+    sec("plag", p.onsets.pipeline.flux.lag);
+    sec("ppremax", p.onsets.pipeline.peaks.pre_max);
+    sec("ppostmax", p.onsets.pipeline.peaks.post_max);
+    sec("ppreavg", p.onsets.pipeline.peaks.pre_avg);
+    sec("ppostavg", p.onsets.pipeline.peaks.post_avg);
+    if (const auto it = o.find("plevel"); it != o.end()) {
+        p.onsets.pipeline.level =
+            it->second != 0.0 ? std::optional<LevelNormParams>{LevelNormParams{}} : std::nullopt;
+    }
     get("vfloor", p.segmentation.voiced_floor_prob);
+    const auto unit = [&](const char* k, auto& q) {
+        double v = q.value();
+        get(k, v);
+        q = std::remove_reference_t<decltype(q)>{v};
+    };
+    unit("breathy_hnr", p.harmonic_noise.breathy_hnr);
+    unit("breathy_mvf", p.harmonic_noise.breathy_mvf);
+    unit("band_sig", p.harmonic_noise.band_significance);
     sec("mzone", p.segmentation.merge_onset_zone);
     sec("msplit", p.segmentation.min_gap_for_split);
     sec("snapb", p.segmentation.snap_before);
@@ -246,6 +274,35 @@ int main(int argc, char** argv) {
                                  (o.times[i] - SourceTime{}).value(), static_cast<int>(o.kind[i]),
                                  o.strength[i]);
                 }
+            }
+            if (std::getenv("ANNO_CLASSES") !=
+                nullptr) {  // Phase 4 tracks: class counts, harmonic share
+                std::array<long, 7> frames{};
+                double share_sum = 0.0;
+                long share_n = 0;
+                for (const Note& n : (*result)->notes) {
+                    const auto cols = static_cast<std::size_t>(n.harmonics.freq_hz.cols);
+                    for (std::size_t i = 0; i < n.noise.frame_class.size(); ++i) {
+                        ++frames[static_cast<std::size_t>(n.noise.frame_class[i])];
+                        if (n.noise.frame_class[i] != FrameClass::voiced) {
+                            continue;
+                        }
+                        double harm = 0.0;
+                        for (std::size_t k = 0; k < cols; ++k) {
+                            const auto a =
+                                static_cast<double>(n.harmonics.amp_linear.data[i * cols + k]);
+                            harm += 0.5 * a * a;
+                        }
+                        share_sum += harm / std::pow(10.0, n.amp[i].value() / 10.0);
+                        ++share_n;
+                    }
+                }
+                std::fprintf(
+                    stderr,
+                    "classes track %d voiced %ld sibilant %ld breath %ld plosive %ld silence %ld "
+                    "breathy %ld rough %ld harmonic_share %.3f\n",
+                    tr.id, frames[0], frames[1], frames[2], frames[3], frames[4], frames[5],
+                    frames[6], share_n > 0 ? share_sum / static_cast<double>(share_n) : 0.0);
             }
             return evaluate(tr, **result);
         });

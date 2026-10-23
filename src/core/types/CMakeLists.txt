@@ -7,6 +7,7 @@ anno_add_library(core/types
         edit.cpp
         error.cpp
         note_span.cpp
+        segments.cpp
         time_map.cpp
         units.cpp)
 # Bit-for-bit reproducible results on one build: to_cents / to_hz are on the analysis path, so no

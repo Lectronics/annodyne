@@ -1,0 +1,22 @@
+{
+  "name": "vowel_vibrato_up700",
+  "source": "tests/audio/scenarios/sources/vowel_vibrato.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "tool": "pitch_drag",
+      "target": {
+        "note_index": 0
+      },
+      "offset_cents": 700
+    }
+  ],
+  "expect": {
+    "pitch_cents_delta": 700,
+    "vibrato_preserved": true,
+    "engines": [
+      "harmonic_noise",
+      "psola"
+    ]
+  }
+}

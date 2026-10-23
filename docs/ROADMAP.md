@@ -2,7 +2,7 @@
 
 This is the plan Claude Code follows to build the editor. It is ordered so that **structure is settled and checked before code depends on it**, and so that **something audible exists early** and gets listened to at every stage.
 
-**Current phase:** Phase 4 *(update this line when a phase closes)*
+**Current phase:** Phase 5 *(update this line when a phase closes)*
 
 ---
 
@@ -15,7 +15,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 | **1. Plan** | Start in plan mode. Read the specs for this phase. List the types, functions and files to create. For each public function: parameters, return type, error cases, units, time axis, thread/RT safety. | Design note(s) in `docs/design/` from `DESIGN_NOTE.md` |
 | **2. Structure review** *(gate)* | `structure-reviewer` subagent checks the design notes against the specs, `architecture.md` and `coding-standards.md`. Fix every blocking finding; re-review. | Review findings appended to the design note |
 | **3. Contracts** | Write headers and tests first. Tests compile and fail. Contract tests for invariants. | Headers + failing tests |
-| **4. Implement** | One function/class at a time. Build and run its tests after each. Commit small. | Passing tests |
+| **4. Implement** | One function/class at a time. Build and run its tests after each. Commit locally at each logical point (one concern per commit, tests green); never push, open a PR or tag without the owner. | Passing tests |
 | **5. Verify** *(gate)* | Full build with sanitizers, all tests, clang-tidy. If audio changes: `audio-verifier` runs objective checks and builds audition packages. | Verification report |
 | **6. Listen** | A human listens to the audition package and fills in the listening sheet. *(Audio phases only.)* | `docs/reviews/<phase>-listening.md` |
 | **7. Close** *(gate)* | Phase review from `PHASE_REVIEW.md`: what was built, deviations from the specs (with ADRs), open issues, structure audit result. Update "Current phase" above. Tag the commit `phase-N`. | `docs/reviews/<phase>-review.md`, git tag |
@@ -118,10 +118,13 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `synthesis/harmonic_noise` engine: rebuilds the edited pitch curve, re-reads harmonic amplitudes from the envelope, keeps noise unshifted, crossfades at note edges.
 - `synthesis/psola` as a second engine for comparison on clean voice.
 - Main Tool pitch drag and snap in `tools/main_tool` (writes `pitch` edits only).
+- *(ADR-0017, ADR-0018)* Sound-class routing from the owner's research (`docs/design/vocal-resynthesis-research.md`): `FrameClass` gains `breathy` and `rough`; the classifier (flux + closure dip, centroid, ZCR, HNR, MVF, octave ratio) and an engine that bypasses plosive/sibilant/breath/silence/rough frames and shifts breathy frames below the maximum voiced frequency with the noise pinned. All thresholds provisional.
 
 **Verify:** pitch round-trip, vibrato preservation, formant preservation, noise-not-shifted, click detector, untouched regions. Audition package `phase4-pitch` with both engines side by side.
 
 **Listening gate #1:** a human compares engines and picks a default (ADR).
+
+**Closed 2026-10-22** (`docs/reviews/phase4-review.md`, `docs/reviews/phase4-listening.md`): PSOLA is the pitch engine (ADR-0021); formant drift, vibrato jitter and the 700-cent limit carry to Phase 6; tag `phase-4` waits for the owner.
 
 ---
 
@@ -129,10 +132,13 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 **Goal:** move and stretch notes cleanly.
 
+- *(started 2026-10-22)* Onset pipeline as testable stages in `analysis/onsets` (`onset_stages.h`: level normalisation, band spectrogram, adaptive whitening, log compression, SuperFlux, windowed peak picking, localisation; `detect_onsets` bit-identical) with the research's test bench; design `docs/design/phase5-transient-pipeline.md`; `analyse()` uses it (ADR-0022, proposed). Legato/fast-note gap closed (the localiser took a neighbour's release tail for the onset). Open: energy-step false positives on synthetic tremolo/noise, real-data testing.
 - TimeMap-driven rendering: note-aware stretching with consonant/attack protection; `synthesis/transient` for attacks.
-- `tools/time` (moves, lengths, handles), `tools/attack_speed`, `tools/note_separation`.
+- `tools/time` (moves, lengths, handles) and `tools/attack_speed` (design: `docs/design/phase5-time-tools.md`).
+- *Carried (2026-10-22):* `tools/note_separation` moves to the phase that adds separation edits: it needs new `EditParam`s (a split position as `SourceTime`, a merge) with a `ValueKind`, re-analysis remapping of segment ids, and an ADR; `EditCategory::separation` exists with no parameters today.
 - `macros/quantize_time` (grid), with perceptual onsets.
 - *(ADR-0008)* Segment timeline (`analysis/gaps`): noise floor, gap detection and classification, `SegmentTimeline` in `AnalysisResult`. Gap layout (`solve_layout`, `plan_gap_layout`, `build_time_map` on spans; shift first, stretch only when a gap is exhausted). `gap` and `layout` edits, `tools/gap`, `macros/strip_silence`, `render_gap`. Breath detection (`analysis/breaths`). Note stretching (`docs/design/note-stretching.md`).
+- *(ADR-0018)* Research items for timing: protected consonant window, stretch vowels only, plosive bursts repositioned (not stretched), fricatives and breaths stretched as noise (randomised phase, never phase-locked), pre-echo check; `analysis/gaps` refines the recording-noise floor.
 
 **Verify:** timing round-trip, length check, click detector, no flams in overlap tests. Audition `phase5-timing`.
 
@@ -142,12 +148,16 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 ## Phase 6 — Expression tools and macros
 
-- `tools/pitch` (transitions), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
-- `macros/correct_pitch`, `macros/leveling`.
+- `tools/pitch` (transitions: rolling pitch changes instead of hard steps, see `docs/design/pitch-glide-transitions.md`), `pitch_modulation`, `pitch_drift`, `formant`, `amplitude`, `fade`, `sibilant`.
+- *(ADR-0019, proposed)* `core/analysis/pitch_marks`: SPTK's REAPER wrapper as the pitch-mark (epoch) source, stored per note as `Note::pitch_marks`, and used by `PsolaEngine` (`mark_source`) only if the objective A/B trial in ADR-0019 decision 6 passes (the dependency stays out of the main build until then; the trial needs owner-supplied rough/breathy labels and 440-880 Hz material). The trial is the first slice of Phase 6 and needs a design note and structure review first. SPTK's Harvest/SWIPE' may become the second tracker for the octave flag (ADR-0018 amended; Phase 13 neural estimator stays the alternative).
+- *(owner 2026-10-21)* **Continuous pitch and formant changes** (its own sub-gate inside Phase 6, see `docs/design/pitch-glide-transitions.md`): every pitch and formant tool takes a time-varying amount, not one static shift: a linear ramp or a drawn curve over a note or range. Needed for rolling pitch changes at note edges and for vibrato control (rate, depth, shape changing through a note). Requires one ADR (ADR-0020, provisional) before code: the curve type and its fold under `set`/`add`/`scale`/`reset`, superseding ADR-0016 decision 5 (engines take a per-frame ratio), the limit checked at the curve's peak, and `dirty_regions`.
+- *(owner 2026-10-21)* **Formant fixes land here.** The Phase 4 first-formant check (single parabolic envelope peak, sparse harmonics) measured -18.0 % at -200 cents, +11.0 % at -700 and -8.5 % on the sibilant vowel for PSOLA (`phase4-pitch-edit.md` stage 9), with real-voice failures of unestablished cause (measurement or engine). With 110 Hz source harmonics (dense) the PSOLA unit test holds the 5 % bound at +700 cents. The `formant` tool starts by validating the formant measure on dense-harmonic and real material, then decides between an engine change and correcting an engine's output by the ratio of the original to the shifted envelope.
+- `macros/correct_pitch`, `macros/leveling`; the `pitch_target_mode` edit and ADR-0015 (moved here from Phase 4, owner 2026-10-20; ADR-0013 amended).
 - *(ADR-0008)* Breath chain (`core/dsp/dynamics`: `Compressor`, `Limiter`, `HighPass`; `render_breath_event`), the `breath`, `breath_chain` and `breath_assignment` edits and the breath macros (`features/breaths`: `BreathLevel`, `MuteSmallBreaths`, `RemoveBreaths`).
 - `core/tuning`: chromatic and scale grids, `target_pitch`.
+- *(ADR-0018)* Research items for expression: sibilant 4-16 kHz tonal-peak check, de-ess after resynthesis, noise gains per class; keep and re-apply fast perturbation after pitch edits (no low-pass of contours); analysis metrics CPPS, GNE, H1-H2, jitter, shimmer, SHR with the breathy and rough calibration checks.
 
-**Verify:** modulation/drift scaling, formant round-trip, level round-trip, noise gain applies only to noise frames. Audition `phase6-expression` covering every tool.
+**Verify:** modulation/drift scaling, formant round-trip, level round-trip, noise gain applies only to noise frames; ADR-0019 trial result recorded; ramp round trip (pitch follows the curve at ten points) and a zero-length ramp equal to the Phase 4 result. Audition `phase6-expression` covering every tool.
 
 **Listening gate #2.**
 
@@ -158,6 +168,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `project/`: save/load project, append-only edit log (`.jsonl`), analysis cache, versioning, edition limits.
 - `tools/note_assignment`: octave moves, split/merge, re-analysis with `remap_after_reanalysis`.
 - Selective reset by category.
+- *(ADR-0018)* A per-singer calibration profile (thresholds, labels) is saved with the project.
 
 **Verify:** save → load → render is bit-identical to before saving; re-analysis keeps edits on unchanged notes; orphaned edits are reported, never dropped.
 
@@ -170,6 +181,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `features/scales`, `features/chords`, `features/tempo`; adaptive just intonation solver in `core/tuning`.
 
 - Fuzzy thresholds (owner, 2026-10-20): the key, tuning reference and tempo are performance-wide metrics for the global side of the fuzzy layer (see Phase 3 carried items); expose them as graded confidences, and let the pitch-target tolerances and `consistent_off_grid` thresholds follow them.
+- *(ADR-0018)* Per-singer calibration of the sound-class thresholds from whole-take statistics (percentile thresholds such as lowest-15 % CPPS and 90th-percentile SHR), hand-labelled segments, threshold sweep and confusion matrix: the first customer of the fuzzy layer.
 
 **Verify:** key/chord accuracy on a small labelled set; tempo-flatten audition; JI audition on sustained chords (human check for beating).
 
@@ -189,6 +201,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ## Phase 10 — Note editor UI
 
 - Blobs, pitch curves, grids, tool palette, inspectors, undo UI, playback cursor. The UI only reads analysis/effective state and sends gestures to tools.
+- *(ADR-0018)* Show frame classes and routing reasons (class lanes, hover text such as "left alone: sibilant").
 - *(ADR-0008)* Breath Lane UI (`ui/breath_lane`), and the playhead and gap display treating `insert` spans as generated audio.
 
 **Verify:** UI never blocks the audio thread; every gesture results in the same edits as the equivalent CLI scenario (so UI bugs can be reproduced headless).
@@ -218,6 +231,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 ## Phase 13 — Optional neural models
 
 - `core/models` with ONNX Runtime: neural pitch estimator, neural transcriber, optional neural vocoder engine.
+- *(ADR-0018)* The neural pitch estimator is the second independent tracker for the octave-ratio flag (unless ADR-0019's trial keeps SPTK and its Harvest/SWIPE' tracker passes the octave check in Phase 6, then the neural estimator is the alternative); noise-conditioned neural vocoders (h-NSF, uSFGAN, VISinger 2 style) are candidates for rough and breathy material, compared against the DSP routing on the same scenarios.
 - Each model sits behind an existing interface, is compared against the DSP version on the same scenarios, and only becomes default through an ADR with objective numbers and a listening sheet.
 
 ---

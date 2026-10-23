@@ -21,11 +21,13 @@ constexpr int k_exit_usage = 2;
 
 void print_usage() {
     std::fputs("usage: anno-cli info <file.wav>\n"
-               "       anno-cli render <scenario.json> --out <out.wav> [--engine passthrough]\n"
-               "       anno-cli audition <scenario.json> --out <dir> [--engine passthrough]\n"
+               "       anno-cli render <scenario.json> --out <out.wav> [--engine "
+               "passthrough|harmonic_noise|psola]\n"
+               "       anno-cli audition <scenario.json> --out <dir> [--engine "
+               "passthrough|harmonic_noise|psola]\n"
                "       anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] "
                "[--pitch-track]\n"
-               "                        [--track-id <id>]\n",
+               "                        [--track-id <id>] [--onsets adaptive|pipeline]\n",
                stderr);
 }
 
@@ -61,8 +63,8 @@ bool parse_run_args(std::span<char*> args, RunArgs& parsed, int& exit_code) {
     return args.size() == 5;
 }
 
-/// Parses `analyse <wav> [--json f] [--plot-dir d] [--pitch-track] [--track-id id]`; false on a
-/// usage error.
+/// Parses `analyse <wav> [--json f] [--plot-dir d] [--pitch-track] [--track-id id] [--onsets
+/// adaptive|pipeline]`; false on a usage error.
 bool parse_analyse_args(std::span<char*> args, anno::cli::AnalyseArgs& parsed) {
     if (args.size() < 3) {
         return false;
@@ -79,6 +81,15 @@ bool parse_analyse_args(std::span<char*> args, anno::cli::AnalyseArgs& parsed) {
             parsed.plot_dir = std::filesystem::path{args[++i]};
         } else if (flag == "--track-id" && has_value) {
             parsed.track = anno::TrackId{args[++i]};
+        } else if (flag == "--onsets" && has_value) {
+            const std::string_view method{args[++i]};
+            if (method == "adaptive") {
+                parsed.onset_method = anno::SpectralMethod::adaptive_threshold;
+            } else if (method == "pipeline") {
+                parsed.onset_method = anno::SpectralMethod::windowed_peaks;
+            } else {
+                return false;
+            }
         } else {
             return false;
         }

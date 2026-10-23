@@ -4,6 +4,7 @@
 #include "core/edits/effective_state.h"
 #include "core/render/blend_plan.h"
 #include "core/render/render_key.h"
+#include "core/synthesis/engine/engine_support.h"
 #include "core/synthesis/engine/source_through_map.h"
 #include "core/timemap/build_time_map.h"
 
@@ -68,25 +69,52 @@ Result<void> validate_inputs(const RenderInputs& in, const RenderParams& params)
     return {};
 }
 
-/// The track's map: the supplied one, else built from the edits (which must leave it the identity).
-Result<std::shared_ptr<const TimeMap>> resolve_time_map(const RenderInputs& in) {
+struct ResolvedMap {
+    std::shared_ptr<const TimeMap> map;
+    int repaired_notes = 0;
+};
+
+/// The track's map: the supplied one, else built from the edits with the tail shifted and whole
+/// sample shifts (ADR-0023).
+Result<ResolvedMap> resolve_time_map(const RenderInputs& in) {
     if (in.time_map != nullptr) {
-        return in.time_map;
+        return ResolvedMap{.map = in.time_map, .repaired_notes = 0};
     }
     if (in.source.frame_count().value() == 0) {
-        return std::make_shared<const TimeMap>(TimeMap::identity(Seconds{0.0}));
+        return ResolvedMap{.map = std::make_shared<const TimeMap>(TimeMap::identity(Seconds{0.0})),
+                           .repaired_notes = 0};
     }
     const SourceTime end =
         to_time_point<SourceAxis>(in.source.frame_count(), in.source.sample_rate());
-    auto built = build_time_map(in.analysis->notes, *in.edits, TimeMapParams{.source_end = end});
+    auto built = build_time_map(in.analysis->notes, *in.edits,
+                                TimeMapParams{.source_end = end,
+                                              .tail = TailPolicy::shift,
+                                              .sample_rate = in.source.sample_rate()});
     if (!built) {
         return Unexpected{built.error()};
     }
-    if (!built->map.is_identity()) {
-        return fail(ErrorCode::not_implemented,
-                    "render_region: timing edits change the TimeMap; stretching is Phase 6");
+    return ResolvedMap{.map = std::make_shared<const TimeMap>(std::move(built->map)),
+                       .repaired_notes = built->repaired_notes};
+}
+
+constexpr double k_slope_one_tolerance = 1e-9;
+
+/// True if `span` is a warp whose slope is not 1.
+bool is_stretched(const TimeSpan& span) {
+    if (span.kind != SpanKind::warp) {
+        return false;
     }
-    return std::make_shared<const TimeMap>(std::move(built->map));
+    const Seconds out_len = span.output_end - span.output_start;
+    const Seconds src_len = span.source_end - span.source_start;
+    return std::abs((out_len - src_len).value()) > k_slope_one_tolerance;
+}
+
+/// True if a stretched warp of `map` covers any output sample of [begin, end).
+bool meets_stretch(const TimeMap& map, Hz rate, std::int64_t begin, std::int64_t end) {
+    return std::ranges::any_of(map.spans(), [&](const TimeSpan& span) {
+        return is_stretched(span) && index_of(span.output_start, rate) < end &&
+               index_of(span.output_end, rate) > begin;
+    });
 }
 
 Result<std::pair<std::int64_t, std::int64_t>> snap_region(const RenderInputs& in,
@@ -114,8 +142,8 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
             continue;
         }
         EffectiveNote eff = effective_state(note, *in.edits);
-        if (!eff.is_edited) {
-            continue;
+        if (!eff.is_edited || only_timing_edited(eff, note.pitch_center)) {
+            continue;  // timing edits live in the map: the unedited base renders them
         }
         if (note.source_start < SourceTime{} || note.source_end <= SourceTime{} ||
             note.source_end > SourceTime{} + map.source_length()) {
@@ -132,6 +160,15 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
             std::clamp<std::int64_t>(index_of(*out_start, plan.sample_rate), 0, plan.frame_count);
         const std::int64_t end =
             std::clamp<std::int64_t>(index_of(*out_end, plan.sample_rate), begin, plan.frame_count);
+        const std::int64_t zone_lo = std::max<std::int64_t>(0, begin - plan.margin);
+        const std::int64_t zone_hi = std::min(plan.frame_count, end + plan.margin);
+        if (meets_stretch(map, plan.sample_rate, zone_lo, zone_hi)) {
+            return fail(ErrorCode::not_implemented,
+                        "render_region: note '" + note.id.value +
+                            "' has a pitch, level or formant edit and its zone meets a stretched "
+                            "part of the time map (stretch combined with another edit is not "
+                            "implemented yet)");
+        }
         plan.edited.push_back(
             {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }
@@ -166,6 +203,63 @@ bool same_samples(const AudioBuffer& a, const AudioBuffer& b) {
         }
     }
     return true;
+}
+
+/// Output samples [begin, begin + count) of the recording through `map` with no edits: slope-1
+/// warps and inserts as read_through_map gives them, every slope != 1 warp rendered by
+/// stretch_span. The ranges handed to read_through_map exclude the stretched spans' samples, which
+/// are snapped the same way, so it never meets a slope != 1 warp.
+Result<AudioBuffer> render_unedited(const RenderInputs& in, const TimeMap& map,
+                                    const StretchParams& stretch, std::int64_t begin,
+                                    std::int64_t count) {
+    const Hz rate = in.source.sample_rate();
+    const std::int64_t end = begin + count;
+    auto out = AudioBuffer::create(in.source.channel_count(), Samples{count}, rate);
+    if (!out) {
+        return Unexpected{out.error()};
+    }
+    const auto copy_in = [&](const AudioBuffer& piece, std::int64_t at) {
+        for (int c = 0; c < out->channel_count(); ++c) {
+            std::ranges::copy(piece.channel(c), out->channel(c).begin() + (at - begin));
+        }
+    };
+    std::int64_t cursor = begin;
+    const auto plain_until = [&](std::int64_t stop) -> Result<void> {
+        if (stop <= cursor) {
+            return {};
+        }
+        auto piece = read_through_map(in.source, map, Samples{cursor}, Samples{stop - cursor});
+        if (!piece) {
+            return Unexpected{piece.error()};
+        }
+        copy_in(*piece, cursor);
+        return {};
+    };
+    for (const TimeSpan& span : map.spans()) {
+        if (!is_stretched(span)) {
+            continue;
+        }
+        const std::int64_t lo = std::max(begin, index_of(span.output_start, rate));
+        const std::int64_t hi = std::min(end, index_of(span.output_end, rate));
+        if (hi <= lo) {
+            continue;
+        }
+        if (auto r = plain_until(lo); !r) {
+            return Unexpected{r.error()};
+        }
+        const OutputRange range = OutputRange::from_start(
+            to_time_point<OutputAxis>(Samples{lo}, rate), to_seconds(Samples{hi - lo}, rate));
+        auto piece = stretch_span(in.source, *in.analysis, span, range, stretch);
+        if (!piece) {
+            return Unexpected{piece.error()};
+        }
+        copy_in(piece->audio, lo);
+        cursor = hi;
+    }
+    if (auto r = plain_until(end); !r) {
+        return Unexpected{r.error()};
+    }
+    return out;
 }
 
 Result<Zone> render_zone(const RenderInputs& in, const TimeMap& map, const SynthesisEngine& engine,
@@ -288,7 +382,7 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     if (!resolved) {
         return Unexpected{resolved.error()};
     }
-    const TimeMap& map = **resolved;
+    const TimeMap& map = *resolved->map;
     auto snapped = snap_region(inputs, map, region);
     if (!snapped) {
         return Unexpected{snapped.error()};
@@ -312,7 +406,8 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
                                              .sample_rate_hz = plan.sample_rate.value(),
                                              .edited = plan.edited,
                                              .ramps = plan.ramps,
-                                             .time_map = &map});
+                                             .time_map = &map,
+                                             .stretch = &params.stretch});
     if (params.cache != nullptr) {
         if (auto hit = params.cache->get(key)) {
             return hit;
@@ -321,7 +416,7 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
 
     const Hz rate = plan.sample_rate;
     const Samples count{plan.region_end - plan.region_begin};
-    auto pristine = read_through_map(inputs.source, map, Samples{plan.region_begin}, count);
+    auto pristine = render_unedited(inputs, map, params.stretch, plan.region_begin, count.value());
     if (!pristine) {
         return Unexpected{pristine.error()};
     }
@@ -351,7 +446,9 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
                               .start = to_time_point<OutputAxis>(Samples{plan.region_begin}, rate)},
         .cache_id = short_id(key),
         .notes_rendered = std::move(rendered),
-        .passthrough = passthrough});
+        .passthrough = passthrough,
+        .stretched = meets_stretch(map, rate, plan.region_begin, plan.region_end),
+        .repaired_notes = resolved->repaired_notes});
     if (params.cache != nullptr) {
         params.cache->put(key, shared);
     }

@@ -125,6 +125,7 @@ void finish(Fold& fold) {
         double& v = fold.at(p);
         v = std::clamp(v, lo, hi);
     };
+    clamp_to(EditParam::center_offset, -k_max_pitch_offset.value(), k_max_pitch_offset.value());
     clamp_to(EditParam::fade_in, 0.0, std::numeric_limits<double>::infinity());
     clamp_to(EditParam::fade_out, 0.0, std::numeric_limits<double>::infinity());
     clamp_to(EditParam::within_note_flatten, 0.0, 1.0);

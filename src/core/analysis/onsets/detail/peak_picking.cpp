@@ -13,7 +13,8 @@ std::size_t frames_of(Seconds duration, Seconds hop) {
 
 }  // namespace
 
-std::vector<ActivationPeak> pick_peaks(const std::vector<double>& a, const PeakPickParams& p) {
+std::vector<ActivationPeak> pick_peaks_adaptive(const std::vector<double>& a,
+                                                const PeakPickParams& p) {
     const std::size_t n = a.size();
     std::vector<ActivationPeak> peaks;
     if (n == 0) {

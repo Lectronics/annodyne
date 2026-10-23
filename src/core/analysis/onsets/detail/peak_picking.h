@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/analysis/onsets/stages/peak_pick.h"
 #include "core/types/units.h"
 
 #include <cstddef>
@@ -8,11 +9,6 @@
 // Adaptive-threshold peak picking of an onset activation. Internal to core/analysis/onsets.
 
 namespace anno {
-
-struct ActivationPeak {
-    std::size_t frame = 0;
-    double strength = 0.0;  // activation / threshold, >= 1
-};
 
 struct PeakPickParams {
     Seconds hop;
@@ -24,7 +20,7 @@ struct PeakPickParams {
 
 /// A frame is a peak if its activation reaches the threshold and is the maximum within +-min_gap
 /// / 2. Peaks are sorted by frame; strength = activation / threshold. Pure; thread-safe.
-[[nodiscard]] std::vector<ActivationPeak> pick_peaks(const std::vector<double>& activation,
-                                                     const PeakPickParams& params);
+[[nodiscard]] std::vector<ActivationPeak> pick_peaks_adaptive(const std::vector<double>& activation,
+                                                              const PeakPickParams& params);
 
 }  // namespace anno

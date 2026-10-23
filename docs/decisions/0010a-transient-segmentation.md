@@ -72,3 +72,6 @@ were unmatched before. Larger floors recover more notes and cost more pitch accu
 -10/+15 share 0.543, under the 0.55 guard, so not taken). Track 28 now has the note 11.952-12.155 s,
 target 4901 cents. Regression: `track_28_rolls_up_into_a_note_of_its_own_near_12_s`.
 
+## Amendment 2026-10-22: the onset strength scale (ADR-0022)
+`analyse()` now finds spectral onsets with the staged pipeline (windowed peak picking). `OnsetList::strength` is still activation over threshold (>= 1 for a picked peak) but the threshold differs (local mean + `delta_activation` instead of local mean + 2 x spread). `merge_onset_strength` 1.5 was re-checked on the pipeline (sweep 1.0-3.0 on the tuning tracks: a plateau, a pure over/under-segmentation trade-off) and kept; the energy-step strength constants are unchanged. The energy-step detector false-fires on synthetic tremolo and noise (bench families D, F) but helps on real recordings; open item.
+

@@ -5,6 +5,7 @@
 #include "core/render/render_cache.h"
 #include "core/render/render_result.h"
 #include "core/synthesis/engine/synthesis_engine.h"
+#include "core/synthesis/stretch/stretch.h"
 #include "core/types/analysis_result.h"
 #include "core/types/audio_source.h"
 #include "core/types/result.h"
@@ -24,7 +25,8 @@ struct RenderInputs {
     std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
     /// Optional (ADR-0008). If set it is the track's TimeMap, authoritative over any timing edits
     /// in `edits`; its source_length must match the recording (half a sample). If null the map is
-    /// built from the edits and must be the identity (stretching is Phase 6).
+    /// built from the edits with the tail shifted (not squeezed) and whole-sample shifts
+    /// (ADR-0023); a supplied map must give every slope-1 warp a whole-sample shift.
     std::shared_ptr<const TimeMap> time_map;
 };
 
@@ -34,6 +36,7 @@ struct RenderParams {
     Seconds crossfade_length{0.010};
     FadeShape crossfade_shape = FadeShape::equal_power;
     RenderCache* cache = nullptr;  // optional, not owned
+    StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
 };
 
 /// Renders [region) of the track's output. The result's buffer is the request snapped to whole
@@ -48,10 +51,14 @@ struct RenderParams {
 /// analysis, crossfade_length outside [0, k_max_crossfade], region end before start, notes on
 /// another track than the edits); out_of_range (region outside the recording);
 /// invalid_argument also for a supplied TimeMap whose source_length does not match the recording or
-/// a note whose start or end maps into a cut; not_implemented (no map was supplied and the edits
-/// contain timing changes, so the TimeMap is not the identity: stretching is Phase 6; a warp in the
-/// region has slope != 1 or a fractional-sample shift; or the engine cannot realise an edit);
+/// a note whose start or end maps into a cut; not_implemented (a slope-1 warp has a fractional
+/// sample shift; a slope outside the stretch limits; an edited note (pitch, level, formant) whose
+/// blend zone meets a stretched warp, the message names the note; or the engine cannot realise an
+/// edit);
 /// internal (an engine returned the wrong range, channel count or sample rate).
+/// Stretched warps (slope != 1, from timing edits) are part of the unedited base: slope-1 warps and
+/// inserts as below, every slope != 1 warp rendered by `stretch_span` (pitch and timbre kept).
+/// A note whose edits are only timing edits is part of that base, not an edited note.
 /// Time axes: `region` is output time, within [0, output_length of the map]; with an identity
 /// TimeMap it equals source time. Cuts have no output and inserts are digital silence; every other
 /// sample outside blend zones is the source sample the map names, bit for bit. Thread-safe for

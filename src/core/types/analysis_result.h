@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/types/ids.h"
+#include "core/types/noise_floor.h"
 #include "core/types/note.h"
 #include "core/types/result.h"
+#include "core/types/segments.h"
 #include "core/types/tracks.h"
 #include "core/types/units.h"
 
@@ -35,10 +37,16 @@ struct AnalysisResult {
     std::vector<Note> notes;             // sorted by source_start, then voice
     std::optional<NoiseTrack> residual;  // energy not explained by any note (polyphonic)
     Hz tuning_ref{440.0};                // detected reference for A4
+    // Notes and gaps (ADR-0024). Empty unless the analysis built them: analyse() leaves both empty
+    // for non-melodic algorithms and when active notes overlap.
+    std::optional<SegmentTimeline> timeline;
+    std::optional<NoiseFloor> noise_floor;
 };
 
 /// Errors: invalid_argument if a note, track or the onset list is invalid, note ids are not
-/// unique, notes are not sorted by (source_start, voice), or tuning_ref is not finite and > 0.
+/// unique, notes are not sorted by (source_start, voice), tuning_ref is not finite and > 0, the
+/// noise floor is invalid, or a timeline disagrees with the notes (every active note must be one
+/// note segment with the note's exact range, and every note segment an active note).
 /// Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<void> validate(const AnalysisResult& analysis);
 

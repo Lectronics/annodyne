@@ -9,7 +9,8 @@ namespace anno {
 
 namespace {
 
-constexpr std::uint32_t k_key_format_version = 2;  // 2: the whole TimeMap is part of the key
+constexpr std::uint32_t k_key_format_version =
+    3;  // 3: the stretch settings; 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -175,6 +176,20 @@ void put(Writer& w, const Note& n) {
     w.boolean(n.is_active);
 }
 
+void put(Writer& w, const StretchParams* p) {
+    w.u64(p != nullptr ? 1U : 0U);
+    if (p == nullptr) {
+        return;
+    }
+    w.f64(p->class_edge_fade.value());
+    w.f64(p->noise_grain.value());
+    w.f64(p->noise_jitter_hop_fraction);
+    w.u64(p->noise_seed);
+    w.f64(p->min_slope.value());
+    w.f64(p->max_slope.value());
+    w.u64(p->voiced_classes.bits());
+}
+
 }  // namespace
 
 std::string note_fingerprint(const Note& note) {
@@ -200,6 +215,7 @@ std::string make_render_key(const RenderKeyInputs& in) {
     w.i64(in.region_end);
     w.f64(in.sample_rate_hz);
     put(w, *in.time_map);
+    put(w, in.stretch);
 
     const auto name_of = [&](int index) {
         return index == k_pristine ? std::string{}

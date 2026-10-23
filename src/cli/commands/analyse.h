@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/analysis/onsets/onsets.h"
 #include "core/types/ids.h"
 #include "core/types/result.h"
 
@@ -8,7 +9,7 @@
 #include <string>
 
 // `anno-cli analyse <file.wav> [--json <out.json>] [--plot-dir <dir>] [--pitch-track] [--track-id
-// <id>]`. Design: docs/design/phase3-orchestrator-cli.md §2.
+// <id>] [--onsets adaptive|pipeline]`. Design: docs/design/phase3-orchestrator-cli.md §2.
 
 namespace anno::cli {
 
@@ -18,6 +19,8 @@ struct AnalyseArgs {
     std::optional<std::filesystem::path> plot_dir;  // --plot-dir
     bool pitch_track_in_json = false;               // --pitch-track (adds the per-frame arrays)
     TrackId track{"t1"};                            // --track-id
+    // --onsets: the spectral onset method (ADR-0022); unset = analyse()'s default, the pipeline.
+    std::optional<SpectralMethod> onset_method;
 };
 
 /// Reads the WAV (core/io), runs analyse(), writes the JSON and plots that were asked for and

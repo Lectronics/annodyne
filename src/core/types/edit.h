@@ -110,6 +110,10 @@ struct ParamInfo {
 /// Smallest legal value of length_scale / attack_time_scale after folding (1/1000 = 1000x
 /// compression); keeps a note's warp strictly positive in length.
 inline constexpr Ratio k_min_time_scale{1e-3};
+/// Largest |center - pitch_center| after folding pitch edits (ADR-0016): the set range of
+/// center_offset, the clamp in effective_state and the Main Tool's out_of_range all read this one
+/// value. It limits the edit, not the synthesis.
+inline constexpr Cents k_max_pitch_offset{2400.0};
 /// Tolerance for the key of a time handle: two handles whose source times differ by less than this
 /// are the same handle.
 inline constexpr Seconds k_handle_key{1e-6};

@@ -1,6 +1,7 @@
 anno_add_library(cli/checks
-    SOURCES checks/audio_checks.cpp
-    PUBLIC_DEPS anno_core_types)
+    SOURCES checks/audio_checks.cpp checks/pitch_checks.cpp
+    PUBLIC_DEPS anno_core_types
+    PRIVATE_DEPS anno_core_dsp)
 
 anno_add_library(cli/scenario
     SOURCES scenario/scenario.cpp
@@ -23,7 +24,8 @@ anno_add_library(cli/plot
 anno_add_library(cli/commands
     SOURCES commands/info.cpp commands/render.cpp commands/audition.cpp commands/analyse.cpp
     PUBLIC_DEPS anno_core_types anno_core_io anno_core_edits anno_core_render
-                anno_core_synthesis_passthrough anno_cli_checks anno_cli_scenario
+                anno_core_synthesis_passthrough anno_core_synthesis_harmonic_noise
+                anno_core_synthesis_psola anno_core_tuning anno_tools_main_tool anno_cli_checks anno_cli_scenario
                 anno_cli_scenario_json anno_core_analysis_orchestrator anno_cli_analysis_json
                 anno_cli_plot)
 

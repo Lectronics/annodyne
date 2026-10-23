@@ -21,6 +21,9 @@ Result<std::string> run_analyse(const AnalyseArgs& args) {
     const AudioSource source = AudioSource::from_buffer(std::move(audio).value());
     AnalyseParams params;
     params.track = args.track;
+    if (args.onset_method == SpectralMethod::adaptive_threshold) {
+        params.onsets = OnsetParams{};  // the Phase 3 chain
+    }
     auto analysis = analyse(source, params);
     if (!analysis) {
         return Unexpected{std::move(analysis).error()};

@@ -6,6 +6,7 @@
 #include "core/types/result.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,14 +22,33 @@ struct ScenarioNote {
     double end_s = 0.0;
 };
 
+/// How the scenario's notes come about.
+enum class ScenarioAnalysis {
+    given,  // `notes` lists them by hand (Phase 2); the analysis is synthetic and has no frame data
+    analyse,  // analyse() runs on the source; target.note_index indexes the analysed notes (Phase
+              // 4)
+};
+
+/// A Main Tool pitch drag written in a scenario ({"tool": "pitch_drag", ...}); resolved at load
+/// time, after the analysis, by pitch_drag_edit.
+struct ScenarioPitchDrag {
+    std::size_t note_index = 0;          // into the analysed notes
+    std::optional<double> offset_cents;  // target = the note's analysed target + this, or
+    std::optional<double> target_cents;  // the absolute target (A4 = 6900); exactly one is set
+    bool snap_chromatic = false;         // pass the target through target_pitch (440 Hz grid)
+};
+
 struct Scenario {
     std::string name;
+    ScenarioAnalysis analysis = ScenarioAnalysis::given;
     std::filesystem::path source;  // WAV file, already resolved to a usable path
     std::string algorithm;         // echoed in reports; "melodic" if absent
     std::vector<ScenarioNote> notes;
     std::vector<EditSpec> edits;  // each one is its own EditList::add group, in order
-    std::string edits_json;       // the "edits" array as written, for the audition package
-    std::string expect_json;      // the "expect" object as written ("" if absent)
+    std::vector<ScenarioPitchDrag>
+        drags;                // the edits of an analyse-mode scenario (never mixed with `edits`)
+    std::string edits_json;   // the "edits" array as written, for the audition package
+    std::string expect_json;  // the "expect" object as written ("" if absent)
 };
 
 /// The track all scenarios use.

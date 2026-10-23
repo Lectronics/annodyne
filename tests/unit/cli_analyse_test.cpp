@@ -82,11 +82,16 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
     CHECK(json["source"]["duration_s"].get<double>() > 1.5);
     REQUIRE(json["notes"].size() == 2);
     const auto& n0 = json["notes"][0];
-    for (const char* key :
-         {"id", "start_s", "attack_end_s", "release_start_s", "end_s", "pitch_target",
-          "pitch_center_cents", "loudness_lufs", "confidence", "separation_in"}) {
+    for (const char* key : {"id", "start_s", "attack_end_s", "release_start_s", "end_s",
+                            "pitch_target", "pitch_center_cents", "loudness_lufs", "confidence",
+                            "separation_in", "harmonic_count", "sound_classes"}) {
         CHECK(n0.contains(key));
     }
+    REQUIRE_FALSE(n0["sound_classes"].empty());
+    for (const char* key : {"class", "start_s", "end_s"}) {
+        CHECK(n0["sound_classes"][0].contains(key));
+    }
+    CHECK(n0["harmonic_count"].get<int>() >= 1);
     CHECK(std::abs(n0["start_s"].get<double>() - 0.2) <= 0.02);
     CHECK(std::abs(n0["pitch_target"]["target_cents"].get<double>() -
                    to_cents(Hz{262.0}, Hz{440.0}).value()) <= 10.0);
@@ -105,6 +110,24 @@ TEST_CASE("the_pitch_track_is_left_out_unless_asked_for", "[cli_analyse]") {
     args.json = f.dir / "out.json";
     REQUIRE(cli::run_analyse(args).has_value());
     CHECK_FALSE(nlohmann::json::parse(read_all(*args.json)).contains("pitch"));
+}
+
+TEST_CASE("analyse_takes_the_onset_method_and_defaults_to_the_pipeline", "[cli_analyse]") {
+    const Fixture f;
+    const auto onsets_of = [&](std::optional<SpectralMethod> method) {
+        cli::AnalyseArgs args;
+        args.wav = f.wav;
+        args.json = f.dir / "m.json";
+        args.onset_method = method;
+        REQUIRE(cli::run_analyse(args).has_value());
+        return nlohmann::json::parse(read_all(*args.json))["onsets"];
+    };
+    const auto pipeline = onsets_of(SpectralMethod::windowed_peaks);
+    CHECK(onsets_of(std::nullopt) == pipeline);  // the default is the pipeline
+    const auto phase3 = onsets_of(SpectralMethod::adaptive_threshold);
+    CHECK(phase3.is_array());
+    CHECK(pipeline.size() >= 2);  // the two tones
+    CHECK(phase3.size() >= 2);
 }
 
 TEST_CASE("analyse_writes_csv_and_an_svg_with_one_rect_per_note", "[cli_analyse]") {

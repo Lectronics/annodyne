@@ -165,7 +165,8 @@ TEST_CASE("a_supplied_map_wins_over_timing_edits", "[render_spans]") {
                                             EditOp::set, Seconds{0.4})}));
     const auto r =
         render_region(inputs_with(f, cut_and_insert_map()), all_output(), PassthroughEngine{}, {});
-    REQUIRE(r.has_value());  // without the map this is not_implemented (Phase 6)
+    REQUIRE(
+        r.has_value());  // without the map the stereo source cannot be stretched (not_implemented)
     CHECK(bit_identical(audio_of(*r), expected_output(f)));
     CHECK(render_region(f.inputs(), whole(f.source), PassthroughEngine{}, {}).error().code ==
           ErrorCode::not_implemented);

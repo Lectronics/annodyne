@@ -13,7 +13,8 @@
 
 namespace anno {
 
-/// Gain of the noise part per frame class. FrameClass::silence has no parameter (no audio to gain).
+/// Gain of the noise part per frame class. FrameClass::silence has no parameter (no audio to gain);
+/// breathy and rough use the voiced gain (ADR-0017).
 struct NoiseGains {
     Decibels voiced;
     Decibels sibilant;

@@ -108,3 +108,75 @@ TEST_CASE("the_click_detector_defaults_match_the_pinned_tolerances", "[scenario]
     CHECK(defaults.window == tolerance::k_click_window);
     CHECK(defaults.floor == tolerance::k_click_floor);
 }
+
+TEST_CASE("an_analysed_scenario_takes_pitch_drags_by_note_index", "[scenario]") {
+    const auto s = parse(R"({
+      "name": "up", "source": "v.wav", "analysis": "analyse",
+      "edits": [
+        {"tool": "pitch_drag", "target": {"note_index": 2}, "offset_cents": 200},
+        {"tool": "pitch_drag", "target": {"note_index": 0}, "target_cents": 7000, "snap": "chromatic"}
+      ]})");
+    REQUIRE(s.has_value());
+    CHECK(s->analysis == ScenarioAnalysis::analyse);
+    CHECK(s->edits.empty());
+    REQUIRE(s->drags.size() == 2);
+    CHECK(s->drags[0].note_index == 2);
+    CHECK(s->drags[0].offset_cents == 200.0);
+    CHECK_FALSE(s->drags[0].snap_chromatic);
+    CHECK(s->drags[1].target_cents == 7000.0);
+    CHECK(s->drags[1].snap_chromatic);
+}
+
+TEST_CASE("analysis_mode_and_drag_errors_name_the_json_path", "[scenario]") {
+    const auto error = [](const std::string& body) {
+        return parse(R"({"name": "x", "source": "v.wav", )" + body).error().message;
+    };
+    const std::string drag = R"({"tool": "pitch_drag", "target": {"note_index": 0}, )";
+    CHECK(error(R"("analysis": "magic"})").find("$.analysis") != std::string::npos);
+    CHECK(error(R"("analysis": "analyse", "notes": []})").find("$.notes") != std::string::npos);
+    CHECK(error(R"("edits": [)" + drag + R"("offset_cents": 5}]})").find("edits[0]") !=
+          std::string::npos);  // a tool edit needs analyse mode
+    CHECK(error(R"("analysis": "analyse", "edits": [)" + drag + R"("snap": "chromatic"}]})")
+              .find("exactly one") != std::string::npos);
+    CHECK(error(R"("analysis": "analyse", "edits": [)" + drag +
+                R"("offset_cents": 5, "target_cents": 6}]})")
+              .find("exactly one") != std::string::npos);
+    CHECK(
+        error(
+            R"("analysis": "analyse", "edits": [{"tool": "nope", "target": {"note_index": 0}, "offset_cents": 5}]})")
+            .find("edits[0].tool") != std::string::npos);
+    CHECK(error(R"("analysis": "analyse", "edits": [)" + drag +
+                R"("offset_cents": 5, "snap": "key"}]})")
+              .find("edits[0].snap") != std::string::npos);
+    CHECK(
+        error(
+            R"("analysis": "analyse", "edits": [{"category": "pitch", "op": "add", "param": "center_offset", "value": 1, "target": {"note_index": 0}}]})")
+            .find("note_index") != std::string::npos);
+}
+
+TEST_CASE("tool_and_raw_edits_cannot_be_mixed_and_more_drag_errors_are_named", "[scenario]") {
+    const auto error = [](const std::string& body) {
+        return parse(R"({"name": "x", "source": "v.wav", "analysis": "analyse", )" + body)
+            .error()
+            .message;
+    };
+    const std::string raw =
+        R"({"category": "pitch", "op": "add", "param": "center_offset", "value": 1, "target": {"note_id": "n"}})";
+    const std::string drag =
+        R"({"tool": "pitch_drag", "target": {"note_index": 0}, "offset_cents": 5})";
+    const std::string mixed = R"("edits": [)" + raw + "," + drag + "]}";
+    CHECK(error(mixed).find("$.edits") != std::string::npos);
+    CHECK(
+        parse(R"({"name": "x", "source": "v.wav", "analysis": "analyse", "edits": [)" + raw + "]}")
+            .has_value());  // note_id raw edits are fine in analyse mode
+    for (const char* target : {R"({"note_index": -1})", R"({"note_index": 1.5})",
+                               R"({"note_index": 0, "note_id": "n"})", R"({})"}) {
+        CHECK(error(std::string{R"("edits": [{"tool": "pitch_drag", "target": )"} + target +
+                    R"(, "offset_cents": 5}]})")
+                  .find("edits[0].target") != std::string::npos);
+    }
+    CHECK(
+        error(
+            R"("edits": [{"tool": "pitch_drag", "target": {"note_index": 0}, "offset_cents": 5, "speed": 1}]})")
+            .find("edits[0].speed") != std::string::npos);
+}

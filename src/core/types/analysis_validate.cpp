@@ -1,6 +1,8 @@
 #include "core/types/analysis_result.h"
 #include "core/types/frame_grid.h"
+#include "core/types/noise_floor.h"
 #include "core/types/note.h"
+#include "core/types/segments.h"
 #include "core/types/tracks.h"
 
 #include <algorithm>
@@ -38,6 +40,38 @@ bool matrix_matches(const FrameGrid& grid, const FrameMatrix& m) {
     return m.rows == grid.n_frames || (m.rows == 0 && m.cols == 0);
 }
 
+/// Every active note is exactly one note segment with the note's range, and no other note segment
+/// exists.
+Result<void> validate_timeline_against_notes(const SegmentTimeline& timeline,
+                                             const std::vector<Note>& notes) {
+    std::size_t note_segments = 0;
+    for (const Segment& s : timeline.segments()) {
+        if (const auto* n = std::get_if<NoteSegment>(&s)) {
+            ++note_segments;
+            const Note* note = nullptr;
+            for (const Note& candidate : notes) {
+                if (candidate.is_active && candidate.id == n->note) {
+                    note = &candidate;
+                }
+            }
+            if (note == nullptr) {
+                return invalid("timeline names note '" + n->note.value +
+                               "' which is not an active note");
+            }
+            if (!(note->source_start == n->start) || !(note->source_end == n->end)) {
+                return invalid("timeline range of note '" + n->note.value +
+                               "' differs from the note (a stale timeline)");
+            }
+        }
+    }
+    const auto active = static_cast<std::size_t>(
+        std::ranges::count_if(notes, [](const Note& n) { return n.is_active; }));
+    if (note_segments != active) {
+        return invalid("timeline does not hold every active note exactly once");
+    }
+    return {};
+}
+
 }  // namespace
 
 Result<void> validate(const FrameGrid& grid) {
@@ -61,6 +95,31 @@ Result<void> validate(const FrameMatrix& matrix) {
     }
     if (static_cast<std::int64_t>(matrix.data.size()) != matrix.rows * matrix.cols) {
         return invalid("frame matrix data size does not equal rows * cols");
+    }
+    return {};
+}
+
+Result<void> validate(const NoiseFloor& floor) {
+    if (auto r = validate(floor.grid); !r) {
+        return r;
+    }
+    if (!matches(floor.grid, floor.curve_dbfs.size())) {
+        return invalid("noise floor curve must have grid.n_frames entries");
+    }
+    if (floor.band_centre.size() != floor.band_dbfs.size()) {
+        return invalid("noise floor band arrays must have the same size");
+    }
+    const auto finite = [](Decibels d) { return std::isfinite(d.value()); };
+    if (!std::ranges::all_of(floor.curve_dbfs, finite) ||
+        !std::ranges::all_of(floor.band_dbfs, finite)) {
+        return invalid("noise floor levels must be finite");
+    }
+    for (std::size_t i = 0; i < floor.band_centre.size(); ++i) {
+        const double hz = floor.band_centre[i].value();
+        if (!(hz > 0.0) || !std::isfinite(hz) ||
+            (i > 0 && !(hz > floor.band_centre[i - 1].value()))) {
+            return invalid("noise floor band centres must be finite, > 0 and strictly ascending");
+        }
     }
     return {};
 }
@@ -278,6 +337,14 @@ Result<void> validate(const AnalysisResult& analysis) {
             return invalid("notes must be sorted by (source_start, voice)");
         }
         previous = &note;
+    }
+    if (analysis.noise_floor) {
+        if (auto r = validate(*analysis.noise_floor); !r) {
+            return r;
+        }
+    }
+    if (analysis.timeline) {
+        return validate_timeline_against_notes(*analysis.timeline, analysis.notes);
     }
     return {};
 }

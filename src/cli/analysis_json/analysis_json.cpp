@@ -52,6 +52,38 @@ const char* to_text(ReleaseKind k) {
     return "none";
 }
 
+const char* to_text(FrameClass c) {
+    switch (c) {
+    case FrameClass::voiced: return "voiced";
+    case FrameClass::sibilant: return "sibilant";
+    case FrameClass::breath: return "breath";
+    case FrameClass::plosive: return "plosive";
+    case FrameClass::silence: return "silence";
+    case FrameClass::breathy: return "breathy";
+    case FrameClass::rough: return "rough";
+    }
+    return "voiced";
+}
+
+/// The note's frame classes as runs: {class, start_s, end_s}.
+Json sound_classes_json(const Note& n) {
+    Json runs = Json::array();
+    const auto& classes = n.noise.frame_class;
+    for (std::size_t i = 0; i < classes.size();) {
+        std::size_t j = i;
+        while (j < classes.size() && classes[j] == classes[i]) {
+            ++j;
+        }
+        const auto frame_s = [&](std::size_t k) {
+            return seconds(n.grid.start) + static_cast<double>(k) * n.grid.hop.value();
+        };
+        runs.push_back(
+            {{"class", to_text(classes[i])}, {"start_s", frame_s(i)}, {"end_s", frame_s(j)}});
+        i = j;
+    }
+    return runs;
+}
+
 Json pitch_target_json(const PitchTarget& t) {
     Json flags = Json::array();
     const std::array<std::pair<PitchFlag, const char*>, 7> names{
@@ -104,17 +136,18 @@ const char* to_text(Algorithm a) {
 Json notes_json(const AnalysisResult& a) {
     Json notes = Json::array();
     for (const Note& n : a.notes) {
-        notes.push_back(
-            {{"id", n.id.value},
-             {"start_s", seconds(n.source_start)},
-             {"attack_end_s", seconds(n.attack_end)},
-             {"release_start_s", seconds(n.release_start)},
-             {"end_s", seconds(n.source_end)},
-             {"pitch_target", pitch_target_json(n.pitch_target)},
-             {"pitch_center_cents", n.pitch_center.value()},
-             {"loudness_lufs", n.loudness.value()},
-             {"confidence", n.confidence_prob},
-             {"separation_in", n.separation_in == SeparationIn::soft ? "soft" : "hard"}});
+        notes.push_back({{"id", n.id.value},
+                         {"start_s", seconds(n.source_start)},
+                         {"attack_end_s", seconds(n.attack_end)},
+                         {"release_start_s", seconds(n.release_start)},
+                         {"end_s", seconds(n.source_end)},
+                         {"pitch_target", pitch_target_json(n.pitch_target)},
+                         {"pitch_center_cents", n.pitch_center.value()},
+                         {"loudness_lufs", n.loudness.value()},
+                         {"confidence", n.confidence_prob},
+                         {"separation_in", n.separation_in == SeparationIn::soft ? "soft" : "hard"},
+                         {"harmonic_count", n.harmonics.freq_hz.cols},
+                         {"sound_classes", sound_classes_json(n)}});
     }
     return notes;
 }
