@@ -130,6 +130,42 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
     return note;
 }
 
+bool active_notes_overlap(const std::vector<Note>& notes) {
+    const Note* previous = nullptr;
+    for (const Note& n : notes) {
+        if (!n.is_active) {
+            continue;
+        }
+        if (previous != nullptr && n.source_start < previous->source_end) {
+            return true;
+        }
+        previous = &n;
+    }
+    return false;
+}
+
+/// ADR-0024: the noise floor and the segment timeline. Both stay empty for an empty source and
+/// when active notes overlap (the partition needs them to be disjoint).
+Result<void> add_gap_analysis(const AudioSource& src, const ActivityTrack& activity,
+                              const AnalyseParams& params, AnalysisResult& result) {
+    if (src.frame_count().value() == 0 || active_notes_overlap(result.notes)) {
+        return {};
+    }
+    auto floor = estimate_noise_floor(src, activity, result.notes, params.noise_floor);
+    if (!floor) {
+        return stage_error("noise floor", floor.error());
+    }
+    const SourceTime end = SourceTime{} + Seconds{static_cast<double>(src.frame_count().value()) /
+                                                  src.sample_rate().value()};
+    auto timeline = build_segment_timeline(result.notes, end, activity, *floor, params.gaps);
+    if (!timeline) {
+        return stage_error("segment timeline", timeline.error());
+    }
+    result.noise_floor = std::move(*floor);
+    result.timeline = std::move(*timeline);
+    return {};
+}
+
 }  // namespace
 
 Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
@@ -195,6 +231,9 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     for (std::size_t i = 0; i < take_flags->size(); ++i) {
         result->notes[i].pitch_target.flags.bits = static_cast<std::uint16_t>(
             result->notes[i].pitch_target.flags.bits | (*take_flags)[i].bits);
+    }
+    if (auto r = add_gap_analysis(src, *activity, params, *result); !r) {
+        return Unexpected{r.error()};
     }
     result->onsets = std::move(*onsets);
     result->pitch = std::move(*pitch);

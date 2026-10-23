@@ -103,6 +103,53 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
     CHECK(json["pitch"]["f0_cents"][0].is_null());  // silence at the start: unvoiced -> null
 }
 
+TEST_CASE("analyse_json_reports_the_gaps_and_the_noise_floor", "[cli_analyse]") {
+    const Fixture f;
+    cli::AnalyseArgs args;
+    args.wav = f.wav;
+    args.json = f.dir / "out.json";
+    REQUIRE(cli::run_analyse(args).has_value());
+    const auto json = nlohmann::json::parse(read_all(*args.json));
+
+    REQUIRE(json.contains("gaps"));
+    REQUIRE(json["gaps"].size() == 3);  // before the first tone, between the tones, after the last
+    for (const auto& g : json["gaps"]) {
+        for (const char* key :
+             {"id", "before", "after", "start_s", "end_s", "floor_dbfs", "regions"}) {
+            CHECK(g.contains(key));
+        }
+        REQUIRE_FALSE(g["regions"].empty());
+        CHECK(g["regions"][0]["kind"] == "silence");
+        CHECK(g["regions"][0]["start_s"] == g["start_s"]);
+        CHECK(g["regions"].back()["end_s"] == g["end_s"]);
+    }
+    CHECK(json["gaps"][0]["before"].is_null());
+    CHECK(json["gaps"][0]["start_s"].get<double>() == 0.0);
+    CHECK_FALSE(json["gaps"][1]["before"].is_null());
+    CHECK_FALSE(json["gaps"][1]["after"].is_null());
+    CHECK(json["gaps"][2]["after"].is_null());
+
+    REQUIRE(json.contains("noise_floor"));
+    const auto& floor = json["noise_floor"];
+    for (const char* key : {"hop_s", "start_s", "n_frames", "band_centre_hz", "band_dbfs"}) {
+        CHECK(floor.contains(key));
+    }
+    CHECK(floor["band_centre_hz"].size() == floor["band_dbfs"].size());
+    CHECK_FALSE(floor.contains("curve_dbfs"));  // per-frame arrays only with --pitch-track
+}
+
+TEST_CASE("the_floor_curve_is_written_with_the_pitch_track_option", "[cli_analyse]") {
+    const Fixture f;
+    cli::AnalyseArgs args;
+    args.wav = f.wav;
+    args.json = f.dir / "out.json";
+    args.pitch_track_in_json = true;
+    REQUIRE(cli::run_analyse(args).has_value());
+    const auto floor = nlohmann::json::parse(read_all(*args.json))["noise_floor"];
+    REQUIRE(floor.contains("curve_dbfs"));
+    CHECK(floor["curve_dbfs"].size() == floor["n_frames"].get<std::size_t>());
+}
+
 TEST_CASE("the_pitch_track_is_left_out_unless_asked_for", "[cli_analyse]") {
     const Fixture f;
     cli::AnalyseArgs args;
