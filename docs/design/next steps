@@ -1,0 +1,31 @@
+Delete this file after it has been read. It is only good once.
+
+What's just been done
+
+- Stored voiced limit: each note's analysis now keeps a per-frame maximum voiced frequency (MVF), the frequency below which that frame is periodic.
+  - Frame classes are unchanged, and the golden tests still pass.
+  - The analysis JSON now includes an mvf_hz value per sound-class run, written only.
+- Splitting a signal at a moving cut-off: a new split_band function does this, and the two parts add back to the input.
+- Shifting only the periodic part: the Rubber Band engine has a new option, ShiftScope::below_mvf, which is off by default.
+  - It shifts only what lies below the stored limit and leaves the breath and noise above it as sung.
+  - A scenario can turn it on with "rubberband": {"scope": "below_mvf"}.
+  - The option cannot be combined with a formant offset.
+- Docs: ADR-0033 is accepted, and the design note passed two structure reviews.
+
+Findings
+
+- Harmonic limit: the estimate can't exceed about 60 times the note's pitch, because harmonics are only tracked up to the 60th. This doesn't matter for the 0.5–3 kHz cut-offs the consumers use.
+- Waveform comparison: the scoped render's waveform legitimately differs from the full-band shift, since Rubber Band's output phases depend on its whole input. The alignment test checks onset timing instead.
+
+Next steps
+
+These are also written in docs/reviews/phase6-progress.md.
+1. Listen to audition/phase6-mvf/. It has Correct Pitch chromatic on vocadito_2, full-band versus below_mvf. The scoped render has more failing structural checks (62 against 48 of 112, on real vocals where both fail many). These checks haven't tracked what you hear, but look at which notes differ before trusting the option. Awaiting human listening.
+2. Bench the MVF estimate against WORLD D4C. It is an offline pyworld run that produces a table only. If the estimate is off by more than about 500 Hz, re-tune it before building more on it.
+3. Harmonic+noise engine consumer. Shift only the harmonics below the limit in breathy frames. Not started.
+4. Still open from earlier:
+   - a rule for when PSOLA beats Rubber Band, which needs your per-note labels in audition/phase6-macros-rb/NOTES.md
+   - the SPTK/REAPER trial (ADR-0019)
+   - the breath chain
+   - pitch_target_mode (ADR-0015)
+   - the phase review
