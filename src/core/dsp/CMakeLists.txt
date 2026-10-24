@@ -1,5 +1,6 @@
 anno_add_library(core/dsp
     SOURCES
+        band_split.cpp
         crossfade.cpp
         fft.cpp
         filter.cpp
