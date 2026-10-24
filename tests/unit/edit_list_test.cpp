@@ -276,14 +276,69 @@ TEST_CASE("from_parts_rejects_a_group_with_non_consecutive_seqs", "[edit_list]")
 }
 
 TEST_CASE("gap_targets_pass_through_retargeting_unchanged", "[edit_list]") {
-    EditSpec spec =
-        make_spec("a", EditCategory::pitch, EditParam::center_offset, EditOp::add, Cents{1.0});
-    const SegmentId gap{.kind = SegmentKind::gap, .value = "a"};  // same text as the note
-    spec.target.segment_ids.push_back(gap);
-    const EditList list = added(empty_list(), {spec});
+    // ADR-0024: a gap edit targets gaps only and a note edit notes only, so the two live in
+    // separate edits. The gap id has the same text as the note id on purpose.
+    const SegmentId gap{.kind = SegmentKind::gap, .value = "a"};
+    EditSpec gap_edit =
+        make_spec("a", EditCategory::gap, EditParam::gap_gain, EditOp::set, Decibels{-6.0});
+    gap_edit.target.segment_ids = {gap};
+    const EditList list = added(empty_list(), {pitch_add("a", 1.0), gap_edit});
     NoteIdMap map;  // the note "a" has no continuation: orphaned; the gap "a" is untouched
     map[NoteId{"a"}] = {};
-    const auto out = list.retargeted(map).active()[0].spec.target;
-    CHECK(out.segment_ids == std::vector<SegmentId>{gap});
-    CHECK(out.orphaned_segment_ids == std::vector<SegmentId>{segment_id(NoteId{"a"})});
+    const EditList retargeted = list.retargeted(map);
+    const auto edits = retargeted.active();
+    REQUIRE(edits.size() == 2);
+    CHECK(edits[0].spec.target.segment_ids.empty());
+    CHECK(edits[0].spec.target.orphaned_segment_ids ==
+          std::vector<SegmentId>{segment_id(NoteId{"a"})});
+    CHECK(edits[1].spec.target.segment_ids == std::vector<SegmentId>{gap});
+    CHECK(edits[1].spec.target.orphaned_segment_ids.empty());
+}
+
+namespace {
+
+SegmentId gap_of(const char* text) {
+    return SegmentId{.kind = SegmentKind::gap, .value = text};
+}
+
+EditSpec gap_gain_set(std::vector<SegmentId> targets, double db = -6.0) {
+    EditSpec spec =
+        make_spec("unused", EditCategory::gap, EditParam::gap_gain, EditOp::set, Decibels{db});
+    spec.target.segment_ids = std::move(targets);
+    return spec;
+}
+
+}  // namespace
+
+TEST_CASE("retargeting_with_a_gap_map_rewrites_gap_targets", "[edit_list]") {
+    const EditList list = added(empty_list(), {gap_gain_set({gap_of("g1"), gap_of("g2")})});
+    const GapIdMap gaps{{gap_of("g1"), gap_of("h1")}};  // g2 has no continuation
+    const EditList out = list.retargeted(NoteIdMap{}, gaps);
+    const auto target = out.active()[0].spec.target;
+    CHECK(target.segment_ids == std::vector<SegmentId>{gap_of("h1")});
+    CHECK(target.orphaned_segment_ids == std::vector<SegmentId>{gap_of("g2")});
+}
+
+TEST_CASE("retargeting_with_an_empty_gap_map_orphans_every_gap_target", "[edit_list]") {
+    const EditList list = added(empty_list(), {gap_gain_set({gap_of("g1")}), pitch_add("a", 1.0)});
+    NoteIdMap notes;
+    notes[NoteId{"a"}] = {NoteId{"b"}};
+    const EditList out = list.retargeted(notes, GapIdMap{});
+    CHECK(out.active()[0].spec.target.segment_ids.empty());
+    CHECK(out.active()[0].spec.target.orphaned_segment_ids == std::vector<SegmentId>{gap_of("g1")});
+    CHECK(out.active()[1].spec.target.segment_ids ==
+          std::vector<SegmentId>{segment_id(NoteId{"b"})});
+    // The note-only overload still leaves gap targets alone.
+    CHECK(list.retargeted(notes).active()[0].spec.target.segment_ids ==
+          std::vector<SegmentId>{gap_of("g1")});
+}
+
+TEST_CASE("a_gap_image_equal_to_an_orphaned_id_makes_it_live_again", "[edit_list]") {
+    const EditList list = added(empty_list(), {gap_gain_set({gap_of("g0"), gap_of("g1")})});
+    // g1 has no continuation (orphaned), but g0 continues as "g1": the id is live, not orphaned.
+    const EditList out = list.retargeted(NoteIdMap{}, GapIdMap{{gap_of("g0"), gap_of("g1")}});
+    const auto target = out.active()[0].spec.target;
+    CHECK(target.segment_ids == std::vector<SegmentId>{gap_of("g1")});
+    CHECK(target.orphaned_segment_ids.empty());
+    CHECK(out.active().size() == 1);  // nothing is dropped
 }

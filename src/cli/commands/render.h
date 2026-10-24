@@ -24,20 +24,27 @@ enum class EngineChoice { passthrough, harmonic_noise, psola };
 [[nodiscard]] std::unique_ptr<const SynthesisEngine> make_engine(EngineChoice engine);
 
 /// Everything a render or audition run needs, loaded from a scenario file.
+/// The render parameters a scenario asks for (only the stretch vibrato mode so far).
+struct LoadedScenario;
+[[nodiscard]] RenderParams render_params_of(const LoadedScenario& scenario);
+
 struct LoadedScenario {
     AudioSource source;
     std::shared_ptr<const AnalysisResult> analysis;
     std::shared_ptr<const EditList> edits;
     std::string name;
     std::string algorithm;
-    std::string edits_json;   // the scenario's "edits" array as written
-    std::string expect_json;  // the scenario's "expect" object as written, or empty
+    bool stretch_vibrato_retime = false;  // from the scenario's "stretch_vibrato"
+    bool stretch_psola = false;           // "stretch_engine": "psola" (the default is Rubber Band)
+    std::string edits_json;               // the scenario's "edits" array as written
+    std::string expect_json;              // the scenario's "expect" object as written, or empty
 };
 
 /// Reads the scenario and its source WAV, builds the analysis (the synthetic one for the given
 /// notes, or analyse() of the source for `"analysis": "analyse"`) and the edit list (one group per
-/// scenario edit; pitch drags are resolved against the analysed notes with pitch_drag_edit and
-/// added after the raw edits). Errors: those of load_scenario, io::read_wav,
+/// scenario edit; a hand-given scenario with a gap target also gets the noise floor and segment
+/// timeline built from its audio; pitch drags are resolved against the analysed notes with
+/// pitch_drag_edit and added after the raw edits). Errors: those of load_scenario, io::read_wav,
 /// make_scenario_analysis, analyse, pitch_drag_edit, target_pitch, EditList::add; invalid_argument
 /// for a drag whose note_index is past the analysed notes. Not real-time safe.
 [[nodiscard]] Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,

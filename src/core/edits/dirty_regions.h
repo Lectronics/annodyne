@@ -2,6 +2,7 @@
 
 #include "core/edits/edit_list.h"
 #include "core/types/note.h"
+#include "core/types/segments.h"
 #include "core/types/time_range.h"
 #include "core/types/units.h"
 
@@ -23,6 +24,9 @@ struct DirtyParams {
     /// crossfade length at a different layer: this must be >= k_max_crossfade + 1 sample.
     Seconds crossfade_margin{0.050};
     SourceTime source_end;  // end of the recording (a timing change dirties up to here)
+    // The segment timeline (ADR-0024). Needed when either list has a live gap edit; the gaps it
+    // names are looked up here. Null = no timeline.
+    const SegmentTimeline* timeline = nullptr;
 };
 
 static_assert(k_max_crossfade.value() + 0.001 <= DirtyParams{}.crossfade_margin.value(),
@@ -37,6 +41,10 @@ static_assert(k_max_crossfade.value() + 0.001 <= DirtyParams{}.crossfade_margin.
 ///    forward to the next one or the end, and repair can cascade both ways. So everything from the
 ///    origin to the end of the recording (params.source_end or the end of the last active note)
 ///    is dirty.
+///  - A gap's gain (EffectiveGap) that differs between the lists dirties the gap's range
+///    [gap.start, gap.end] (no margin: gain does not move time; the gated output lies inside it).
+///    Every live gap id a gap-category edit of either list targets must be a gap of
+///    params.timeline, else invalid_argument naming it (orphaned ids are ignored).
 /// Result: sorted, merged, non-overlapping. Empty when nothing changed.
 /// Preconditions: `notes` sorted by source_start. Errors: invalid_argument if the lists belong to
 /// different tracks, a note's track differs, or notes are unsorted.

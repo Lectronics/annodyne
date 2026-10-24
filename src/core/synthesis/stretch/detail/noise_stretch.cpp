@@ -21,6 +21,39 @@ double signed_unit(std::uint64_t h) {
     return static_cast<double>(h >> 11U) / 4503599627370496.0 - 1.0;
 }
 
+/// Over a zone of `zone` samples at each end of the span the grain sum is blended (equal power)
+/// into an exact slope-1 copy of the source that continues the neighbouring audio, so the span
+/// meets its neighbours on the source's own samples (the grains read jittered positions and, for
+/// tonal or onset material, do not add up to the source). The blend is a function of the span only,
+/// not of the requested range.
+void anchor_edges(const grain::Signal& x, const SpanGeometry& g, std::int64_t begin,
+                  std::int64_t end, double zone, std::vector<double>& out) {
+    const double zone_samples = std::min(zone, 0.33 * static_cast<double>(g.last - g.first));
+    if (zone_samples < 1.0) {
+        return;
+    }
+    const auto start_source = static_cast<std::int64_t>(std::llround(g.src_start));
+    const auto end_source =
+        static_cast<std::int64_t>(std::llround(g.source_at(static_cast<double>(g.last))));
+    for (std::int64_t n = begin; n < end; ++n) {
+        const auto from_start = static_cast<double>(n - g.first);
+        const auto from_end = static_cast<double>(g.last - 1 - n);
+        const bool at_start = from_start < zone_samples;
+        const bool at_end = from_end < zone_samples;
+        if (!at_start && !at_end) {
+            continue;
+        }
+        const double d = at_start ? from_start : from_end;
+        const double angle = 0.5 * std::numbers::pi * d / zone_samples;
+        const double copy_gain = std::cos(angle);
+        const double noise_gain = std::sin(angle);
+        const double copy =
+            at_start ? x.at(start_source + (n - g.first)) : x.at(end_source + (n - g.last));
+        double& o = out[static_cast<std::size_t>(n - begin)];
+        o = noise_gain * o + copy_gain * copy;
+    }
+}
+
 }  // namespace
 
 std::vector<double> synthesise_noise(const grain::Signal& x, const SpanGeometry& g,
@@ -57,6 +90,7 @@ std::vector<double> synthesise_noise(const grain::Signal& x, const SpanGeometry&
                 window * x.at(source_centre + (n - centre_sample));
         }
     }
+    anchor_edges(x, g, begin, end, hop, out);
     return out;
 }
 

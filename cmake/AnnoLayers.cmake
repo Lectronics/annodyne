@@ -71,6 +71,10 @@ function(anno_external_allowed folder dep out_var)
     if(folder STREQUAL "core/analysis/pitch" AND dep STREQUAL "anno_c4dm_pyin")
         set(allowed TRUE)
     endif()
+    # Rubber Band (ADR-0026): the optional R3 stretch engine, core/synthesis/stretch only.
+    if(folder STREQUAL "core/synthesis/stretch" AND dep STREQUAL "anno_rubberband")
+        set(allowed TRUE)
+    endif()
     # nlohmann/json: CLI targets only; core/* never parses JSON (ADR-0007).
     if(folder MATCHES "^cli(/[a-z0-9_]+)?$" AND dep MATCHES "^nlohmann_json(::nlohmann_json)?$")
         set(allowed TRUE)

@@ -8,10 +8,15 @@ anno_add_test(NAME edit_types_test SOURCES edit_types_test.cpp LABELS unit DEPS 
 anno_add_test(NAME time_map_test SOURCES time_map_test.cpp LABELS unit DEPS anno::core_types)
 anno_add_test(NAME edit_list_test SOURCES edit_list_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME effective_state_test SOURCES effective_state_test.cpp LABELS unit DEPS anno::core_edits)
+anno_add_test(NAME effective_gap_test SOURCES effective_gap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME dirty_regions_test SOURCES dirty_regions_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME remap_test SOURCES remap_test.cpp LABELS unit DEPS anno::core_edits)
 anno_add_test(NAME build_time_map_test SOURCES build_time_map_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME layout_markers_test SOURCES layout_markers_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME shift_grid_test SOURCES shift_grid_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME build_layout_map_test SOURCES build_layout_map_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME map_diff_test SOURCES map_diff_test.cpp LABELS unit DEPS anno::core_timemap)
+anno_add_test(NAME solve_layout_test SOURCES solve_layout_test.cpp LABELS unit DEPS anno::core_timemap)
 anno_add_test(NAME crossfade_test SOURCES crossfade_test.cpp LABELS unit DEPS anno::core_dsp)
 anno_add_test(NAME blend_plan_test SOURCES blend_plan_test.cpp LABELS unit DEPS anno::core_render)
 anno_add_test(NAME render_cache_test SOURCES render_cache_test.cpp LABELS unit DEPS anno::cli_checks anno::core_render)
@@ -73,6 +78,7 @@ file(WRITE "${scenario_dir}/pitch_edit.json" "{
 }")
 file(WRITE "${scenario_dir}/timing_edit.json" "{
   \"name\": \"timing_edit\",
+  \"stretch_engine\": \"psola\",
   \"source\": \"${cli_wav}\",
   \"notes\": [{\"id\": \"n1\", \"start_s\": 0.02, \"end_s\": 0.05}],
   \"edits\": [{\"category\": \"time\", \"op\": \"add\", \"param\": \"onset_shift\", \"value\": 0.01,
@@ -136,18 +142,28 @@ anno_add_test(NAME segmentation_test SOURCES segmentation_test.cpp LABELS unit D
 anno_add_test(NAME perceived_pitch_test SOURCES perceived_pitch_test.cpp LABELS unit DEPS anno::core_analysis_perceived_pitch)
 anno_add_test(NAME pitch_target_test SOURCES pitch_target_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
 anno_add_test(NAME take_annotation_test SOURCES take_annotation_test.cpp LABELS unit DEPS anno::core_analysis_pitch_target)
+anno_add_test(NAME build_segment_timeline_test SOURCES build_segment_timeline_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
+anno_add_test(NAME splice_test SOURCES splice_test.cpp LABELS unit DEPS anno::core_render anno::core_synthesis_engine)
+anno_add_test(NAME render_layout_test SOURCES render_layout_test.cpp LABELS unit DEPS anno::core_render anno::core_synthesis_passthrough)
+anno_add_test(NAME render_gate_test SOURCES render_gate_test.cpp LABELS unit DEPS anno::core_render anno::core_synthesis_passthrough)
+anno_add_test(NAME gate_test SOURCES gate_test.cpp LABELS unit DEPS anno::core_render)
+anno_add_test(NAME classify_gap_frames_test SOURCES classify_gap_frames_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
+anno_add_test(NAME noise_floor_test SOURCES noise_floor_test.cpp LABELS unit DEPS anno::core_analysis_gaps)
 anno_add_test(NAME activity_test SOURCES activity_test.cpp LABELS unit DEPS anno::core_analysis_activity)
 anno_add_test(NAME loudness_test SOURCES loudness_test.cpp LABELS unit DEPS anno::core_analysis_loudness anno::core_dsp)
 anno_add_test(NAME partials_test SOURCES partials_test.cpp LABELS unit DEPS anno::core_analysis_partials anno::core_dsp)
 anno_add_test(NAME harmonic_noise_test SOURCES harmonic_noise_test.cpp LABELS unit DEPS anno::core_analysis_partials anno::core_analysis_harmonic_noise anno::core_dsp)
 anno_add_test(NAME envelope_test SOURCES envelope_test.cpp LABELS unit DEPS anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
 anno_add_test(NAME harmonic_noise_engine_test SOURCES harmonic_noise_engine_test.cpp LABELS unit DEPS anno::core_synthesis_harmonic_noise anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
-anno_add_test(NAME stretch_span_test SOURCES stretch_span_test.cpp LABELS unit DEPS anno::core_synthesis_stretch anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
+# The vibrato tests analyse several renders: over 300 s under TSan on macos-15.
+anno_add_test(NAME stretch_span_test SOURCES stretch_span_test.cpp LABELS unit TIMEOUT 1500 DEPS anno::core_synthesis_stretch anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
 anno_add_test(NAME psola_engine_test SOURCES psola_engine_test.cpp LABELS unit DEPS anno::core_synthesis_psola anno::core_analysis_orchestrator anno::core_analysis_partials anno::core_analysis_envelope anno::core_dsp)
 anno_add_test(NAME chromatic_grid_test SOURCES chromatic_grid_test.cpp LABELS unit DEPS anno::core_tuning)
 anno_add_test(NAME main_tool_test SOURCES main_tool_test.cpp LABELS unit DEPS anno::tools_main_tool anno::core_edits)
+anno_add_test(NAME gap_tools_test SOURCES gap_tools_test.cpp LABELS unit DEPS anno::tools_gap anno::macros_strip_silence anno::core_edits)
 anno_add_test(NAME time_tools_test SOURCES time_tools_test.cpp LABELS unit DEPS anno::tools_time anno::tools_attack_speed anno::core_edits anno::core_timemap)
 anno_add_test(NAME engine_support_test SOURCES engine_support_test.cpp LABELS unit DEPS anno::core_synthesis_engine)
+anno_add_test(NAME cli_gap_scenario_test SOURCES cli_gap_scenario_test.cpp LABELS unit DEPS anno::cli_commands anno::core_io)
 anno_add_test(NAME cli_engines_test SOURCES cli_engines_test.cpp LABELS unit DEPS anno::cli_commands anno::core_io nlohmann_json::nlohmann_json)
 anno_add_test(NAME pitch_checks_test SOURCES pitch_checks_test.cpp LABELS unit DEPS anno::cli_checks anno::core_analysis_orchestrator)
 anno_add_test(NAME voicing_probes_test SOURCES voicing_probes_test.cpp LABELS unit DEPS anno::core_analysis_orchestrator anno::core_dsp)

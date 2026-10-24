@@ -2,10 +2,12 @@
 
 #include "core/edits/dirty_regions.h"
 #include "core/edits/edit_list.h"
+#include "core/render/gate.h"
 #include "core/render/render_cache.h"
 #include "core/render/render_result.h"
 #include "core/synthesis/engine/synthesis_engine.h"
 #include "core/synthesis/stretch/stretch.h"
+#include "core/timemap/layout.h"
 #include "core/types/analysis_result.h"
 #include "core/types/audio_source.h"
 #include "core/types/result.h"
@@ -24,9 +26,11 @@ struct RenderInputs {
     std::shared_ptr<const AnalysisResult> analysis;  // must not be null
     std::shared_ptr<const EditList> edits;           // must not be null; edits->track_id() = track
     /// Optional (ADR-0008). If set it is the track's TimeMap, authoritative over any timing edits
-    /// in `edits`; its source_length must match the recording (half a sample). If null the map is
-    /// built from the edits with the tail shifted (not squeezed) and whole-sample shifts
-    /// (ADR-0023); a supplied map must give every slope-1 warp a whole-sample shift.
+    /// in `edits`; its source_length must match the recording (half a sample). If null and the
+    /// analysis has a segment timeline the map is the layout of the edits (ADR-0025: gaps absorb
+    /// first, the recording keeps its length); without a timeline it is built with the tail shifted
+    /// (not squeezed). Either way shifts are whole samples (shift grid steps with a timeline,
+    /// ADR-0023); a supplied map must give every slope-1 warp a whole-sample shift.
     std::shared_ptr<const TimeMap> time_map;
 };
 
@@ -36,7 +40,14 @@ struct RenderParams {
     Seconds crossfade_length{0.010};
     FadeShape crossfade_shape = FadeShape::equal_power;
     RenderCache* cache = nullptr;  // optional, not owned
-    StretchParams stretch = {};  // settings of the stretched base (ADR-0023); part of the cache key
+    // Settings of the stretched base (ADR-0023); part of the cache key. A render defaults to Rubber
+    // Band R3 (ADR-0026, owner 2026-10-23: "phenomenal"); StretchParams itself defaults to PSOLA.
+    StretchParams stretch = {.engine = StretchEngine::rubberband};
+    GateParams gate = {};  // the ramps of the gap gate (ADR-0024); part of the cache key
+    /// The layout of timing edits (ADR-0025), used when the analysis has a segment timeline and no
+    /// TimeMap is supplied. `note_margin` is replaced by `crossfade_length`. Part of the cache key
+    /// through the map and the splice fade.
+    LayoutParams layout = {};
 };
 
 /// Renders [region) of the track's output. The result's buffer is the request snapped to whole
@@ -59,6 +70,11 @@ struct RenderParams {
 /// Stretched warps (slope != 1, from timing edits) are part of the unedited base: slope-1 warps and
 /// inserts as below, every slope != 1 warp rendered by `stretch_span` (pitch and timbre kept).
 /// A note whose edits are only timing edits is part of that base, not an edited note.
+/// Gap edits (gap_gain, ADR-0024) scale the `silence` regions of their gaps after the blend (see
+/// gate_curve); a gap edit whose id is not in `analysis->timeline`, or any gap edit when the
+/// timeline is absent, is invalid_argument naming the id (orphaned ids are ignored); samples with
+/// no gate are never multiplied. `RenderResult::gaps_rendered` lists the gated gaps that meet the
+/// region.
 /// Time axes: `region` is output time, within [0, output_length of the map]; with an identity
 /// TimeMap it equals source time. Cuts have no output and inserts are digital silence; every other
 /// sample outside blend zones is the source sample the map names, bit for bit. Thread-safe for

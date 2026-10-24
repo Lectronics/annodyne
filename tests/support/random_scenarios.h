@@ -60,7 +60,7 @@ inline EditSpec random_spec(Rng& rng, const std::vector<Note>& notes, bool allow
     EditParam p = EditParam::center_offset;
     do {
         p = static_cast<EditParam>(uniform_int(rng, 0, k_edit_param_count - 1));
-    } while (!allow_timing && is_timing(p));
+    } while ((!allow_timing && is_timing(p)) || p == EditParam::gap_gain);  // gap edits target gaps
     const ParamInfo& info = param_info(p);
     EditOp op = EditOp::set;
     if (info.allows_add && uniform_int(rng, 0, 1) == 0) {

@@ -14,6 +14,7 @@ include(AnnoLayers)
 include(AnnoJson)
 include(AnnoPocketfft)
 include(AnnoC4dmPyin)
+include(AnnoRubberBand)
 
 add_subdirectory(src)
 

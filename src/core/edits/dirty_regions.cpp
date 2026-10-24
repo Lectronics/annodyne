@@ -1,8 +1,10 @@
 #include "core/edits/dirty_regions.h"
 
+#include "core/edits/effective_gap.h"
 #include "core/edits/effective_state.h"
 
 #include <algorithm>
+#include <set>
 
 namespace anno {
 
@@ -56,6 +58,52 @@ Result<void> check_inputs(std::span<const Note> notes, const EditList& a, const 
     return {};
 }
 
+/// The gap ids that live gap-category edits of either list target.
+std::set<SegmentId> targeted_gaps(const EditList& a, const EditList& b) {
+    std::set<SegmentId> ids;
+    for (const EditList* list : {&a, &b}) {
+        for (const Edit& edit : list->active()) {
+            if (edit.spec.category != EditCategory::gap) {
+                continue;
+            }
+            for (const SegmentId& id : edit.spec.target.segment_ids) {
+                if (id.kind == SegmentKind::gap) {
+                    ids.insert(id);
+                }
+            }
+        }
+    }
+    return ids;
+}
+
+/// The ranges of the gaps whose gain differs between the lists.
+Result<std::vector<Span>> changed_gaps(const EditList& old_edits, const EditList& new_edits,
+                                       const SegmentTimeline* timeline) {
+    std::vector<Span> spans;
+    const std::set<SegmentId> targeted = targeted_gaps(old_edits, new_edits);
+    for (const SegmentId& id : targeted) {
+        const bool known =
+            timeline != nullptr &&
+            std::ranges::any_of(timeline->gaps(), [&](const Gap& g) { return g.id == id; });
+        if (!known) {
+            return fail(ErrorCode::invalid_argument,
+                        "dirty_regions: gap edit targets '" + id.value +
+                            (timeline != nullptr ? "', which is not a gap of the segment timeline"
+                                                 : "', but no segment timeline was given"));
+        }
+    }
+    if (timeline == nullptr) {
+        return spans;
+    }
+    for (const Gap& gap : timeline->gaps()) {
+        if (targeted.contains(gap.id) &&
+            effective_gap(gap.id, old_edits) != effective_gap(gap.id, new_edits)) {
+            spans.push_back({.start = gap.start, .end = gap.end});
+        }
+    }
+    return spans;
+}
+
 }  // namespace
 
 Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
@@ -85,6 +133,11 @@ Result<std::vector<SourceRange>> dirty_regions(std::span<const Note> notes,
             spans.push_back({.start = SourceTime{}, .end = last_end});
         }
     }
+    auto gaps = changed_gaps(old_edits, new_edits, params.timeline);
+    if (!gaps) {
+        return Unexpected{gaps.error()};
+    }
+    spans.insert(spans.end(), gaps->begin(), gaps->end());
     return merged(std::move(spans));
 }
 

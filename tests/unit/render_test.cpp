@@ -205,16 +205,20 @@ TEST_CASE("bad_inputs_are_reported_with_the_documented_codes", "[render]") {
     CHECK(code(f.inputs(), before) == ErrorCode::out_of_range);
 }
 
-// The fixture is stereo and stretching is mono only (ADR-0023; mono: render_stretch_test.cpp), so a
-// timing edit that stretches is refused even for a region far from the note.
+// The fixture is stereo and the PSOLA stretcher is mono only (ADR-0023; mono:
+// render_stretch_test.cpp), so with that engine a timing edit that stretches is refused even for a
+// region far from the note; the default engine (Rubber Band, ADR-0026) renders it.
 TEST_CASE("a_stretching_timing_edit_on_a_stereo_source_is_not_implemented", "[render]") {
     const Fixture f =
         make_fixture(two_notes())
             .with_edits(edits_of({make_spec("b", EditCategory::time, EditParam::onset_shift,
                                             EditOp::add, Seconds{0.1})}));
     const OutputRange far = OutputRange::from_start(OutputTime{}, Seconds{0.2});
-    CHECK(render_region(f.inputs(), far, PassthroughEngine{}, {}).error().code ==
+    RenderParams psola;
+    psola.stretch.engine = StretchEngine::psola;
+    CHECK(render_region(f.inputs(), far, PassthroughEngine{}, psola).error().code ==
           ErrorCode::not_implemented);
+    CHECK(render_region(f.inputs(), far, PassthroughEngine{}, {}).has_value());
 }
 
 TEST_CASE("timing_edits_on_inactive_notes_are_ignored", "[render]") {

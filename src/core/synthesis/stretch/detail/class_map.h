@@ -28,9 +28,24 @@ struct Run {
 [[nodiscard]] std::vector<Run> voiced_runs(const std::vector<std::uint8_t>& indicator,
                                            std::int64_t first);
 
+/// Which part of the pitch curve `pitch_points` reads: the whole contour, or only the slow part
+/// (centre + drift: the vibrato term taken out, for a regenerated vibrato).
+enum class PitchPart { full, slow };
+
 /// (source sample position, absolute cents) of every finite frame of the active notes whose time
 /// range meets [from, to] (source samples). Sorted by position. Empty if there is none.
 [[nodiscard]] std::vector<grain::CentsPoint> pitch_points(const AnalysisResult& analysis,
-                                                          double rate_hz, double from, double to);
+                                                          double rate_hz, double from, double to,
+                                                          PitchPart part = PitchPart::full);
+
+/// (source sample position, cents of `pitch_mod`) of every finite-pitch frame of the active notes
+/// whose position lies inside [from, to] (source samples). Sorted by position.
+[[nodiscard]] std::vector<grain::CentsPoint> vibrato_points(const AnalysisResult& analysis,
+                                                            double rate_hz, double from, double to);
+
+/// True if the active note frame at source position `source_sample` has a voiced class and a finite
+/// pitch (the indicator's rule at one position; false outside every note).
+[[nodiscard]] bool voiced_at(const AnalysisResult& analysis, double source_sample, double rate_hz,
+                             const StretchParams& params);
 
 }  // namespace anno::stretch_detail

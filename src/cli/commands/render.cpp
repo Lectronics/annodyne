@@ -1,7 +1,10 @@
 #include "cli/commands/render.h"
 
 #include "cli/scenario_json/scenario_json.h"
+#include "core/analysis/activity/activity.h"
+#include "core/analysis/gaps/analyse_gaps.h"
 #include "core/analysis/orchestrator/analyse.h"
+#include "core/dsp/mono.h"
 #include "core/io/wav.h"
 #include "core/synthesis/harmonic_noise/harmonic_noise_engine.h"
 #include "core/synthesis/passthrough/passthrough_engine.h"
@@ -9,9 +12,54 @@
 #include "core/tuning/chromatic_grid.h"
 #include "tools/main_tool/main_tool.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace anno::cli {
+
+namespace {
+
+/// True if any edit targets a gap or moves time: both need the segment timeline (the gate, and
+/// the layout of timing edits, ADR-0024 and ADR-0025).
+bool needs_timeline(const std::vector<EditSpec>& edits) {
+    return std::ranges::any_of(edits, [](const EditSpec& e) {
+        return e.category == EditCategory::time || e.category == EditCategory::attack ||
+               std::ranges::any_of(e.target.segment_ids,
+                                   [](const SegmentId& id) { return id.kind == SegmentKind::gap; });
+    });
+}
+
+constexpr double k_scenario_hop_s = 0.005;  // the activity grid of a scenario's gap analysis
+
+/// The noise floor and the segment timeline of a hand-given analysis, built from the audio the way
+/// analyse() builds them, so a scenario can address the gaps between its notes (ADR-0024).
+Result<void> add_scenario_gaps(const AudioSource& source, AnalysisResult& analysis) {
+    auto mono = read_mono(source);
+    if (!mono) {
+        return Unexpected{mono.error()};
+    }
+    FrameGrid grid;
+    grid.hop = Seconds{k_scenario_hop_s};
+    grid.start = SourceTime{};
+    grid.n_frames =
+        static_cast<std::int64_t>(std::floor(
+            to_seconds(source.frame_count(), source.sample_rate()).value() / k_scenario_hop_s)) +
+        1;
+    auto activity = detect_activity(*mono, grid, ActivityParams{});
+    if (!activity) {
+        return Unexpected{activity.error()};
+    }
+    auto gaps = analyse_gaps(source, *mono, analysis.notes, *activity, GapAnalysisParams{});
+    if (!gaps) {
+        return Unexpected{gaps.error()};
+    }
+    analysis.noise_floor = std::move(gaps->noise_floor);
+    analysis.timeline = std::move(gaps->timeline);
+    return {};
+}
+
+}  // namespace
 
 Result<EngineChoice> parse_engine(std::string_view name) {
     for (const EngineChoice choice :
@@ -98,6 +146,11 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
         if (!synthetic) {
             return Unexpected{synthetic.error()};
         }
+        if (needs_timeline(scenario->edits)) {
+            if (auto r = add_scenario_gaps(source, *synthetic); !r) {
+                return Unexpected{r.error()};
+            }
+        }
         analysis = std::make_shared<AnalysisResult>(std::move(*synthetic));
     }
     std::vector<EditSpec> specs = scenario->edits;
@@ -121,8 +174,21 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
                           .edits = std::make_shared<EditList>(std::move(edits)),
                           .name = scenario->name,
                           .algorithm = scenario->algorithm,
+                          .stretch_vibrato_retime = scenario->stretch_vibrato_retime,
+                          .stretch_psola = scenario->stretch_psola,
                           .edits_json = scenario->edits_json,
                           .expect_json = scenario->expect_json};
+}
+
+RenderParams render_params_of(const LoadedScenario& scenario) {
+    RenderParams params;
+    if (scenario.stretch_psola) {
+        params.stretch.engine = StretchEngine::psola;
+    }
+    if (scenario.stretch_vibrato_retime) {
+        params.stretch.vibrato = VibratoMode::retime;
+    }
+    return params;
 }
 
 Result<void> run_render(const std::filesystem::path& scenario_path,
@@ -140,7 +206,7 @@ Result<void> run_render(const std::filesystem::path& scenario_path,
                                                .analysis = run->analysis,
                                                .edits = run->edits,
                                                .time_map = nullptr},
-                                  whole, chosen, RenderParams{});
+                                  whole, chosen, render_params_of(*run));
     if (!rendered) {
         return Unexpected{rendered.error()};
     }

@@ -55,15 +55,16 @@ TEST_CASE("an_onset_shift_pins_start_attack_end_and_end_at_their_shifted_times",
           "[layout_markers]") {
     const auto m = markers(
         notes3(), edits_of({timing("b", EditParam::onset_shift, EditOp::set, Seconds{0.25})}));
-    REQUIRE(m.markers.size() == 5);  // origin, b.start, b.attack_end, b.end, end
-    CHECK(m.markers[1].kind == MarkerKind::note_start);
-    CHECK(m.markers[1].note == 1);
-    CHECK(std::abs(out_s(m.markers[1]) - 3.25) < 1e-12);
-    CHECK(m.markers[2].kind == MarkerKind::attack_end);
-    CHECK(std::abs(out_s(m.markers[2]) - 3.35) < 1e-12);
-    CHECK(m.markers[3].kind == MarkerKind::note_end);
-    CHECK(std::abs(out_s(m.markers[3]) - 4.25) < 1e-12);
-    CHECK(m.markers[4].kind == MarkerKind::end);
+    // origin, a.start, a.end (pinned), b.start, b.attack_end, b.end, c.start, c.end (pinned), end
+    REQUIRE(m.markers.size() == 9);
+    CHECK(m.markers[3].kind == MarkerKind::note_start);
+    CHECK(m.markers[3].note == 1);
+    CHECK(std::abs(out_s(m.markers[3]) - 3.25) < 1e-12);
+    CHECK(m.markers[4].kind == MarkerKind::attack_end);
+    CHECK(std::abs(out_s(m.markers[4]) - 3.35) < 1e-12);
+    CHECK(m.markers[5].kind == MarkerKind::note_end);
+    CHECK(std::abs(out_s(m.markers[5]) - 4.25) < 1e-12);
+    CHECK(m.markers[8].kind == MarkerKind::end);
 }
 
 TEST_CASE("length_scale_moves_only_the_end_marker_and_attack_scale_the_attack_end",
@@ -206,4 +207,55 @@ TEST_CASE("layout_markers_refuses_what_build_time_map_refuses", "[layout_markers
     std::vector<Note> foreign{make_note("a", 1.0, 2.0)};
     foreign[0].track_id = TrackId{"other"};
     CHECK(layout_markers(foreign, none, src(4.0)).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("unedited_notes_are_pinned_in_place_once_any_note_has_a_timing_edit",
+          "[layout_markers]") {
+    const auto m = markers(
+        notes3(), edits_of({timing("a", EditParam::onset_shift, EditOp::set, Seconds{0.25})}));
+    // origin, a.start, a.attack_end, a.end (edited); b.start, b.end, c.start, c.end (pinned); end
+    REQUIRE(m.markers.size() == 9);
+    for (std::size_t k = 0; k < m.markers.size(); ++k) {
+        const bool edited = k >= 1 && k <= 3;
+        CHECK(m.markers[k].pinned == (k >= 4 && k <= 7));
+        if (!edited) {
+            CHECK(out_s(m.markers[k]) == src_s(m.markers[k]));
+        }
+    }
+    CHECK(m.markers[4].kind == MarkerKind::note_start);
+    CHECK(m.markers[4].note == 1);
+    CHECK(m.markers[5].kind == MarkerKind::note_end);
+    CHECK(m.repaired == std::vector<bool>(3, false));
+}
+
+TEST_CASE("with_no_timing_edit_nothing_is_pinned", "[layout_markers]") {
+    const auto m = markers(notes3(), EditList{TrackId{"t1"}});
+    CHECK(m.markers.size() == 2);
+}
+
+TEST_CASE("an_unedited_legato_neighbour_is_neither_repaired_nor_given_a_second_marker",
+          "[layout_markers]") {
+    // a [1,2] edited (moved), b [2,3] unedited and touching a: the boundary is one marker.
+    const std::vector<Note> notes{make_note("a", 1.0, 2.0), make_note("b", 2.0, 3.0)};
+    const auto m =
+        markers(notes, edits_of({timing("a", EditParam::onset_shift, EditOp::set, Seconds{0.25})}));
+    CHECK(m.repaired == std::vector<bool>(2, false));
+    std::size_t at_two = 0;
+    for (const LayoutMarker& k : m.markers) {
+        at_two += src_s(k) == 2.0 ? 1U : 0U;
+    }
+    CHECK(at_two == 1);
+}
+
+TEST_CASE("an_edited_note_after_a_pinned_one_takes_the_shared_boundary", "[layout_markers]") {
+    const std::vector<Note> notes{make_note("a", 1.0, 2.0), make_note("b", 2.0, 3.0)};
+    const auto m =
+        markers(notes, edits_of({timing("b", EditParam::onset_shift, EditOp::set, Seconds{0.25})}));
+    for (const LayoutMarker& k : m.markers) {
+        if (src_s(k) == 2.0) {
+            CHECK(out_s(k) == 2.25);
+            CHECK(!k.pinned);
+        }
+    }
+    CHECK(m.repaired == std::vector<bool>(2, false));
 }

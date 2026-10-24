@@ -10,7 +10,8 @@ namespace anno {
 
 namespace {
 
-constexpr double k_min_source_rate_hz = 4000.0;  // K-weighting design limit (core/dsp/k_weight.h)
+constexpr double k_min_source_rate_hz =
+    8000.0;  // harmonic/noise stage and consonant evidence (owner, 2026-10-23)
 
 /// Adds the stage name to an error.
 Unexpected stage_error(const char* stage, const Error& e) {
@@ -130,6 +131,37 @@ Result<Note> describe_note(const NoteSpan& span, const NoteContext& context,
     return note;
 }
 
+bool active_notes_overlap(const std::vector<Note>& notes) {
+    const Note* previous = nullptr;
+    for (const Note& n : notes) {
+        if (!n.is_active) {
+            continue;
+        }
+        if (previous != nullptr && n.source_start < previous->source_end) {
+            return true;
+        }
+        previous = &n;
+    }
+    return false;
+}
+
+/// ADR-0024: the noise floor and the segment timeline. Both stay empty for an empty source and
+/// when active notes overlap (the partition needs them to be disjoint).
+Result<void> add_gap_analysis(const AudioSource& src, const MonoAudio& mono,
+                              const ActivityTrack& activity, const AnalyseParams& params,
+                              AnalysisResult& result) {
+    if (src.frame_count().value() == 0 || active_notes_overlap(result.notes)) {
+        return {};
+    }
+    auto gaps = analyse_gaps(src, mono, result.notes, activity, params.gaps);
+    if (!gaps) {
+        return Unexpected{gaps.error()};
+    }
+    result.noise_floor = std::move(gaps->noise_floor);
+    result.timeline = std::move(gaps->timeline);
+    return {};
+}
+
 }  // namespace
 
 Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
@@ -140,7 +172,7 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     }
     if (src.sample_rate().value() < k_min_source_rate_hz) {
         return fail(ErrorCode::invalid_argument,
-                    "analyse: the source sample rate must be at least 4 kHz");
+                    "analyse: the source sample rate must be at least 8 kHz");
     }
     auto mono = read_mono(src);
     if (!mono) {
@@ -195,6 +227,9 @@ Result<std::shared_ptr<const AnalysisResult>> analyse(const AudioSource& src,
     for (std::size_t i = 0; i < take_flags->size(); ++i) {
         result->notes[i].pitch_target.flags.bits = static_cast<std::uint16_t>(
             result->notes[i].pitch_target.flags.bits | (*take_flags)[i].bits);
+    }
+    if (auto r = add_gap_analysis(src, *mono, *activity, params, *result); !r) {
+        return Unexpected{r.error()};
     }
     result->onsets = std::move(*onsets);
     result->pitch = std::move(*pitch);

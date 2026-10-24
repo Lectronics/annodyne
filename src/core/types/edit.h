@@ -38,7 +38,7 @@ enum class EditCategory {
     sound,       // no parameters yet (Phase 12)
     // ADR-0008: enumerators only; no parameters until their phases, so only a reset can be
     // recorded.
-    gap,               // no parameters yet (Phase 5)
+    gap,               // gap_gain (ADR-0024); targets gaps only
     layout,            // no parameters yet (Phase 5)
     breath,            // no parameters yet (Phase 6)
     breath_chain,      // no parameters yet (Phase 6)
@@ -67,10 +67,11 @@ enum class EditParam {
     onset_shift,           // time         Seconds
     length_scale,          // time         Ratio, > 0
     time_handle,           // time         TimePair
-    attack_time_scale      // attack       Ratio, > 0
+    attack_time_scale,     // attack       Ratio, > 0
+    gap_gain               // gap          Decibels, mute is -120 dB (ADR-0024); targets gaps only
 };
 
-inline constexpr int k_edit_param_count = 19;
+inline constexpr int k_edit_param_count = 20;
 
 enum class ValueKind { cents, ratio, decibels, seconds, fade_shape, time_pair };
 
@@ -120,7 +121,9 @@ inline constexpr Seconds k_handle_key{1e-6};
 
 /// Who an edit applies to.
 struct EditTarget {
-    std::vector<SegmentId> segment_ids;  // live targets: notes now, gaps from Phase 5 (ADR-0008)
+    // Live targets. Every id has the kind the category allows (ADR-0024): `gap` edits target gaps,
+    // `layout` none yet, every other category notes; a target never mixes kinds.
+    std::vector<SegmentId> segment_ids;
     std::vector<SegmentId>
         orphaned_segment_ids;  // re-analysis could not re-attach these; kept, ignored by the fold
 };
@@ -149,7 +152,9 @@ struct Edit {
 /// Checks a spec as it may appear in a recorded Edit: non-empty origin; segment_ids or
 /// orphaned_segment_ids non-empty, no duplicates; the param belongs to the category; param is empty
 /// only for reset; the op is allowed for the parameter; the value type matches (reset: monostate,
-/// or a TimePair when the param is time_handle); numbers are finite and inside the legal range.
+/// or a TimePair when the param is time_handle); numbers are finite and inside the legal range;
+/// every target id (live and orphaned) has the kind the category allows (ADR-0024), except that a
+/// parameterless reset of `gap` or `layout` is accepted with any target.
 /// Errors: invalid_argument. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<void> validate(const EditSpec& spec);
 

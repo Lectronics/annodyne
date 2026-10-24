@@ -1,0 +1,20 @@
+{
+  "name": "real_v2_shorter_rb",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "length_scale",
+      "value": 0.7,
+      "target": {
+        "note_id": "n003102"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "vocadito_2, note at 3.10 s (1.21 s) squished to 0.7x: the pause after it grows, the next notes stay in place, the vibrato rate is kept [stretched spans by Rubber Band R3, ADR-0026]"
+  },
+  "stretch_engine": "rubberband"
+}

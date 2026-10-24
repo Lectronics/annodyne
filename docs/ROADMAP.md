@@ -2,7 +2,7 @@
 
 This is the plan Claude Code follows to build the editor. It is ordered so that **structure is settled and checked before code depends on it**, and so that **something audible exists early** and gets listened to at every stage.
 
-**Current phase:** Phase 5 *(update this line when a phase closes)*
+**Current phase:** Phase 6 *(update this line when a phase closes)* — Phase 5 (Timing) closed 2026-10-23, see `docs/reviews/phase5-review.md`
 
 ---
 
@@ -138,6 +138,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - *Carried (2026-10-22):* `tools/note_separation` moves to the phase that adds separation edits: it needs new `EditParam`s (a split position as `SourceTime`, a merge) with a `ValueKind`, re-analysis remapping of segment ids, and an ADR; `EditCategory::separation` exists with no parameters today.
 - `macros/quantize_time` (grid), with perceptual onsets.
 - *(ADR-0008)* Segment timeline (`analysis/gaps`): noise floor, gap detection and classification, `SegmentTimeline` in `AnalysisResult`. Gap layout (`solve_layout`, `plan_gap_layout`, `build_time_map` on spans; shift first, stretch only when a gap is exhausted). `gap` and `layout` edits, `tools/gap`, `macros/strip_silence`, `render_gap`. Breath detection (`analysis/breaths`). Note stretching (`docs/design/note-stretching.md`).
+- *(owner, 2026-10-22)* Consonant detection in gaps (sibilants, fricatives, plosive bursts, breaths: the ADR-0017 features over the gap frames) is part of Phase 5 and comes before the gate, so a `gap_gain` mute can never remove an unvoiced consonant. Breath chain and macros stay in Phase 6.
 - *(ADR-0018)* Research items for timing: protected consonant window, stretch vowels only, plosive bursts repositioned (not stretched), fricatives and breaths stretched as noise (randomised phase, never phase-locked), pre-echo check; `analysis/gaps` refines the recording-noise floor.
 
 **Verify:** timing round-trip, length check, click detector, no flams in overlap tests. Audition `phase5-timing`.
@@ -152,6 +153,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - *(ADR-0019, proposed)* `core/analysis/pitch_marks`: SPTK's REAPER wrapper as the pitch-mark (epoch) source, stored per note as `Note::pitch_marks`, and used by `PsolaEngine` (`mark_source`) only if the objective A/B trial in ADR-0019 decision 6 passes (the dependency stays out of the main build until then; the trial needs owner-supplied rough/breathy labels and 440-880 Hz material). The trial is the first slice of Phase 6 and needs a design note and structure review first. SPTK's Harvest/SWIPE' may become the second tracker for the octave flag (ADR-0018 amended; Phase 13 neural estimator stays the alternative).
 - *(owner 2026-10-21)* **Continuous pitch and formant changes** (its own sub-gate inside Phase 6, see `docs/design/pitch-glide-transitions.md`): every pitch and formant tool takes a time-varying amount, not one static shift: a linear ramp or a drawn curve over a note or range. Needed for rolling pitch changes at note edges and for vibrato control (rate, depth, shape changing through a note). Requires one ADR (ADR-0020, provisional) before code: the curve type and its fold under `set`/`add`/`scale`/`reset`, superseding ADR-0016 decision 5 (engines take a per-frame ratio), the limit checked at the curve's peak, and `dirty_regions`.
 - *(owner 2026-10-21)* **Formant fixes land here.** The Phase 4 first-formant check (single parabolic envelope peak, sparse harmonics) measured -18.0 % at -200 cents, +11.0 % at -700 and -8.5 % on the sibilant vowel for PSOLA (`phase4-pitch-edit.md` stage 9), with real-voice failures of unestablished cause (measurement or engine). With 110 Hz source harmonics (dense) the PSOLA unit test holds the 5 % bound at +700 cents. The `formant` tool starts by validating the formant measure on dense-harmonic and real material, then decides between an engine change and correcting an engine's output by the ratio of the original to the shifted envelope.
+- *(owner 2026-10-23, policy: reuse tested third-party code)* **Pitch-edit engine decision, Phase 6 or 7:** decide whether `PsolaEngine` pitch edits move to SPTK/REAPER marks (ADR-0019) or to Rubber Band's pitch shifter (formant-preserving; ADR-0026 vendors it already), A/B by ear against the current engine, before any new pitch-synthesis code is written. Until then the Phase 4 engines stay as they are.
 - `macros/correct_pitch`, `macros/leveling`; the `pitch_target_mode` edit and ADR-0015 (moved here from Phase 4, owner 2026-10-20; ADR-0013 amended).
 - *(ADR-0008)* Breath chain (`core/dsp/dynamics`: `Compressor`, `Limiter`, `HighPass`; `render_breath_event`), the `breath`, `breath_chain` and `breath_assignment` edits and the breath macros (`features/breaths`: `BreathLevel`, `MuteSmallBreaths`, `RemoveBreaths`).
 - `core/tuning`: chromatic and scale grids, `target_pitch`.
@@ -169,6 +171,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 - `tools/note_assignment`: octave moves, split/merge, re-analysis with `remap_after_reanalysis`.
 - Selective reset by category.
 - *(ADR-0018)* A per-singer calibration profile (thresholds, labels) is saved with the project.
+- *(owner, 2026-10-22; `docs/design/clips-layers-and-groups.md`)* Reserve the clip/layer model: `Clip`, `Layer`, `ClipSet`, `SegmentKind::clip`, and `layers` in the project format from version 1, so Phase 12 copy/paste needs no migration. ADR "clips and layers" written with this slice.
 
 **Verify:** save → load → render is bit-identical to before saving; re-analysis keeps edits on unchanged notes; orphaned edits are reported, never dropped.
 
@@ -222,7 +225,7 @@ Each phase uses the same seven-step cycle. Steps 2, 5 and 7 are gates: work does
 
 - `features/multitrack` (cross-track selection, cross-track macros, quantize to reference track with DTW).
 - `features/sound_editor` (harmonic gains, spectral macros, timbre transfer).
-- `features/midi_export`, `features/clipboard` (virtual notes, harmonies).
+- `features/midi_export`, `features/clipboard` (virtual notes, harmonies): rectangle selection, paste with transposition (scale-aware, chromatic option) into a new layer, humanise for doubles, export of a clip or layer as its own file, group moves, layer mix in `render_region` (owner's scenario and open questions in `docs/design/clips-layers-and-groups.md`).
 
 **Exit gate:** listening sheet + structure audit #4.
 

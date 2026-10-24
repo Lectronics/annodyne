@@ -27,7 +27,7 @@ anno_add_library(cli/commands
                 anno_core_synthesis_passthrough anno_core_synthesis_harmonic_noise
                 anno_core_synthesis_psola anno_core_tuning anno_tools_main_tool anno_cli_checks anno_cli_scenario
                 anno_cli_scenario_json anno_core_analysis_orchestrator anno_cli_analysis_json
-                anno_cli_plot)
+                anno_cli_plot anno_core_analysis_gaps anno_core_analysis_activity anno_core_dsp)
 
 anno_add_executable(cli
     OUTPUT_NAME anno-cli

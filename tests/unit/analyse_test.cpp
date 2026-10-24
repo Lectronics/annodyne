@@ -1,6 +1,7 @@
 #include "core/analysis/orchestrator/analyse.h"
 #include "support/synth_signals.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -206,10 +207,13 @@ TEST_CASE("low_sample_rates_and_tiny_sources", "[analyse]") {
         analyse(source_of(make_sine(220.0, 0.02, 44100.0), 44100.0), AnalyseParams{}).value();
     CHECK(validate(*tiny).has_value());
     CHECK(tiny->notes.empty());
-    // below 4 kHz: refused, naming the limit
-    const auto too_low = analyse(source_of(make_sine(100.0, 0.5, 3000.0), 3000.0), AnalyseParams{});
-    REQUIRE_FALSE(too_low.has_value());
-    CHECK(too_low.error().code == ErrorCode::invalid_argument);
+    // below 8 kHz: refused, naming the limit (owner, 2026-10-23: 8 kHz is the minimum)
+    for (const double low : {3000.0, 6000.0}) {
+        const auto too_low = analyse(source_of(make_sine(100.0, 0.5, low), low), AnalyseParams{});
+        REQUIRE_FALSE(too_low.has_value());
+        CHECK(too_low.error().code == ErrorCode::invalid_argument);
+        CHECK(too_low.error().message.find("8 kHz") != std::string::npos);
+    }
 }
 
 TEST_CASE("notes_appear_only_where_the_recording_is_active", "[analyse]") {
@@ -277,4 +281,104 @@ TEST_CASE("a_clean_tone_gets_harmonics_at_its_pitch_and_the_voiced_class", "[ana
         voiced += c == FrameClass::voiced ? 1U : 0U;
     }
     CHECK(static_cast<double>(voiced) > 0.8 * static_cast<double>(n.noise.frame_class.size()));
+}
+
+TEST_CASE("analysis_builds_the_noise_floor_and_the_segment_timeline", "[analyse][gaps]") {
+    std::vector<double> starts;
+    const auto x = melody({note(262.0, 0.5, 0.4), note(330.0, 0.5, 0.4), note(392.0, 0.6, 0.4)},
+                          44100.0, starts);
+    const auto result = analyse(source_of(x, 44100.0), AnalyseParams{}).value();
+    REQUIRE(result->timeline.has_value());
+    REQUIRE(result->noise_floor.has_value());
+    CHECK(validate(*result).has_value());
+
+    const SegmentTimeline& timeline = *result->timeline;
+    CHECK(timeline.gaps().size() == 4);  // leading, two between the notes, trailing
+    std::size_t note_segments = 0;
+    for (const Segment& s : timeline.segments()) {
+        note_segments += std::holds_alternative<NoteSegment>(s) ? 1 : 0;
+    }
+    CHECK(note_segments == 3);
+    CHECK(timeline.gaps().front().before == std::nullopt);
+    CHECK(timeline.gaps().back().after == std::nullopt);
+    CHECK(sec(timeline.source_end()) == Catch::Approx(static_cast<double>(x.size()) / 44100.0));
+    for (const Gap& g : timeline.gaps()) {  // the melody's gaps are digital silence
+        CHECK(g.floor_dbfs.value() <= -90.0);
+    }
+
+    const NoiseFloor& floor = *result->noise_floor;
+    CHECK(floor.grid == result->pitch->grid);
+    CHECK(floor.band_centre.size() == 24);
+    CHECK(floor.curve_dbfs.size() == static_cast<std::size_t>(floor.grid.n_frames));
+}
+
+TEST_CASE("a_silent_source_is_one_gap_and_an_empty_source_has_neither", "[analyse][gaps]") {
+    const auto silent =
+        analyse(source_of(std::vector<float>(44100, 0.0F), 44100.0), AnalyseParams{}).value();
+    REQUIRE(silent->timeline.has_value());
+    REQUIRE(silent->timeline->gaps().size() == 1);
+    CHECK(silent->timeline->gaps()[0].id == gap_segment_id(std::nullopt, std::nullopt));
+    CHECK(silent->noise_floor.has_value());
+    const auto empty = analyse(source_of({}, 44100.0), AnalyseParams{}).value();
+    CHECK_FALSE(empty->timeline.has_value());
+    CHECK_FALSE(empty->noise_floor.has_value());
+}
+
+TEST_CASE("the_gap_analysis_is_deterministic", "[analyse][gaps]") {
+    std::vector<double> starts;
+    const auto x = melody({note(220.0, 0.5, 0.3), note(247.0, 0.5, 0.3)}, 48000.0, starts);
+    const AudioSource src = source_of(x, 48000.0);
+    const auto a = analyse(src, AnalyseParams{}).value();
+    const auto b = analyse(src, AnalyseParams{}).value();
+    CHECK(a->noise_floor->curve_dbfs == b->noise_floor->curve_dbfs);
+    CHECK(a->noise_floor->band_dbfs == b->noise_floor->band_dbfs);
+    REQUIRE(a->timeline->gaps().size() == b->timeline->gaps().size());
+    for (std::size_t i = 0; i < a->timeline->gaps().size(); ++i) {
+        CHECK(a->timeline->gaps()[i].floor_dbfs == b->timeline->gaps()[i].floor_dbfs);
+        CHECK(a->timeline->gaps()[i].start == b->timeline->gaps()[i].start);
+    }
+}
+
+namespace {
+
+/// 50 ms of high-passed noise (first difference of white noise) at about -30 dBFS, added at `at_s`.
+void add_hiss(std::vector<float>& x, double rate, double at_s) {
+    const std::vector<float> w = make_noise(0.05, rate, 0.03, 21);
+    const auto first = static_cast<std::size_t>(std::llround(at_s * rate));
+    for (std::size_t i = 1; i < w.size(); ++i) {
+        x[first + i] += w[i] - w[i - 1];
+    }
+}
+
+std::vector<GapRegionKind> kinds_in(const Gap& g) {
+    std::vector<GapRegionKind> kinds;
+    kinds.reserve(g.regions.size());
+    for (const GapRegion& r : g.regions) {
+        kinds.push_back(r.kind);
+    }
+    return kinds;
+}
+
+}  // namespace
+
+TEST_CASE("a_hiss_in_a_pause_becomes_a_sibilant_region_and_nothing_else_does", "[analyse][gaps]") {
+    std::vector<double> starts;
+    auto x = melody({note(262.0, 0.5, 0.4), note(330.0, 0.5, 0.4), note(392.0, 0.6, 0.4)}, 44100.0,
+                    starts);
+    // The pause between the first two notes is 100 ms; put the hiss at 30 ms into it.
+    add_hiss(x, 44100.0, starts[0] + 0.5 + 0.03);
+    const auto result = analyse(source_of(x, 44100.0), AnalyseParams{}).value();
+    REQUIRE(result->notes.size() == 3);
+    REQUIRE(result->timeline.has_value());
+    const auto& gaps = result->timeline->gaps();
+    REQUIRE(gaps.size() == 4);
+
+    const auto sibilants = [](const Gap& g) {
+        const auto kinds = kinds_in(g);
+        return std::ranges::count(kinds, GapRegionKind::sibilant);
+    };
+    CHECK(sibilants(gaps[1]) == 1);  // between the first two notes
+    CHECK(sibilants(gaps[0]) == 0);
+    CHECK(sibilants(gaps[2]) == 0);
+    CHECK(sibilants(gaps[3]) == 0);
 }

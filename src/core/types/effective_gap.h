@@ -15,6 +15,8 @@ struct EffectiveGap {
     SegmentId gap;
     Decibels gain{};  // folded gap_gain, in [k_gap_mute_db, +24 dB]
     bool is_edited = false;
+
+    friend bool operator==(const EffectiveGap&, const EffectiveGap&) = default;
 };
 
 }  // namespace anno

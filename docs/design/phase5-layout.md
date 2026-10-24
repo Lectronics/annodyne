@@ -1,9 +1,29 @@
 # Design note: Pinned markers and the absorb-first layout (Phase 5, slice 8)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 3 (owner's answers 2026-10-22; answers structure review rounds 1 and 2)
+- **Status:** implemented, as built (ADR-0025 and its amendments 1-3 record the deviations); was draft, revision 3 (owner's answers 2026-10-22; answers structure review rounds 1 and 2)
 - **Spec sections:** architecture spec §2, §5.4; ADR-0005 §16; ADR-0008 §4, §5; ADR-0023 §3, §3a, §7; ADR-0025 (proposed with this note); `phase5-gaps-core.md` (`SegmentTimeline`, `Gap`, `GapRegion`); `phase5-time-tools.md`; `silence-and-gaps.md` §1.2-1.4 (replaced for Phase 5 by this note).
 - **Folders / CMake targets:** `src/core/timemap` (layer 3: `layout.h/.cpp`, `layout_markers.cpp`, `build_layout_map.cpp`), `src/core/timemap/detail` (shared anchor helpers), `src/core/render` (the splice, `render_unedited`).
+
+## Revision 4 (owner, 2026-10-22): read this first
+
+Where this block and the text below differ, this block wins (ADR-0025 revision 2, ADR-0023 amendment 1).
+
+- **Ripple is dropped**, not deferred. Slice 8g is removed; open question 0 is closed.
+- **Silent anchors.** The start and end of the recording are fixed anchors treated as silence; the output length equals the source length; `render_region` defaults to `keep_length` once the layout path is wired (slice 8e flips it).
+- **Shift grid** replaces whole-sample quantisation: marker shifts are multiples of `step_samples`, the step being a 1/512 (or 1/256) note from the tempo (fallback 120 bpm), normalised to whole samples. Source marker positions round to whole samples, so every span maps N whole samples to M whole samples. `sample_rate` in the slice list reads `shift_grid {step_samples}`; `room` of a cut is floored to whole grid steps. Slice 8d tests the normalisation (44.1/48/96 kHz, several tempi) and the bound on the rounding error (half a step).
+- **Local invalidation.** `dirty_regions` returns the intervals whose spans differ between the old and new maps; block keys hash only the spans a block reads. Slice 8h is part of 8e (not later).
+- **Base clip** is the output of `build_layout_map` + `render_unedited`; pitch, level and formant edits are applied on top and never recompute it.
+- **Group moves** are one `note_move_edit` per note with the same delta (see `clips-layers-and-groups.md`).
+
+## Slice 8c as built (solve_layout)
+
+- `GapEdit.length` is `Seconds` (exact when `sample_rate` is 0, an integral sample count otherwise), not `Samples`; `at` is rounded to a sample when a rate is given. `IntervalPlan` carries `out_from`/`out_to` (absolute, after repair) so `build_layout_map` needs no second pass; `Layout::fell_back` says the unedited layout was used.
+- A gap that cannot take anything (no `silence` region, or a cut with no room) is not an edit: the whole interval, gap included, is stretched by one slope. With an edit the gap's remnants keep slope 1 and only the rest is stretched.
+- **Growth (owner, 2026-10-23):** when an interval gets longer, the audio is stretched and the gap's silence is held at slope 1 (not stretched, nothing inserted); silence is inserted only for what the stretched audio cannot take (slope above 4, or no other audio in the interval). A shrinking interval cuts the gap first, then squishes the rest. Insertion is therefore a last resort, not the first move.
+- `stretch` mode runs the same marker repair but no gap and no slope limit.
+- The shift grid (8d) replaces `sample_rate` as the whole-sample source.
+- Rule order follows ADR-0025 literally: for an interval that starts at the origin the leading gap absorbs (rule b) even when the right marker is a later note, so an unedited note between moves with it. The worked table's third row ("else gB") reads the other way; this is an open question for the owner.
 
 ## The model (the owner's)
 
@@ -32,7 +52,7 @@ struct LayoutParams {
 };
 ```
 
-`RenderParams` holds a `LayoutParams` (the whole struct is hashed into the cache key, so `splice_fade`, `min_gap` and `note_margin` are covered). **The ripple modes are deferred** (review B7): with absolute markers a ripple has no coherent meaning (an edited marker cannot both keep its requested time and be pushed). If the owner wants them, they need relative markers or a plain "shift the rest of the file" tail; that is a decision for the owner, recorded in the open questions. `TimeMapParams::tail` is ignored by the layout path: both modes use a fixed end (below).
+`RenderParams` holds a `LayoutParams` (the whole struct is hashed into the cache key, so `splice_fade`, `min_gap` and `note_margin` are covered). **The ripple modes are dropped** (review B7; owner 2026-10-22): with absolute markers a ripple has no coherent meaning (an edited marker cannot both keep its requested time and be pushed). If the owner wants them, they need relative markers or a plain "shift the rest of the file" tail; that is a decision for the owner, recorded in the open questions. `TimeMapParams::tail` is ignored by the layout path: both modes use a fixed end (below).
 
 **Without a timeline** the mode is ignored and `stretch` runs (the Phase 1 builder); `RenderResult::layout_mode_used` says which ran. Tested.
 
@@ -136,11 +156,11 @@ struct Layout { std::vector<IntervalPlan> intervals; std::vector<bool> repaired;
 
 ## Slices
 
-8a this note + ADR-0025 reviewed (round 2); 8b types and `layout_markers`; 8c `solve_layout` for `absorb_then_stretch`/`stretch`, `sample_rate` 0; 8d whole-sample arithmetic and property tests; 8e `build_layout_map` + `render_region` wiring (key version 5, `RenderParams::layout`); 8f splice and insert fades in `render_unedited` (audio-verifier); 8g (deferred: ripple modes, pending the owner); 8h `dirty_regions` (with the ADR-0024 timeline parameter). 8b needs only the markers and the detail refactor; 8c needs the table above; 8d the whole-sample property tests; 8f the splice (B2, B6 settled above).
+8a this note + ADR-0025 reviewed (round 2); 8b types and `layout_markers`; 8c `solve_layout` for `absorb_then_stretch`/`stretch`, `sample_rate` 0; 8d whole-sample arithmetic and property tests; 8e `build_layout_map` + `render_region` wiring (key version 5, `RenderParams::layout`); 8f splice and insert fades in `render_unedited` (audio-verifier); 8g (dropped); 8h `dirty_regions` (with the ADR-0024 timeline parameter). 8b needs only the markers and the detail refactor; 8c needs the table above; 8d the whole-sample property tests; 8f the splice (B2, B6 settled above).
 
 ## Open questions
 
-0. **Ripple modes** (`absorb_then_ripple`, `ripple`): deferred. With absolute markers they need a definition: either only "shift the rest of the file" (the existing `TailPolicy::shift`) or relative markers. Owner to decide.
+0. **Ripple modes** (`absorb_then_ripple`, `ripple`): dropped by the owner, 2026-10-22. (Old text:) With absolute markers they need a definition: either only "shift the rest of the file" (the existing `TailPolicy::shift`) or relative markers. Owner to decide.
 
 1. Where in the silence to cut (centred now; the quietest frame once the floor curve is used, slice 9).
 2. A second absorbing gap (the one on the other side of a long note) is not used now.
@@ -148,3 +168,8 @@ struct Layout { std::vector<IntervalPlan> intervals; std::vector<bool> repaired;
 ## Review log
 
 *(round 2 pending; round 1 findings answered above: B1/B2 anchors are absolute, the derivation table is `desired_anchors`; B3 the Phase 1 repair rules apply, a move past room cuts to `min_gap` and stretches the rest; B4 first gap only; B5 intervals between markers, ratio bound, whole-interval stretch; B6 integer whole-sample `Δ` by quantised markers; B7 splice post-pass, room constraint, `not_implemented` for edited notes near a cut; S1 `GapEdit` carries the position; S2 legato and virtual gaps; S3 `TimeMapParams` kept, one entry point name; S4 handle pinned, end derived absolutely; S5 total key; S6 `dirty_regions` over-approximation; S7 no timeline; S8 types in timemap; S9 ADR-0025; S10 limitation stated.)*
+
+## Slice 8c amendment 2: unedited notes are pinned (2026-10-23)
+See ADR-0025 amendment 2. `layout_markers` adds a pinned start and end for every unedited active note when any note has a timing edit; `solve_layout` moves a pushed pinned note as one body (`follow_pinned`). Effect on the four layout audition scenarios: the second vowel keeps its place and speed unless the pause is used up (`layout_a_longer_than_pause`), when it is pushed later at slope 1 and the trailing pause gives the time back.
+
+Amendment 2 follow-up (same day, owner listening): a pinned note that the edit would push is released (Flex) instead of moved as a body; the cut or insert goes in the silence nearest the edited note. See ADR-0025 amendment 2.

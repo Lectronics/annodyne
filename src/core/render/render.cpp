@@ -1,17 +1,21 @@
 #include "core/render/render.h"
 
 #include "core/dsp/crossfade.h"
+#include "core/edits/effective_gap.h"
 #include "core/edits/effective_state.h"
 #include "core/render/blend_plan.h"
 #include "core/render/render_key.h"
+#include "core/render/splice.h"
 #include "core/synthesis/engine/engine_support.h"
 #include "core/synthesis/engine/source_through_map.h"
 #include "core/timemap/build_time_map.h"
+#include "core/timemap/layout.h"
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <set>
 
 namespace anno {
 
@@ -26,6 +30,7 @@ struct Plan {
     std::int64_t margin = 0;
     std::vector<EditedNote> edited;
     std::vector<Ramp> ramps;
+    std::vector<GateInput> gates;  // edited gaps (ADR-0024), in timeline order
 };
 
 /// An engine's output for one note's zone (clamped to the recording).
@@ -72,29 +77,55 @@ Result<void> validate_inputs(const RenderInputs& in, const RenderParams& params)
 struct ResolvedMap {
     std::shared_ptr<const TimeMap> map;
     int repaired_notes = 0;
+    bool layout_used = false;
 };
 
-/// The track's map: the supplied one, else built from the edits with the tail shifted and whole
-/// sample shifts (ADR-0023).
-Result<ResolvedMap> resolve_time_map(const RenderInputs& in) {
+/// The layout's parameters for this render: the note margin is the render's crossfade length.
+LayoutParams layout_of(const RenderParams& params) {
+    LayoutParams layout = params.layout;
+    layout.note_margin = params.crossfade_length;
+    return layout;
+}
+
+/// The track's map: the supplied one; else, with a segment timeline, the layout of the edits
+/// (ADR-0025); else built from the edits with the tail shifted. Shifts are whole samples
+/// (ADR-0023).
+Result<ResolvedMap> resolve_time_map(const RenderInputs& in, const RenderParams& params) {
     if (in.time_map != nullptr) {
-        return ResolvedMap{.map = in.time_map, .repaired_notes = 0};
+        return ResolvedMap{.map = in.time_map};
     }
     if (in.source.frame_count().value() == 0) {
-        return ResolvedMap{.map = std::make_shared<const TimeMap>(TimeMap::identity(Seconds{0.0})),
-                           .repaired_notes = 0};
+        return ResolvedMap{.map = std::make_shared<const TimeMap>(TimeMap::identity(Seconds{0.0}))};
     }
-    const SourceTime end =
-        to_time_point<SourceAxis>(in.source.frame_count(), in.source.sample_rate());
-    auto built = build_time_map(in.analysis->notes, *in.edits,
-                                TimeMapParams{.source_end = end,
-                                              .tail = TailPolicy::shift,
-                                              .sample_rate = in.source.sample_rate()});
+    const Hz rate = in.source.sample_rate();
+    const SourceTime end = to_time_point<SourceAxis>(in.source.frame_count(), rate);
+    TimeMapParams tm{.source_end = end, .tail = TailPolicy::shift, .sample_rate = rate};
+    Result<TimeMapBuild> built = fail(ErrorCode::internal, "render_region: no time map built");
+    bool layout_used = false;
+    if (in.analysis->timeline) {
+        const LayoutParams layout = layout_of(params);
+        auto step = shift_step_samples(rate, layout.grid);
+        if (!step) {
+            return Unexpected{step.error()};
+        }
+        tm.shift_step = *step;
+        const SegmentTimeline& timeline = *in.analysis->timeline;
+        if (std::abs((timeline.source_end() - end).value()) * rate.value() > 0.5) {
+            return fail(
+                ErrorCode::invalid_argument,
+                "render_region: the segment timeline does not match the recording's length");
+        }
+        built = build_layout_time_map(in.analysis->notes, timeline, *in.edits, layout, tm);
+        layout_used = layout.mode == LayoutMode::absorb_then_stretch;
+    } else {
+        built = build_time_map(in.analysis->notes, *in.edits, tm);
+    }
     if (!built) {
         return Unexpected{built.error()};
     }
     return ResolvedMap{.map = std::make_shared<const TimeMap>(std::move(built->map)),
-                       .repaired_notes = built->repaired_notes};
+                       .repaired_notes = built->repaired_notes,
+                       .layout_used = layout_used};
 }
 
 constexpr double k_slope_one_tolerance = 1e-9;
@@ -107,6 +138,14 @@ bool is_stretched(const TimeSpan& span) {
     const Seconds out_len = span.output_end - span.output_start;
     const Seconds src_len = span.source_end - span.source_start;
     return std::abs((out_len - src_len).value()) > k_slope_one_tolerance;
+}
+
+/// True if a cut or insert of `map` lies in or touches output samples [begin, end].
+bool meets_gap_edit(const TimeMap& map, Hz rate, std::int64_t begin, std::int64_t end) {
+    return std::ranges::any_of(map.spans(), [&](const TimeSpan& span) {
+        return span.kind != SpanKind::warp && index_of(span.output_start, rate) <= end &&
+               index_of(span.output_end, rate) >= begin;
+    });
 }
 
 /// True if a stretched warp of `map` covers any output sample of [begin, end).
@@ -126,6 +165,59 @@ Result<std::pair<std::int64_t, std::int64_t>> snap_region(const RenderInputs& in
         return fail(ErrorCode::out_of_range, "render_region: region lies outside the output");
     }
     return std::pair{begin, std::max(begin, end)};
+}
+
+/// The gap edits of the list: every gap id a live gap-category edit targets must be a gap of the
+/// analysis's timeline (an orphaned id is ignored, as for notes). Edited gaps come back in
+/// timeline order with their silence regions on the output axis.
+Result<std::vector<GateInput>> plan_gates(const RenderInputs& in, const TimeMap& map, Hz rate) {
+    std::set<SegmentId> targeted;
+    for (const Edit& edit : in.edits->active()) {
+        if (edit.spec.category != EditCategory::gap) {
+            continue;
+        }
+        for (const SegmentId& id : edit.spec.target.segment_ids) {
+            if (id.kind == SegmentKind::gap) {
+                targeted.insert(id);
+            }
+        }
+    }
+    std::vector<GateInput> gates;
+    if (targeted.empty()) {
+        return gates;
+    }
+    const auto& timeline = in.analysis->timeline;
+    for (const SegmentId& id : targeted) {
+        const bool known = timeline && std::ranges::any_of(timeline->gaps(), [&](const Gap& g) {
+                               return g.id == id;
+                           });
+        if (!known) {
+            return fail(ErrorCode::invalid_argument,
+                        "render_region: gap edit targets '" + id.value +
+                            (timeline ? "', which is not a gap of the segment timeline"
+                                      : "', but the analysis has no segment timeline"));
+        }
+    }
+    for (const Gap& gap : timeline->gaps()) {
+        if (!targeted.contains(gap.id)) {
+            continue;
+        }
+        const EffectiveGap eff = effective_gap(gap.id, *in.edits);
+        if (!eff.is_edited) {
+            continue;
+        }
+        auto spans = gated_spans(gap, map, rate);
+        if (!spans) {
+            return Unexpected{spans.error()};
+        }
+        gates.push_back({.gap = &gap, .eff = eff, .spans = std::move(*spans)});
+    }
+    return gates;
+}
+
+bool gate_meets_region(const GateInput& g, std::int64_t begin, std::int64_t end) {
+    return std::ranges::any_of(g.spans,
+                               [&](const GatedSpan& s) { return s.first < end && s.last > begin; });
 }
 
 Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderParams& params,
@@ -169,6 +261,12 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
                             "part of the time map (stretch combined with another edit is not "
                             "implemented yet)");
         }
+        if (meets_gap_edit(map, plan.sample_rate, zone_lo, zone_hi)) {
+            return fail(ErrorCode::not_implemented,
+                        "render_region: note '" + note.id.value +
+                            "' has a pitch, level or formant edit and its zone meets a cut or "
+                            "insert of the layout (combining them is not implemented yet)");
+        }
         plan.edited.push_back(
             {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }
@@ -178,6 +276,11 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
         spans.push_back(e.span);
     }
     plan.ramps = plan_blend(spans, plan.margin);
+    auto gates = plan_gates(in, map, plan.sample_rate);
+    if (!gates) {
+        return Unexpected{gates.error()};
+    }
+    plan.gates = std::move(*gates);
     return plan;
 }
 
@@ -210,8 +313,8 @@ bool same_samples(const AudioBuffer& a, const AudioBuffer& b) {
 /// stretch_span. The ranges handed to read_through_map exclude the stretched spans' samples, which
 /// are snapped the same way, so it never meets a slope != 1 warp.
 Result<AudioBuffer> render_unedited(const RenderInputs& in, const TimeMap& map,
-                                    const StretchParams& stretch, std::int64_t begin,
-                                    std::int64_t count) {
+                                    const StretchParams& stretch, const SpliceParams& splice,
+                                    std::int64_t begin, std::int64_t count) {
     const Hz rate = in.source.sample_rate();
     const std::int64_t end = begin + count;
     auto out = AudioBuffer::create(in.source.channel_count(), Samples{count}, rate);
@@ -257,6 +360,10 @@ Result<AudioBuffer> render_unedited(const RenderInputs& in, const TimeMap& map,
         cursor = hi;
     }
     if (auto r = plain_until(end); !r) {
+        return Unexpected{r.error()};
+    }
+    const SegmentTimeline* timeline = in.analysis->timeline ? &*in.analysis->timeline : nullptr;
+    if (auto r = apply_splices(in.source, map, timeline, begin, *out, splice); !r) {
         return Unexpected{r.error()};
     }
     return out;
@@ -369,6 +476,36 @@ void blend(const Plan& plan, const Signals& s, AudioBuffer& out, FadeShape shape
     apply_plateau(s, out, state, intersect(visible, between(plateau_begin, visible.hi)));
 }
 
+/// Multiplies the finished region by each meeting gap's gate curve; samples with gain 1 are left
+/// alone and a gain of 0 writes +0. Returns the gaps that met the region.
+Result<std::vector<SegmentId>> apply_gates(const Plan& plan, const TimeMap& map,
+                                           const GateParams& params, AudioBuffer& out) {
+    std::vector<SegmentId> met;
+    const OutputRange range = OutputRange::from_start(
+        to_time_point<OutputAxis>(Samples{plan.region_begin}, plan.sample_rate),
+        to_seconds(Samples{plan.region_end - plan.region_begin}, plan.sample_rate));
+    for (const GateInput& g : plan.gates) {
+        if (!gate_meets_region(g, plan.region_begin, plan.region_end)) {
+            continue;
+        }
+        auto curve = gate_curve(*g.gap, g.eff, map, plan.sample_rate, range, params);
+        if (!curve) {
+            return Unexpected{curve.error()};
+        }
+        for (int c = 0; c < out.channel_count(); ++c) {
+            auto channel = out.channel(c);
+            for (std::size_t i = 0; i < curve->size(); ++i) {
+                const float gain = (*curve)[i];
+                if (gain != 1.0F) {
+                    channel[i] = gain == 0.0F ? 0.0F : channel[i] * gain;
+                }
+            }
+        }
+        met.push_back(g.gap->id);
+    }
+    return met;
+}
+
 }  // namespace
 
 Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& inputs,
@@ -378,7 +515,7 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     if (auto r = validate_inputs(inputs, params); !r) {
         return Unexpected{r.error()};
     }
-    auto resolved = resolve_time_map(inputs);
+    auto resolved = resolve_time_map(inputs, params);
     if (!resolved) {
         return Unexpected{resolved.error()};
     }
@@ -395,6 +532,12 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
         return Unexpected{planned.error()};
     }
     const Plan& plan = *planned;
+    const auto gate_fade_samples =
+        to_samples(params.gate.gate_fade, plan.sample_rate, Rounding::nearest).value();
+    const SpliceParams splice{.splice_fade = params.layout.splice_fade,
+                              .shape = FadeShape::equal_power};
+    const auto splice_fade_samples =
+        to_samples(params.layout.splice_fade, plan.sample_rate, Rounding::nearest).value();
     const SourceId source_id = inputs.source.id();
     const std::string key = make_render_key({.source_id = &source_id,
                                              .analysis_version = inputs.analysis->version,
@@ -407,7 +550,10 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
                                              .edited = plan.edited,
                                              .ramps = plan.ramps,
                                              .time_map = &map,
-                                             .stretch = &params.stretch});
+                                             .stretch = &params.stretch,
+                                             .gates = plan.gates,
+                                             .gate_fade_samples = gate_fade_samples,
+                                             .splice_fade_samples = splice_fade_samples});
     if (params.cache != nullptr) {
         if (auto hit = params.cache->get(key)) {
             return hit;
@@ -416,7 +562,8 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
 
     const Hz rate = plan.sample_rate;
     const Samples count{plan.region_end - plan.region_begin};
-    auto pristine = render_unedited(inputs, map, params.stretch, plan.region_begin, count.value());
+    auto pristine =
+        render_unedited(inputs, map, params.stretch, splice, plan.region_begin, count.value());
     if (!pristine) {
         return Unexpected{pristine.error()};
     }
@@ -440,15 +587,21 @@ Result<std::shared_ptr<const RenderResult>> render_region(const RenderInputs& in
     blend(plan, Signals{.pristine = &*pristine, .region_begin = plan.region_begin, .zones = &zones},
           out, params.crossfade_shape);
 
-    const bool passthrough = rendered.empty();
+    auto gated = apply_gates(plan, map, params.gate, out);
+    if (!gated) {
+        return Unexpected{gated.error()};
+    }
+    const bool passthrough = rendered.empty() && gated->empty();
     std::shared_ptr<const RenderResult> shared = std::make_shared<const RenderResult>(RenderResult{
         .buffer = OutputAudio{.audio = std::move(out),
                               .start = to_time_point<OutputAxis>(Samples{plan.region_begin}, rate)},
         .cache_id = short_id(key),
         .notes_rendered = std::move(rendered),
+        .gaps_rendered = std::move(*gated),
         .passthrough = passthrough,
         .stretched = meets_stretch(map, rate, plan.region_begin, plan.region_end),
-        .repaired_notes = resolved->repaired_notes});
+        .repaired_notes = resolved->repaired_notes,
+        .layout_used = resolved->layout_used});
     if (params.cache != nullptr) {
         params.cache->put(key, shared);
     }

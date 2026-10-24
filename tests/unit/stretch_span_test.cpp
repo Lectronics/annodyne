@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <numeric>
 #include <vector>
 
@@ -313,4 +314,337 @@ TEST_CASE("a_noise_burst_before_a_vowel_does_not_enter_the_voiced_path", "[stret
         e += static_cast<double>(out[i]) * out[i];
     }
     CHECK(std::abs(dot / e) < 0.4);
+}
+
+namespace {
+
+/// 0.2 .. 1.4 s of a harmonic voice with a sinusoidal vibrato of `rate_hz` and `depth_cents`.
+Fixture vibrato_voice(double rate_hz, double depth_cents) {
+    return Fixture{voice(
+        [=](double t) {
+            return 220.0 *
+                   std::pow(2.0,
+                            depth_cents * std::sin(2.0 * std::numbers::pi * rate_hz * t) / 1200.0);
+        },
+        harmonic_amps(10, 0.5))};
+}
+
+/// Peak of the DFT of the analysed fast pitch component (cents) of the longest note of `out`,
+/// 3..9 Hz in 0.05 Hz steps: {rate_hz, depth_cents}; {0, 0} if there is no note.
+std::pair<double, double> vibrato_of(const OutputAudio& out) {
+    const std::vector<float> mono = samples_of(out);
+    const auto src = AudioSource::from_buffer(to_buffer(mono, k_rate));
+    const auto analysis = analyse(src, engine_analysis_params()).value();
+    if (analysis->notes.empty()) {
+        return {0.0, 0.0};
+    }
+    const Note& n = *std::max_element(
+        analysis->notes.begin(), analysis->notes.end(),
+        [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+    const double hop = n.grid.hop.value();
+    std::pair<double, double> best{0.0, 0.0};
+    for (int k = 60; k <= 180; ++k) {
+        const double f = k * 0.05;
+        double re = 0.0;
+        double im = 0.0;
+        for (std::size_t i = 0; i < n.pitch_mod.size(); ++i) {
+            const double v = n.pitch_mod[i].value();
+            re += v * std::cos(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
+            im += v * std::sin(2.0 * std::numbers::pi * f * static_cast<double>(i) * hop);
+        }
+        const double amp = 2.0 * std::hypot(re, im) / static_cast<double>(n.pitch_mod.size());
+        if (amp > best.second) {
+            best = {f, amp};
+        }
+    }
+    return best;
+}
+
+OutputAudio stretch_whole_note(const Fixture& fx, double ratio, VibratoMode mode) {
+    StretchParams params;
+    params.vibrato = mode;
+    const TimeSpan span = stretched(0.2, 1.4, ratio);
+    return stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+}
+
+}  // namespace
+
+TEST_CASE("a_stretched_note_keeps_its_vibrato_rate_within_half_a_hertz", "[stretch][vibrato]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const auto source =
+        vibrato_of(OutputAudio{.audio = to_buffer(fx.mono, k_rate), .start = out_t(0.0)});
+    REQUIRE(std::abs(source.first - 5.5) < 0.3);
+    for (const double ratio : {0.6, 1.4, 2.0}) {
+        const auto kept = vibrato_of(stretch_whole_note(fx, ratio, VibratoMode::preserve));
+        INFO("ratio " << ratio << " rate " << kept.first << " depth " << kept.second);
+        CHECK(std::abs(kept.first - source.first) <= 0.5);
+        CHECK(kept.second > 0.7 * source.second);
+        CHECK(kept.second < 1.3 * source.second);
+    }
+    // the old behaviour moves the rate with the slope (the test discriminates)
+    const auto retimed = vibrato_of(stretch_whole_note(fx, 2.0, VibratoMode::retime));
+    CHECK(std::abs(retimed.first - source.first) > 1.0);
+}
+
+TEST_CASE("a_note_without_vibrato_renders_the_same_in_both_modes", "[stretch][vibrato]") {
+    const Fixture fx = steady_voice();
+    for (const double ratio : {0.7, 1.6}) {
+        const auto a = samples_of(stretch_whole_note(fx, ratio, VibratoMode::preserve));
+        const auto b = samples_of(stretch_whole_note(fx, ratio, VibratoMode::retime));
+        REQUIRE(a.size() == b.size());
+        CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    }
+}
+
+TEST_CASE("vibrato_preserving_stretch_is_deterministic_and_range_independent",
+          "[stretch][vibrato]") {
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    StretchParams params;
+    const auto whole_run = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto again = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto a = samples_of(whole_run);
+    const auto b = samples_of(again);
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    // a sub-range equals the same samples of the whole render
+    const auto part = stretch_span(fx.src, *fx.analysis, span,
+                                   OutputRange::from_start(out_t(0.9), Seconds{0.3}), params)
+                          .value();
+    const auto p = samples_of(part);
+    const auto offset = static_cast<std::size_t>(std::llround((0.9 - 0.2) * k_rate));
+    CHECK(std::memcmp(p.data(), a.data() + offset, p.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("an_unsupported_vibrato_mode_is_an_invalid_argument", "[stretch][vibrato]") {
+    StretchParams p;
+    p.vibrato = static_cast<VibratoMode>(7);
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("the_noise_path_joins_the_source_exactly_at_both_span_edges", "[stretch]") {
+    // Tonal material sent through the noise path (no voiced classes): a stretched span must start
+    // and end on the source's own samples, or it steps against its slope-1 neighbours.
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.voiced_classes = FrameClassSet{};
+    const TimeSpan span = stretched(0.5, 0.9, 1.5);
+    const auto out =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto first_out = static_cast<std::int64_t>(std::llround(0.5 * k_rate));
+    const auto last_out = static_cast<std::int64_t>(std::llround(1.1 * k_rate));
+    REQUIRE(static_cast<std::int64_t>(out.size()) == last_out - first_out);
+    const auto src_first = static_cast<std::size_t>(std::llround(0.5 * k_rate));
+    const double src_end = 0.5 * k_rate + (static_cast<double>(last_out) - 0.5 * k_rate) / 1.5;
+    const auto src_last = static_cast<std::size_t>(std::llround(src_end));
+    CHECK(out.front() == fx.mono[src_first]);  // the edge samples are the source's own
+    CHECK(out.back() == fx.mono[src_last - 1]);
+    for (std::size_t i = 1; i < 8; ++i) {  // and the blend leaves no step next to them
+        CHECK(std::abs(out[i] - fx.mono[src_first + i]) < 0.02f);
+        CHECK(std::abs(out[out.size() - 1 - i] - fx.mono[src_last - 1 - i]) < 0.02f);
+    }
+}
+
+TEST_CASE("a_one_frame_voicing_dropout_does_not_switch_the_renderer_to_the_noise_path",
+          "[stretch]") {
+    const Fixture fx = steady_voice();
+    auto edited = std::make_shared<AnalysisResult>(*fx.analysis);
+    Note& note = *std::max_element(
+        edited->notes.begin(), edited->notes.end(),
+        [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+    REQUIRE(note.noise.frame_class.size() == static_cast<std::size_t>(note.grid.n_frames));
+    note.noise.frame_class[note.noise.frame_class.size() / 2] = FrameClass::breath;
+    const TimeSpan span = stretched(0.3, 1.3, 0.8);
+    const auto render = [&](double bridge_s) {
+        StretchParams params;
+        params.voiced_bridge = Seconds{bridge_s};
+        return samples_of(stretch_span(fx.src, *edited, span, whole(span), params).value());
+    };
+    // third-difference outlier against the local level: the dropout steps the unbridged render
+    const auto worst_tick = [](const std::vector<float>& x) {
+        double worst = 0.0;
+        const double level = rms_of(x);
+        for (std::size_t i = 3; i < x.size(); ++i) {
+            const double d3 = static_cast<double>(x[i]) - 3.0 * static_cast<double>(x[i - 1]) +
+                              3.0 * static_cast<double>(x[i - 2]) - static_cast<double>(x[i - 3]);
+            worst = std::max(worst, std::abs(d3));
+        }
+        return worst / level;
+    };
+    const auto bridged = render(0.015);
+    const auto unbridged = render(0.0);
+    CHECK(bridged != unbridged);
+    CHECK(worst_tick(bridged) < worst_tick(unbridged));
+}
+
+TEST_CASE("a_negative_voiced_bridge_is_an_invalid_argument", "[stretch]") {
+    StretchParams p;
+    p.voiced_bridge = Seconds{-0.001};
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("a_fast_pitch_glide_inside_a_vibrato_note_stays_with_the_audio", "[stretch][vibrato]") {
+    // 5.5 Hz, 40 cent vibrato plus a 150 cent rise over 25 ms at 0.8 s: only the sinusoid is
+    // regenerated; the glide is not vibrato and must survive the stretch (at 1.1 s, the time it
+    // plays at after 1.5x from 0.2 s).
+    const Fixture fx{voice(
+        [](double t) {
+            const double glide = 150.0 * std::clamp((t - 0.8) / 0.025, 0.0, 1.0);
+            return 220.0 *
+                   std::pow(2.0,
+                            (40.0 * std::sin(2.0 * std::numbers::pi * 5.5 * t) + glide) / 1200.0);
+        },
+        harmonic_amps(10, 0.5))};
+    const auto rise_of = [&](VibratoMode mode) {
+        const auto out = stretch_whole_note(fx, 1.5, mode);
+        const std::vector<float> mono = samples_of(out);
+        const auto src = AudioSource::from_buffer(to_buffer(mono, k_rate));
+        const auto analysis = analyse(src, engine_analysis_params()).value();
+        REQUIRE_FALSE(analysis->notes.empty());
+        const Note& n = *std::max_element(
+            analysis->notes.begin(), analysis->notes.end(),
+            [](const Note& a, const Note& b) { return a.grid.n_frames < b.grid.n_frames; });
+        // absolute pitch, frame by frame; the largest rise within 30 ms around the glide's time
+        const double hop = n.grid.hop.value();
+        const double t0 = (out.start - OutputTime{}).value();
+        double rise = 0.0;
+        for (std::size_t i = 0; i + 6 < n.pitch_mod.size(); ++i) {
+            const double t = (n.grid.start - SourceTime{}).value() + static_cast<double>(i) * hop;
+            if (std::abs((t + t0) - 1.1) > 0.06) {
+                continue;
+            }
+            const auto cents = [&](std::size_t k) {
+                return n.pitch_drift[k].value() + n.pitch_mod[k].value();
+            };
+            rise = std::max(rise, cents(i + 6) - cents(i));
+        }
+        return rise;
+    };
+    const double kept = rise_of(VibratoMode::preserve);
+    const double retimed = rise_of(VibratoMode::retime);
+    INFO("preserve " << kept << " retime " << retimed);
+    CHECK(kept > 0.8 * retimed);
+}
+
+namespace {
+
+OutputAudio rubberband_whole_note(const Fixture& fx, double ratio) {
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, ratio);
+    return stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+}
+
+}  // namespace
+
+TEST_CASE("rubber_band_returns_exactly_the_samples_of_the_range_and_keeps_the_pitch",
+          "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    for (const double ratio : {0.7, 1.5, 2.0}) {
+        const auto out = rubberband_whole_note(fx, ratio);
+        const auto expected = static_cast<std::int64_t>(std::llround(1.4 * ratio * 1.0 * k_rate)) -
+                              static_cast<std::int64_t>(std::llround(0.2 * k_rate));
+        // the span covers output [0.2, 0.2 + 1.2 * ratio) seconds
+        const auto first = std::llround(0.2 * k_rate);
+        const auto last = std::llround((0.2 + 1.2 * ratio) * k_rate);
+        CHECK(static_cast<std::int64_t>(out.audio.frame_count().value()) == last - first);
+        (void)expected;
+        const auto samples = samples_of(out);
+        const auto quarter = static_cast<std::ptrdiff_t>(samples.size() / 4);
+        const std::vector<float> middle(samples.begin() + quarter, samples.begin() + 3 * quarter);
+        CHECK(std::abs(autocorrelation_hz(middle, k_rate) - 220.0) < 2.0);
+    }
+}
+
+TEST_CASE("rubber_band_meets_its_neighbours_on_the_source_samples", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    const auto samples = samples_of(rubberband_whole_note(fx, 1.5));
+    const auto first = static_cast<std::size_t>(std::llround(0.2 * k_rate));
+    CHECK(samples.front() == fx.mono[first]);
+    const double source_end = 0.2 * k_rate + 1.2 * k_rate;  // the span's source end
+    CHECK(samples.back() == fx.mono[static_cast<std::size_t>(std::llround(source_end)) - 1]);
+}
+
+TEST_CASE("rubber_band_is_deterministic_and_range_independent", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto a =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto b =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    const auto part =
+        samples_of(stretch_span(fx.src, *fx.analysis, span,
+                                OutputRange::from_start(out_t(0.9), Seconds{0.3}), params)
+                       .value());
+    const auto offset = static_cast<std::size_t>(std::llround((0.9 - 0.2) * k_rate));
+    CHECK(std::memcmp(part.data(), a.data() + offset, part.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("rubber_band_stretches_every_channel_of_a_stereo_source", "[stretch][rubberband]") {
+    const Fixture fx = steady_voice();
+    auto stereo =
+        AudioBuffer::create(2, Samples{static_cast<std::int64_t>(fx.mono.size())}, Hz{k_rate})
+            .value();
+    for (std::size_t i = 0; i < fx.mono.size(); ++i) {
+        stereo.channel(0)[i] = fx.mono[i];
+        stereo.channel(1)[i] = -0.5F * fx.mono[i];
+    }
+    const AudioSource src = AudioSource::from_buffer(std::move(stereo));
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto out = stretch_span(src, *fx.analysis, span, whole(span), params).value();
+    REQUIRE(out.audio.channel_count() == 2);
+    // channel 1 is channel 0 scaled by -0.5: the stretcher keeps them in step
+    double worst = 0.0;
+    for (std::size_t i = 1000; i < 30000; ++i) {
+        worst = std::max(worst, std::abs(static_cast<double>(out.audio.channel(1)[i]) +
+                                         0.5 * static_cast<double>(out.audio.channel(0)[i])));
+    }
+    CHECK(worst < 0.02);
+}
+
+TEST_CASE("psola_still_refuses_stereo_and_an_unknown_engine_is_invalid", "[stretch][rubberband]") {
+    StretchParams p;
+    p.engine = static_cast<StretchEngine>(9);
+    CHECK(check_stretch_params(p).error().code == ErrorCode::invalid_argument);
+}
+
+TEST_CASE("the_rubber_band_edge_blend_does_not_dip_or_bump_the_level", "[stretch][rubberband]") {
+    // A steady tone has a constant level; the 30 ms blend into the source copy at either end of a
+    // stretched span must keep it within 1 dB (an equal-power fade of two correlated signals
+    // would not).
+    const Fixture fx = steady_voice();
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.5, 1.0, 1.5);  // inside the steady part (no fade ramps)
+    const auto samples =
+        samples_of(stretch_span(fx.src, *fx.analysis, span, whole(span), params).value());
+    const auto window = static_cast<std::size_t>(k_rate / 220.0);  // one period: a steady level
+    const double body =
+        rms_of(std::span<const float>(samples).subspan(samples.size() / 2, 4 * window));
+    const auto zone = static_cast<std::size_t>(0.030 * k_rate);
+    for (std::size_t at = 0; at + window <= zone; at += window / 4) {
+        const double head = rms_of(std::span<const float>(samples).subspan(at, window));
+        const double tail =
+            rms_of(std::span<const float>(samples).subspan(samples.size() - zone + at, window));
+        INFO("at " << at);
+        CHECK(std::abs(db(head / body)) < 1.0);
+        CHECK(std::abs(db(tail / body)) < 1.0);
+    }
+}
+
+TEST_CASE("rubber_band_really_stretches_the_audio_in_time", "[stretch][rubberband]") {
+    // A vibrato that is 5.5 Hz in the source is 5.5 / ratio Hz in a re-timed render: unstretched
+    // audio (cut or padded to the right length) would keep 5.5 Hz.
+    const Fixture fx = vibrato_voice(5.5, 40.0);
+    StretchParams params;
+    params.engine = StretchEngine::rubberband;
+    const TimeSpan span = stretched(0.2, 1.4, 1.5);
+    const auto out = stretch_span(fx.src, *fx.analysis, span, whole(span), params).value();
+    const auto measured = vibrato_of(out);
+    INFO("rate " << measured.first);
+    CHECK(std::abs(measured.first - 5.5 / 1.5) < 0.6);
 }

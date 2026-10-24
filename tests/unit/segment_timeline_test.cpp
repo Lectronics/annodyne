@@ -2,6 +2,7 @@
 #include "core/types/noise_floor.h"
 #include "core/types/segments.h"
 #include "support/test_data.h"
+#include "support/timeline_data.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,29 +13,6 @@ using namespace anno;
 using namespace anno::test;
 
 namespace {
-
-NoteSegment note_seg(const char* id, double a, double b) {
-    return {.note = NoteId{id}, .start = src(a), .end = src(b)};
-}
-
-GapRegion region(GapRegionKind kind, double a, double b) {
-    return {.kind = kind, .start = src(a), .end = src(b)};
-}
-
-Gap gap_between(const char* before, const char* after, double a, double b) {
-    Gap g;
-    if (before != nullptr) {
-        g.before = NoteId{before};
-    }
-    if (after != nullptr) {
-        g.after = NoteId{after};
-    }
-    g.id = gap_segment_id(g.before, g.after);
-    g.start = src(a);
-    g.end = src(b);
-    g.regions = {{.kind = GapRegionKind::silence, .start = src(a), .end = src(b)}};
-    return g;
-}
 
 /// gap [0,1] | a [1,2] | gap [2,3] | b [3,4] | gap [4,5]
 struct Parts {

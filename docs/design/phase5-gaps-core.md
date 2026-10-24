@@ -1,7 +1,7 @@
 # Design note: The segment timeline and the gate (Phase 5, gap slices 1-7)
 
 - **Phase:** 5 (Timing)
-- **Status:** draft, revision 2 (round 1 findings B1-B12 and round 2 findings B-R1..B-F1, S-1..S-7 answered)
+- **Status:** implemented, as built (ADR-0024 and its amendments record the deviations); was draft, revision 2 (round 1 findings B1-B12 and round 2 findings B-R1..B-F1, S-1..S-7 answered)
 - **Supersedes, for Phase 5:** `silence-and-gaps.md` (kept as the long-term plan; where the two differ this note and ADR-0024 win) and the gap parts of `breath-lane.md` (breath detection and everything about breaths are **not** in this note: see "Deferred").
 - **Spec sections:** architecture spec §2, §3, §5.1-5.2; ADR-0005, ADR-0008, ADR-0017, ADR-0023, ADR-0024 (proposed).
 - **Folders / CMake targets:** `src/core/types` (new headers), `src/core/analysis/gaps` (layer 1), `src/core/edits` (`effective_gap`), `src/core/render` (`gate`, slice 7), `src/macros/strip_silence` and `src/tools/gap` (layer 5, slice 7). The shift-first layout (slice 8) has its **own** design note and ADR amending ADR-0023 §3; it is not designed here.
@@ -84,7 +84,7 @@ inline constexpr Decibels k_gap_mute_db{-120.0};
 
 **dBFS convention (one for the floor).** Every level in this note is the RMS dBFS of the activity stage: `10*log10(mean square)`, so a full-scale sine reads -3.01 dB. That holds for `NoiseFloor::curve_dbfs`, `band_dbfs` and `Gap::floor_dbfs`. Names: `ActivityTrack::noise_floor` is the global scalar, `NoiseFloor::curve_dbfs` the time-varying curve, `Gap::floor_dbfs` the median of the curve over the gap.
 
-**Gap ids.** `SegmentId{gap, "gap:" + <len>:<before> + <len>:<after>}`: each side length-prefixed (`5:n0001`, empty side `0:`), so no note id text can make two different pairs collide (`gap:0:5:n0001` leading, `gap:5:n00090:` trailing, `gap:0:0:` for a recording with no note). **Remap does not parse the text:** `EditList::retargeted` gets an overload taking the old and the new `SegmentTimeline` besides the `NoteIdMap`: a gap edit follows the new gap whose neighbours are the images of the old gap's neighbours (a split note: the last child is the gap's `before`, the first child its `after`); a merged-away or vanished gap orphans its edits (`orphaned_segment_ids`). Re-analysis changes note ids often (they are time-derived), so this is the main path, not an edge case (slice 3 tests: split, merge, a pair that would collide without the prefix, a note-only remap that leaves gap ids alone).
+**Gap ids.** `SegmentId{gap, "gap:" + <len>:<before> + <len>:<after>}`: each side length-prefixed (`5:n0001`, empty side `0:`), so no note id text can make two different pairs collide (`gap:0:5:n0001` leading, `gap:5:n00090:` trailing, `gap:0:0:` for a recording with no note). **Remap does not parse the text:** `gap_id_map(old_timeline, new_timeline, NoteIdMap) -> GapIdMap` (core/edits/remap; built in slice 3d instead of a timeline overload of `EditList::retargeted`, so the list does only bookkeeping and the lineage is testable alone) and `EditList::retargeted(NoteIdMap, GapIdMap)` (an overload; the note-only form leaves gap ids alone): a gap edit follows the new gap whose neighbours are the images of the old gap's neighbours (a split note: the last child is the gap's `before`, the first child its `after`); a merged-away or vanished gap orphans its edits (`orphaned_segment_ids`). Re-analysis changes note ids often (they are time-derived), so this is the main path, not an edge case (slice 3 tests: split, merge, a pair that would collide without the prefix, a note-only remap that leaves gap ids alone).
 
 **`AnalysisResult`** gains `std::optional<SegmentTimeline> timeline` and `std::optional<NoiseFloor> noise_floor` (empty by default: every existing construction stays valid). `analyse()` leaves both empty (no error) for non-melodic algorithms and when active notes overlap; a present timeline that disagrees with `notes` fails `validate`. `validate(AnalysisResult)` additionally requires (and the new fields serialise only when present, so outputs of untouched paths do not change; a stale timeline, notes rebuilt without it, fails validate: the producers that rebuild it are `analyse()` and the remap), when present, that every active note is exactly one note segment with the note's range, that the floor grid is valid and its curves match the grid, and the floor's bands are ascending and equal in size. Only `is_active` notes partition the timeline (ghost candidates do not). **No `version` bump** (fields are added, no existing output changes); the fingerprint and JSON outputs gain the new fields and are re-baselined deliberately in slice 5.
 
@@ -95,6 +95,18 @@ inline constexpr Decibels k_gap_mute_db{-120.0};
 ```cpp
 struct NoiseFloorParams {
     Seconds window{3.0};          // sliding window of the floor curve; clamped to the recording
+    double percentile_prob = 0.1; // of the frame levels inside the window that are not in a note
+    int bands = 24;
+    Hz band_low{80.0};
+    Hz band_high{12000.0};        // bands whose upper edge exceeds 0.45 x the sample rate are dropped
+    Seconds min_support{0.1};     // slice 4 build: a window needs this much outside-note time to give
+                                  // an estimate (a quantile of a few frames is noise, and the
+                                  // zero-phase high-pass rings ahead of a loud onset)
+    Seconds note_guard{0.015};    // slice 4 build: frames this close to a note are not outside it
+    Seconds spectrum_window{0.025};  // the band spectrum's analysis frame (Hann)
+    Decibels spectrum_margin{3.0};   // floor frames: outside the notes, level <= curve + this
+    int max_spectrum_frames = 1000;  // cost cap: floor frames evenly strided to this many
+};          // sliding window of the floor curve; clamped to the recording
     double percentile_prob = 0.1; // of the frame levels inside the window that are not in a note
     int bands = 24;
     Hz band_low{80.0};
@@ -125,15 +137,15 @@ struct GapParams {
     Decibels tail_margin{6.0};   // a tail lasts while the floor curve + margin is exceeded
     Seconds max_tail{1.5};
     Seconds preroll_guard{0.015};
-    Seconds min_gap{0.005};      // shorter spaces between notes are legato (no gap)
 };
 /// Partitions [0, source_end] into note and gap segments and classifies each gap's regions:
 /// `tail` from the previous note's end while the activity level stays above floor + tail_margin
 /// (at most max_tail); `protected_preroll` for the `preroll_guard` before a note's start (untouched by the gate, like
 /// a tail: a breath-in or a soft consonant lead-in is not silence; it is a region of the gap, **not**
 /// an extension of the note, whose range stays `Note::source_start/end` everywhere); `silence` for
-/// the rest. A gap shorter than min_gap is not made; the two
-/// notes touch. Slice 5 emits one `silence` region per gap; slice 6 adds tail and preroll. (`noise` regions and `noise_*` parameters wait for room tone, slice 9: no consumer before.)
+/// the rest. A space of any positive length between two notes is a gap (a hole would
+/// break the partition; `GapParams::min_gap` was dropped in the slice 5 build: the layout's `min_gap`
+/// and the gate's fade are the minimums); notes that touch exactly have none. Slice 5 emits one `silence` region per gap; slice 6 adds tail and preroll. (`noise` regions and `noise_*` parameters wait for room tone, slice 9: no consumer before.)
 /// Errors: invalid_argument (bad params; active notes overlapping or unsorted; a note outside
 /// [0, source_end]). Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<SegmentTimeline> build_segment_timeline(std::span<const Note> notes,
@@ -208,3 +220,12 @@ Layout and ripple (slice 8 note; anchors, `layout` edits, ARA/host region questi
 ## Review log
 
 *(round 2 findings go here; round 1 findings B1-B12 and S1-S13 of `silence-and-gaps.md` are answered above: B1 existing types, B2 representation, B3 types in core/types, B4 narrow inputs and order, B5 no `allocate_stretch`, `build_time_map` kept (slice 8), B6 slice 8 note, B7 `StripSilence` clamps in the planner (slice 10), B8 ADR-0024, B9 `EffectiveGap` in types, B10 floor builds on `ActivityTrack`, B11 breaths deferred, B12 render integration for the gate, S3 preroll as a region.)*
+
+
+## Revision (owner, 2026-10-22): protect audible stretches, consonant detector before the gate
+
+Raised while building slice 5: unvoiced consonants (sibilants, fricatives, plosive bursts) and breaths sit in the gaps, so a gap of one `silence` region would let the gate mute them. Decisions:
+
+- **Slice 6 classifies by level as well as by position.** Regions of a gap, in order: `tail` (from the previous note's end while the activity level exceeds the floor curve + `tail_margin`, at most `max_tail`), `audible` (any later run of frames above floor + `tail_margin` that lasts at least `min_audible` (20 ms), padded by `audible_pad` (10 ms) each side, wherever it sits), `protected_preroll` (the last `preroll_guard` before the next note), `silence` (the rest). This is an engineering safety net from ordinary energy-based activity detection, not from a paper; the repo's research (implementation guide B6, ADR-0017) says level-independent features are needed for quiet fricatives, which is the next point. A level exactly at floor + margin is not above it.
+- **A consonant detector is pulled forward, before the gate (new slice 6b).** It runs the ADR-0017 features (centroid, ZCR, high-band ratio, aperiodicity, spectral flux) over the gap frames and refines `audible` into sibilant / breath / plosive kinds, and adds regions the level rule misses (quiet fricatives). Nothing can be muted before it exists. Breath chain and the breath macros stay in Phase 6; only the detection moves.
+- Slice order is now: 6 (levels), 6b (consonant detector), 7 (gate), then the layout.

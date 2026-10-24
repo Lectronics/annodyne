@@ -19,7 +19,7 @@ References: architecture spec §4.6, §5.5, §5.6; ADR-0002, ADR-0006.
 Time (ADR-0008): `render_region` walks TimeMap spans (`RenderInputs::time_map`, or built from the
 edits): slope-1 warps copy shifted source samples, inserts are digital silence, cuts have no output.
 The cache key includes the whole map.
-Stretching (ADR-0023): a slope != 1 warp is part of the unedited base, rendered by `stretch_span` (mono
+Stretching (ADR-0023): a slope != 1 warp is part of the unedited base, rendered by `stretch_span` (Rubber Band R3 by default, `RenderParams::stretch`, ADR-0026; the PSOLA alternative is mono
 only); a note whose edits are only timing edits is part of that base. An edited note (pitch, level,
 formant) whose zone meets a stretched warp is `not_implemented`, naming the note. With no supplied map
 the map is built with `TailPolicy::shift` and whole-sample shifts.
@@ -28,3 +28,11 @@ monophonic (Phase 11); the crossfade default `equal_power` overshoots by up to +
 signals (listening decision at Phase 4); `-ffp-contract=off` makes results reproducible per build,
 not across platforms.
 Tuning parameters: `RenderParams::crossfade_length` (0..20 ms, default 10 ms), `crossfade_shape`.
+
+## The gap gate (ADR-0024)
+
+`gate.h`: `gate_curve` is the per-sample gain a `gap_gain` edit applies to the `silence` regions of its gap (5 ms ramps inside the region where it borders a note or another region; none at the recording's start or end). `render_region` multiplies it in after the blend and skips samples whose gain is 1; tails, the guard before a note and every classified region (sibilant, breath, plosive, audible) are never touched. `RenderResult::gaps_rendered` lists the gated gaps that meet the region; the gates are the last part of the cache key.
+
+## The layout and the splice (ADR-0025)
+
+With no supplied map and a segment timeline in the analysis, `render_region` builds the map with `build_layout_time_map` (`RenderParams::layout`): gaps next to a timing edit are cut or held first, the audio between markers is stretched, the recording keeps its length. `splice.h` smooths the joins: a cut crossfades over `splice_fade` (5 ms) into the audio after it; an insert (digital zeros until room tone) fades the audio on each side to and from zero, inside its silence region. `splice_fade` 0 keeps hard joins. The cache key (version 5) holds the map spans that meet the region widened by the margin and the fade, so a timing edit elsewhere leaves a block's key alone (the first edit from an identity map changes every key once). Limits: an edited note whose zone meets a cut or insert is `not_implemented`; stretched spans need mono with the PSOLA alternative (Rubber Band stretches any channel count). The cache key is version 7. `dirty_regions` still dirties origin-to-end for a timing change (a safe over-approximation); `changed_source_ranges` (core/timemap) exists and is tested but is not yet called by it (carried: wire it in, ADR-0025 decision 8).

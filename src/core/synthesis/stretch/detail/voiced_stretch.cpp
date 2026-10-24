@@ -12,24 +12,24 @@ namespace {
 
 constexpr double k_min_window_sum = 1e-6;
 
-/// Synthesis positions (output samples) from `p_first` to `p_last`: steps of the source period at
-/// the source time of each position, the spacing then scaled so the chain ends exactly on p_last.
-/// Includes one extra position before the first and after the last, so the edges are covered.
-std::vector<double> synthesis_positions(const grain::PeriodCurve& period, const SpanGeometry& g,
-                                        double p_first, double p_last) {
+/// Synthesis positions (output samples) from `p_first` to `p_last`: steps of the output period
+/// (the source period at the source time of each position, or with a regenerated vibrato), the
+/// spacing then scaled so the chain ends exactly on p_last. Includes one extra position before the
+/// first and after the last, so the edges are covered.
+std::vector<double> synthesis_positions(const OutputPitch& output, double p_first, double p_last) {
     std::vector<double> raw{p_first};
-    while (raw.back() < p_last - 0.5 * period.at(g.source_at(raw.back()))) {
-        raw.push_back(raw.back() + period.at(g.source_at(raw.back())));
+    while (raw.back() < p_last - 0.5 * output.period_samples(raw.back())) {
+        raw.push_back(raw.back() + output.period_samples(raw.back()));
     }
     const double scale = raw.size() > 1 ? (p_last - p_first) / (raw.back() - p_first) : 1.0;
     std::vector<double> positions;
     positions.reserve(raw.size() + 2);
-    positions.push_back(p_first - period.at(g.source_at(p_first)));
+    positions.push_back(p_first - output.period_samples(p_first));
     for (const double q : raw) {
         positions.push_back(p_first + (q - p_first) * scale);
     }
     positions.back() = raw.size() > 1 ? p_last : positions.back();
-    positions.push_back(positions.back() + period.at(g.source_at(positions.back())));
+    positions.push_back(positions.back() + output.period_samples(positions.back()));
     return positions;
 }
 
@@ -50,6 +50,7 @@ std::size_t nearest_mark(const std::vector<double>& marks, double position) {
 
 std::optional<std::vector<double>> synthesise_voiced_run(const grain::Signal& x,
                                                          const grain::PeriodCurve& period,
+                                                         const OutputPitch& output,
                                                          const SpanGeometry& g, std::int64_t begin,
                                                          std::int64_t end) {
     const double src_from = g.source_at(static_cast<double>(begin));
@@ -64,7 +65,7 @@ std::optional<std::vector<double>> synthesise_voiced_run(const grain::Signal& x,
     const auto i0 = static_cast<std::size_t>(first_in - marks.begin());
     const auto i1 = static_cast<std::size_t>(last_in - marks.begin()) - 1;
     const std::vector<double> positions =
-        synthesis_positions(period, g, static_cast<double>(begin) + (marks[i0] - src_from),
+        synthesis_positions(output, static_cast<double>(begin) + (marks[i0] - src_from),
                             static_cast<double>(end) - (src_to - marks[i1]));
 
     grain::Accumulator acc{

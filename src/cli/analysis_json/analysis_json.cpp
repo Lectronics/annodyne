@@ -172,6 +172,69 @@ Json pitch_json(const PitchTrack& p) {
             {"voicing", p.voicing_prob},   {"confidence", p.confidence_prob}};
 }
 
+const char* to_text(GapRegionKind kind) {
+    switch (kind) {
+    case GapRegionKind::silence: return "silence";
+    case GapRegionKind::tail: return "tail";
+    case GapRegionKind::protected_preroll: return "protected_preroll";
+    case GapRegionKind::audible: return "audible";
+    case GapRegionKind::sibilant: return "sibilant";
+    case GapRegionKind::breath: return "breath";
+    case GapRegionKind::plosive: return "plosive";
+    }
+    return "silence";
+}
+
+Json note_id_or_null(const std::optional<NoteId>& id) {
+    return id ? Json(id->value) : Json(nullptr);
+}
+
+/// The gaps of the segment timeline: id, neighbours, range, floor and regions.
+Json gaps_json(const SegmentTimeline& timeline) {
+    Json gaps = Json::array();
+    for (const Gap& g : timeline.gaps()) {
+        Json regions = Json::array();
+        for (const GapRegion& r : g.regions) {
+            regions.push_back({{"kind", to_text(r.kind)},
+                               {"start_s", seconds(r.start)},
+                               {"end_s", seconds(r.end)}});
+        }
+        gaps.push_back({{"id", g.id.value},
+                        {"before", note_id_or_null(g.before)},
+                        {"after", note_id_or_null(g.after)},
+                        {"start_s", seconds(g.start)},
+                        {"end_s", seconds(g.end)},
+                        {"floor_dbfs", g.floor_dbfs.value()},
+                        {"regions", regions}});
+    }
+    return gaps;
+}
+
+/// The noise floor: its grid and band spectrum; the per-frame curve only on request (large).
+Json noise_floor_json(const NoiseFloor& floor, bool include_curve) {
+    Json centres = Json::array();
+    for (const Hz c : floor.band_centre) {
+        centres.push_back(c.value());
+    }
+    Json bands = Json::array();
+    for (const Decibels b : floor.band_dbfs) {
+        bands.push_back(b.value());
+    }
+    Json out = {{"hop_s", floor.grid.hop.value()},
+                {"start_s", seconds(floor.grid.start)},
+                {"n_frames", floor.grid.n_frames},
+                {"band_centre_hz", centres},
+                {"band_dbfs", bands}};
+    if (include_curve) {
+        Json curve = Json::array();
+        for (const Decibels d : floor.curve_dbfs) {
+            curve.push_back(d.value());
+        }
+        out["curve_dbfs"] = curve;
+    }
+    return out;
+}
+
 }  // namespace
 
 std::string analysis_to_json(const AnalysisResult& analysis, const AnalysisJsonOptions& options) {
@@ -184,6 +247,12 @@ std::string analysis_to_json(const AnalysisResult& analysis, const AnalysisJsonO
     root["algorithm"] = to_text(analysis.algorithm);
     root["notes"] = notes_json(analysis);
     root["onsets"] = onsets_json(analysis.onsets);
+    if (analysis.timeline) {
+        root["gaps"] = gaps_json(*analysis.timeline);
+    }
+    if (analysis.noise_floor) {
+        root["noise_floor"] = noise_floor_json(*analysis.noise_floor, options.include_pitch_track);
+    }
     if (options.include_pitch_track && analysis.pitch) {
         root["pitch"] = pitch_json(*analysis.pitch);
     }

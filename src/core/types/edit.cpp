@@ -1,5 +1,6 @@
 #include "core/types/edit.h"
 
+#include "core/types/effective_gap.h"
 #include "core/types/effective_note.h"
 
 #include <algorithm>
@@ -86,7 +87,8 @@ constexpr std::array<std::pair<EditParam, std::string_view>, k_edit_param_count>
      {EditParam::onset_shift, "onset_shift"},
      {EditParam::length_scale, "length_scale"},
      {EditParam::time_handle, "time_handle"},
-     {EditParam::attack_time_scale, "attack_time_scale"}}};
+     {EditParam::attack_time_scale, "attack_time_scale"},
+     {EditParam::gap_gain, "gap_gain"}}};
 
 }  // namespace
 
@@ -167,7 +169,8 @@ constexpr ParamInfo keyed_row(EditParam p, EditCategory c, ValueKind k) {
             .scale_min = -k_inf};
 }
 
-constexpr double k_min_scale = 1e-3;  // k_min_time_scale.value(); constexpr-friendly copy
+constexpr double k_gap_max_gain_db = 24.0;  // ADR-0024: the legal gap_gain range is [mute, +24 dB]
+constexpr double k_min_scale = 1e-3;        // k_min_time_scale.value(); constexpr-friendly copy
 static_assert(k_min_time_scale.value() == k_min_scale);
 
 // Indexed by EditParam; edit_types_test checks every row.
@@ -192,6 +195,8 @@ constexpr std::array<ParamInfo, k_edit_param_count> k_table{{
     multiplier_row(EditParam::length_scale, EditCategory::time, k_min_scale, k_inf, 0.0),
     keyed_row(EditParam::time_handle, EditCategory::time, ValueKind::time_pair),
     multiplier_row(EditParam::attack_time_scale, EditCategory::attack, k_min_scale, k_inf, 0.0),
+    offset_row(EditParam::gap_gain, EditCategory::gap, ValueKind::decibels, k_gap_mute_db.value(),
+               k_gap_max_gain_db),
 }};
 
 Unexpected invalid(std::string message) {
@@ -256,6 +261,32 @@ Result<void> validate_value(const ParamInfo& info, EditOp op, const EditValue& v
     return {};
 }
 
+/// The segment kind a category's edits may target (ADR-0024); empty: none yet.
+constexpr std::optional<SegmentKind> target_kind(EditCategory category) {
+    switch (category) {
+    case EditCategory::gap: return SegmentKind::gap;
+    case EditCategory::layout: return std::nullopt;
+    default: return SegmentKind::note;
+    }
+}
+
+Result<void> validate_target_kind(const EditSpec& spec) {
+    const bool category_reset = spec.op == EditOp::reset && !spec.param;
+    if (category_reset &&
+        (spec.category == EditCategory::gap || spec.category == EditCategory::layout)) {
+        return {};  // as before ADR-0024: a parameterless reset of these passes with any target
+    }
+    const auto kind = target_kind(spec.category);
+    for (const auto* list : {&spec.target.segment_ids, &spec.target.orphaned_segment_ids}) {
+        for (const SegmentId& id : *list) {
+            if (!kind || id.kind != *kind) {
+                return invalid("edit target has a kind this category does not accept");
+            }
+        }
+    }
+    return {};
+}
+
 Result<void> validate_reset(const EditSpec& spec) {
     if (!spec.param) {
         return std::holds_alternative<std::monostate>(spec.value)
@@ -293,6 +324,9 @@ Result<void> validate(const EditSpec& spec) {
                 return invalid("edit target ids must be non-empty and unique");
             }
         }
+    }
+    if (auto kind = validate_target_kind(spec); !kind) {
+        return kind;
     }
     if (spec.op == EditOp::reset) {
         if (spec.param && param_info(*spec.param).category != spec.category) {

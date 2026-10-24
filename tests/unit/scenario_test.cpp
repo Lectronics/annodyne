@@ -1,6 +1,7 @@
 #include "cli/checks/audio_checks.h"
 #include "cli/scenario_json/scenario_json.h"
 #include "core/io/wav.h"
+#include "core/types/effective_gap.h"
 #include "tolerances.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -179,4 +180,60 @@ TEST_CASE("tool_and_raw_edits_cannot_be_mixed_and_more_drag_errors_are_named", "
         error(
             R"("edits": [{"tool": "pitch_drag", "target": {"note_index": 0}, "offset_cents": 5, "speed": 1}]})")
             .find("edits[0].speed") != std::string::npos);
+}
+
+TEST_CASE("a_gap_target_names_the_notes_on_either_side", "[scenario]") {
+    const auto s = parse(R"({
+      "name": "gate", "source": "tone.wav",
+      "notes": [{"id": "n1", "start_s": 0.5, "end_s": 1.0}, {"id": "n2", "start_s": 1.5, "end_s": 2.0}],
+      "edits": [
+        {"category": "gap", "op": "set", "param": "gap_gain", "value": -120,
+         "target": {"gap": {"before": "n1", "after": "n2"}}},
+        {"category": "gap", "op": "set", "param": "gap_gain", "value": -6,
+         "target": {"gap": {"before": null, "after": "n1"}}},
+        {"category": "gap", "op": "reset", "param": "gap_gain",
+         "target": {"gap": {"before": "n2", "after": null}}}
+      ]})");
+    REQUIRE(s.has_value());
+    REQUIRE(s->edits.size() == 3);
+    CHECK(s->edits[0].target.segment_ids ==
+          std::vector<SegmentId>{gap_segment_id(NoteId{"n1"}, NoteId{"n2"})});
+    CHECK(s->edits[1].target.segment_ids ==
+          std::vector<SegmentId>{gap_segment_id(std::nullopt, NoteId{"n1"})});
+    CHECK(s->edits[2].target.segment_ids ==
+          std::vector<SegmentId>{gap_segment_id(NoteId{"n2"}, std::nullopt)});
+    CHECK(std::get<Decibels>(s->edits[0].value) == k_gap_mute_db);
+}
+
+TEST_CASE("gap_targets_are_checked", "[scenario]") {
+    const auto message = [](const std::string& target, const std::string& category = "gap",
+                            const std::string& param = "gap_gain") {
+        return parse(R"({"name": "x", "source": "t.wav",
+          "notes": [{"id": "n1", "start_s": 0.5, "end_s": 1.0}],
+          "edits": [{"category": ")" +
+                     category + R"(", "op": "set", "param": ")" + param +
+                     R"(", "value": -6, "target": )" + target + "}]}")
+            .error()
+            .message;
+    };
+    CHECK(message(R"({"gap": {"before": 3, "after": null}})").find("target.gap.before") !=
+          std::string::npos);
+    CHECK(message(R"({"gap": {"before": "n1"}})").find("target.gap") != std::string::npos);
+    CHECK(message(R"({"gap": {"before": "n1", "after": null, "extra": 1}})").find("extra") !=
+          std::string::npos);
+    CHECK(message(R"({"gap": "n1"})").find("target.gap") != std::string::npos);
+    CHECK(message(R"({"gap": {"before": "n1", "after": null}, "note_id": "n1"})")
+              .find("exactly one") != std::string::npos);
+    // a gap target on a note category is refused by validate_for_add (the target-kind rule)
+    CHECK_FALSE(parse(R"({"name": "x", "source": "t.wav",
+          "notes": [{"id": "n1", "start_s": 0.5, "end_s": 1.0}],
+          "edits": [{"category": "pitch", "op": "add", "param": "center_offset", "value": 5,
+                     "target": {"gap": {"before": "n1", "after": null}}}]})")
+                    .has_value());
+    // a note target on gap_gain likewise
+    CHECK_FALSE(parse(R"({"name": "x", "source": "t.wav",
+          "notes": [{"id": "n1", "start_s": 0.5, "end_s": 1.0}],
+          "edits": [{"category": "gap", "op": "set", "param": "gap_gain", "value": -6,
+                     "target": {"note_id": "n1"}}]})")
+                    .has_value());
 }

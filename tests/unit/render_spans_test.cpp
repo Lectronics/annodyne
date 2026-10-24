@@ -14,6 +14,13 @@ using namespace anno::test;
 
 namespace {
 
+/// These tests pin the map's own contract (read_through_map): no splice fade at cuts and inserts.
+RenderParams hard_joins() {
+    RenderParams params;
+    params.layout.splice_fade = Seconds{0.0};
+    return params;
+}
+
 constexpr WallTime k_t0{};
 constexpr double k_rate = 48000.0;
 constexpr std::int64_t k_margin = 480;  // 10 ms
@@ -89,9 +96,9 @@ EditList edits_of(std::vector<EditSpec> group) {
 TEST_CASE("a_map_with_a_cut_and_an_insert_renders_the_right_length_silence_and_source_samples",
           "[render_spans]") {
     const Fixture f = fixture_with_map(notes_a_b());
-    const auto r =
-        render_region(inputs_with(f, cut_and_insert_map()), all_output(), GainTestEngine{}, {})
-            .value();
+    const auto r = render_region(inputs_with(f, cut_and_insert_map()), all_output(),
+                                 GainTestEngine{}, hard_joins())
+                       .value();
     CHECK(audio_of(r).frame_count().value() == k_out_frames);
     CHECK(r->passthrough);
     CHECK(bit_identical(audio_of(r), expected_output(f)));
@@ -105,9 +112,9 @@ TEST_CASE("a_map_with_a_cut_and_an_insert_renders_the_right_length_silence_and_s
 TEST_CASE("an_edited_note_after_the_splice_changes_only_its_blend_zone", "[render_spans]") {
     // Note b [1.6, 2.2] source sits at output [1.45, 2.05] = samples [69600, 98400).
     const Fixture f = fixture_with_map(notes_a_b()).with_edits(edits_of({gain_edit("b", 6.0)}));
-    const auto r =
-        render_region(inputs_with(f, cut_and_insert_map()), all_output(), GainTestEngine{}, {})
-            .value();
+    const auto r = render_region(inputs_with(f, cut_and_insert_map()), all_output(),
+                                 GainTestEngine{}, hard_joins())
+                       .value();
     REQUIRE(r->notes_rendered.size() == 1);
     const AudioBuffer want = expected_output(f);
     const float g = static_cast<float>(to_linear_gain(Decibels{6.0}).value());
@@ -129,9 +136,9 @@ TEST_CASE("an_edited_note_after_the_splice_changes_only_its_blend_zone", "[rende
 
 TEST_CASE("an_edited_note_before_the_splice_changes_only_its_blend_zone", "[render_spans]") {
     const Fixture f = fixture_with_map(notes_a_b()).with_edits(edits_of({gain_edit("a", -6.0)}));
-    const auto r =
-        render_region(inputs_with(f, cut_and_insert_map()), all_output(), GainTestEngine{}, {})
-            .value();
+    const auto r = render_region(inputs_with(f, cut_and_insert_map()), all_output(),
+                                 GainTestEngine{}, hard_joins())
+                       .value();
     const AudioBuffer want = expected_output(f);
     for (int c = 0; c < want.channel_count(); ++c) {
         for (std::int64_t i = 0; i < k_out_frames; ++i) {
@@ -148,7 +155,7 @@ TEST_CASE("a_region_of_the_output_equals_the_same_slice_of_the_whole", "[render_
     const auto map = cut_and_insert_map();
     const auto part =
         render_region(inputs_with(f, map), OutputRange::from_start(out(1.2), Seconds{0.3}),
-                      PassthroughEngine{}, {})
+                      PassthroughEngine{}, hard_joins())
             .value();
     const AudioBuffer want = expected_output(f);
     REQUIRE(audio_of(part).frame_count().value() == 14400);
@@ -163,12 +170,15 @@ TEST_CASE("a_supplied_map_wins_over_timing_edits", "[render_spans]") {
         fixture_with_map(notes_a_b())
             .with_edits(edits_of({make_spec("b", EditCategory::time, EditParam::onset_shift,
                                             EditOp::set, Seconds{0.4})}));
-    const auto r =
-        render_region(inputs_with(f, cut_and_insert_map()), all_output(), PassthroughEngine{}, {});
+    const auto r = render_region(inputs_with(f, cut_and_insert_map()), all_output(),
+                                 PassthroughEngine{}, hard_joins());
     REQUIRE(
         r.has_value());  // without the map the stereo source cannot be stretched (not_implemented)
     CHECK(bit_identical(audio_of(*r), expected_output(f)));
-    CHECK(render_region(f.inputs(), whole(f.source), PassthroughEngine{}, {}).error().code ==
+    // without the map the stereo source cannot be stretched by the PSOLA engine (mono only)
+    RenderParams psola = hard_joins();
+    psola.stretch.engine = StretchEngine::psola;
+    CHECK(render_region(f.inputs(), whole(f.source), PassthroughEngine{}, psola).error().code ==
           ErrorCode::not_implemented);
 }
 
@@ -198,9 +208,10 @@ TEST_CASE("the_cache_key_includes_the_map", "[render_spans]") {
 TEST_CASE("bad_maps_and_notes_are_refused", "[render_spans]") {
     const Fixture f = fixture_with_map(notes_a_b());
     const auto wrong_length = std::make_shared<const TimeMap>(TimeMap::identity(Seconds{2.0}));
-    CHECK(render_region(inputs_with(f, wrong_length), all_output(), PassthroughEngine{}, {})
-              .error()
-              .code == ErrorCode::invalid_argument);
+    CHECK(
+        render_region(inputs_with(f, wrong_length), all_output(), PassthroughEngine{}, hard_joins())
+            .error()
+            .code == ErrorCode::invalid_argument);
     const auto fractional = std::make_shared<const TimeMap>(
         TimeMap::make({span(SpanKind::insert, 0.0, 0.0, 0.0, 1.5 / k_rate),
                        span(SpanKind::warp, 0.0, 3.0, 1.5 / k_rate, 3.0 + 1.5 / k_rate)})
@@ -214,7 +225,7 @@ TEST_CASE("bad_maps_and_notes_are_refused", "[render_spans]") {
     const Fixture inside_cut =
         make_fixture({make_note("c", 1.3, 1.4)}, 3.0).with_edits(edits_of({gain_edit("c", 3.0)}));
     CHECK(render_region(inputs_with(inside_cut, cut_and_insert_map()), all_output(),
-                        GainTestEngine{}, {})
+                        GainTestEngine{}, hard_joins())
               .error()
               .code == ErrorCode::invalid_argument);
     // a region past the end of the (shorter) output
@@ -236,9 +247,11 @@ TEST_CASE("maps_that_differ_in_a_single_span_give_different_cache_keys", "[rende
     // A region that meets neither the insert nor anything after it: only the map differs.
     const OutputRange head = OutputRange::from_start(OutputTime{}, Seconds{1.0});
     const auto a =
-        render_region(inputs_with(f, cut_and_insert_map()), head, PassthroughEngine{}, {}).value();
+        render_region(inputs_with(f, cut_and_insert_map()), head, PassthroughEngine{}, hard_joins())
+            .value();
     const auto b =
-        render_region(inputs_with(f, longer_insert), head, PassthroughEngine{}, {}).value();
+        render_region(inputs_with(f, longer_insert), head, PassthroughEngine{}, hard_joins())
+            .value();
     CHECK(a->cache_id != b->cache_id);
     CHECK(bit_identical(audio_of(a), audio_of(b)));  // same samples, different keys
 }
@@ -246,7 +259,8 @@ TEST_CASE("maps_that_differ_in_a_single_span_give_different_cache_keys", "[rende
 TEST_CASE("an_edited_note_outside_the_recording_is_refused", "[render_spans]") {
     const Fixture late = make_fixture({make_note("late", 2.5, 3.5)}, 3.0)
                              .with_edits(edits_of({gain_edit("late", 3.0)}));
-    CHECK(render_region(inputs_with(late, cut_and_insert_map()), all_output(), GainTestEngine{}, {})
+    CHECK(render_region(inputs_with(late, cut_and_insert_map()), all_output(), GainTestEngine{},
+                        hard_joins())
               .error()
               .code == ErrorCode::invalid_argument);
 }

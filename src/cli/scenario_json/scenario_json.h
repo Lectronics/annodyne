@@ -15,9 +15,11 @@ namespace anno::cli {
 /// Unknown keys are errors; "expect" is kept verbatim and not checked here (scripts/
 /// phase4_audition.py reads expect.engines). "analysis" is "given" (default: `notes` are listed by
 /// hand) or "analyse" (the source is analysed at load time; `notes` is then an error, $.notes).
-/// A raw edit is {category, op, param?, value?, target:{note_id | note_index}} with the names of
-/// to_string(...) in core/types/edit.h; value by parameter kind: number (cents, ratio, decibels,
+/// A raw edit is {category, op, param?, value?, target:{note_id | note_index | gap}} with the names
+/// of to_string(...) in core/types/edit.h; value by parameter kind: number (cents, ratio, decibels,
 /// seconds), string (fade_shape), {"source_s","output_s"} (time_handle); reset has no value. In
+/// A gap target is {"gap": {"before": id|null, "after": id|null}} (null at the recording's
+/// edge) for category gap; the gap's timeline is built from the audio when the scenario runs. In
 /// analyse mode a raw edit may not use note_index (the ids are not known before the analysis).
 /// An edit with a "tool" key is a tool edit, allowed only with "analysis": "analyse": the only
 /// tool is {"tool": "pitch_drag", "target": {"note_index": i >= 0}, exactly one of "offset_cents"

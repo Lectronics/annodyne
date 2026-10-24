@@ -18,6 +18,7 @@ std::shared_ptr<const RenderResult> result_of(double seconds) {
         RenderResult{.buffer = OutputAudio{.audio = std::move(audio), .start = OutputTime{}},
                      .cache_id = "x",
                      .notes_rendered = {NoteId{"n"}},
+                     .gaps_rendered = {},
                      .passthrough = false});
 }
 

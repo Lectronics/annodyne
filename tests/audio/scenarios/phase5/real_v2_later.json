@@ -1,0 +1,20 @@
+{
+  "name": "real_v2_later",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "edits": [
+    {
+      "category": "time",
+      "op": "set",
+      "param": "onset_shift",
+      "value": 0.15,
+      "target": {
+        "note_id": "n003102"
+      }
+    }
+  ],
+  "expect": {
+    "layout": "vocadito_2, note at 3.10 s moved 0.15 s later: the pause before it grows, the one after it is cut next to the note's end, the rest stays"
+  },
+  "stretch_engine": "psola"
+}

@@ -1,0 +1,58 @@
+{
+  "name": "gap_mute_all",
+  "source": "tests/audio/scenarios/sources/gap_fricative.wav",
+  "analysis": "given",
+  "notes": [
+    {
+      "id": "a",
+      "start_s": 0.5,
+      "end_s": 1.2
+    },
+    {
+      "id": "b",
+      "start_s": 2.0,
+      "end_s": 2.7
+    }
+  ],
+  "edits": [
+    {
+      "category": "gap",
+      "op": "set",
+      "param": "gap_gain",
+      "value": -120,
+      "target": {
+        "gap": {
+          "before": null,
+          "after": "a"
+        }
+      }
+    },
+    {
+      "category": "gap",
+      "op": "set",
+      "param": "gap_gain",
+      "value": -120,
+      "target": {
+        "gap": {
+          "before": "a",
+          "after": "b"
+        }
+      }
+    },
+    {
+      "category": "gap",
+      "op": "set",
+      "param": "gap_gain",
+      "value": -120,
+      "target": {
+        "gap": {
+          "before": "b",
+          "after": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "gate": "all three gaps gated; no ramp at the start and end of the recording; fricative kept"
+  }
+}

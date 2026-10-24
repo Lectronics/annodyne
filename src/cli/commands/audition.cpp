@@ -35,8 +35,10 @@ Result<void> write_text(const std::filesystem::path& path, const std::string& te
 Result<std::vector<bool>> dirty_mask(const LoadedScenario& run, std::int64_t frames) {
     const Hz rate = run.source.sample_rate();
     const SourceTime end = to_time_point<SourceAxis>(Samples{frames}, rate);
-    auto regions = dirty_regions(run.analysis->notes, EditList{scenario_track()}, *run.edits,
-                                 DirtyParams{.source_end = end});
+    auto regions = dirty_regions(
+        run.analysis->notes, EditList{scenario_track()}, *run.edits,
+        DirtyParams{.source_end = end,
+                    .timeline = run.analysis->timeline ? &*run.analysis->timeline : nullptr});
     if (!regions) {
         return Unexpected{regions.error()};
     }
@@ -253,12 +255,12 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
                                     .edits = std::make_shared<const EditList>(scenario_track()),
                                     .time_map = nullptr};
 
-    auto edited = render_region(edited_inputs, whole, chosen, RenderParams{});
+    auto edited = render_region(edited_inputs, whole, chosen, render_params_of(*run));
     if (!edited) {
         return Unexpected{edited.error()};
     }
-    auto again = render_region(edited_inputs, whole, chosen, RenderParams{});
-    auto empty = render_region(empty_inputs, whole, chosen, RenderParams{});
+    auto again = render_region(edited_inputs, whole, chosen, render_params_of(*run));
+    auto empty = render_region(empty_inputs, whole, chosen, render_params_of(*run));
     if (!again) {
         return Unexpected{again.error()};
     }

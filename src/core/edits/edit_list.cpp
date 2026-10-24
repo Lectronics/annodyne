@@ -46,10 +46,10 @@ std::size_t group_start(const std::vector<Edit>& edits, std::size_t end) {
     return end;
 }
 
-/// Note-kind targets follow `mapping` (a note with no continuation becomes orphaned); gap targets
-/// pass through unchanged (a gap id map arrives with gap analysis, Phase 5).
+/// Note-kind targets follow `mapping` (a note with no continuation becomes orphaned). Gap targets
+/// follow `gaps` (absent from it: orphaned) when there is one, else pass through unchanged.
 std::vector<SegmentId> remapped_ids(const std::vector<SegmentId>& ids, const NoteIdMap& mapping,
-                                    std::vector<SegmentId>& orphaned) {
+                                    const GapIdMap* gaps, std::vector<SegmentId>& orphaned) {
     std::vector<SegmentId> out;
     const auto push_unique = [](std::vector<SegmentId>& v, const SegmentId& id) {
         if (std::ranges::find(v, id) == v.end()) {
@@ -59,7 +59,13 @@ std::vector<SegmentId> remapped_ids(const std::vector<SegmentId>& ids, const Not
     for (const SegmentId& id : ids) {
         const std::optional<NoteId> note = as_note_id(id);
         if (!note) {
-            push_unique(out, id);
+            if (gaps != nullptr && id.kind == SegmentKind::gap) {
+                const auto image = gaps->find(id);
+                push_unique(image == gaps->end() ? orphaned : out,
+                            image == gaps->end() ? id : image->second);
+            } else {
+                push_unique(out, id);
+            }
             continue;
         }
         const auto it = mapping.find(*note);
@@ -74,10 +80,11 @@ std::vector<SegmentId> remapped_ids(const std::vector<SegmentId>& ids, const Not
     return out;
 }
 
-void retarget_all(std::vector<Edit>& edits, const NoteIdMap& mapping) {
+void retarget_all(std::vector<Edit>& edits, const NoteIdMap& mapping, const GapIdMap* gaps) {
     for (Edit& e : edits) {
         std::vector<SegmentId> orphaned = e.spec.target.orphaned_segment_ids;
-        e.spec.target.segment_ids = remapped_ids(e.spec.target.segment_ids, mapping, orphaned);
+        e.spec.target.segment_ids =
+            remapped_ids(e.spec.target.segment_ids, mapping, gaps, orphaned);
         // An id that is live again (a later re-analysis reused it) is no longer orphaned: the id is
         // the identity, and a target must not sit in both lists.
         std::erase_if(orphaned, [&](const SegmentId& id) {
@@ -202,10 +209,18 @@ Result<EditList> EditList::redo() const {
 }
 
 EditList EditList::retargeted(const NoteIdMap& mapping) const {
+    return retargeted_with(mapping, nullptr);
+}
+
+EditList EditList::retargeted(const NoteIdMap& mapping, const GapIdMap& gaps) const {
+    return retargeted_with(mapping, &gaps);
+}
+
+EditList EditList::retargeted_with(const NoteIdMap& mapping, const GapIdMap* gaps) const {
     std::vector<Edit> edits = edits_;
     std::vector<Edit> discarded = discarded_;
-    retarget_all(edits, mapping);
-    retarget_all(discarded, mapping);
+    retarget_all(edits, mapping, gaps);
+    retarget_all(discarded, mapping, gaps);
     return EditList{track_, std::move(edits), cursor_, std::move(discarded), next_seq_};
 }
 

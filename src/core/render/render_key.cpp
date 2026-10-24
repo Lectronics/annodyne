@@ -3,14 +3,18 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdio>
 
 namespace anno {
 
 namespace {
 
+// Every new hashed field bumps the version.
 constexpr std::uint32_t k_key_format_version =
-    3;  // 3: the stretch settings; 2: the whole TimeMap is part of the key
+    7;  // 7: the stretch engine, voiced_bridge and the vibrato mode (6); 5: local map spans, the
+        // splice fade; 4: edited gaps; 3: the stretch settings; 2: the whole TimeMap is part of
+        // the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -105,20 +109,32 @@ void put(Writer& w, const TimePair& p) {
     put(w, p.output);
 }
 
-void put(Writer& w, const TimeMap& map) {
+/// The map's lengths, and only the spans that meet [lo, hi] (output samples, inclusive): a block's
+/// samples depend on nothing else, so a timing edit elsewhere leaves its key alone (ADR-0023
+/// amendment 1, local invalidation). A cut has no output length, so it is kept when it sits inside.
+void put(Writer& w, const TimeMap& map, std::int64_t lo, std::int64_t hi, double rate_hz) {
     w.boolean(map.is_identity());
     put(w, map.source_length());
     put(w, map.output_length());
     if (map.is_identity()) {
         return;
     }
-    w.u64(map.spans().size());
+    const auto sample_of = [&](OutputTime t) {
+        return static_cast<std::int64_t>(std::llround((t - OutputTime{}).value() * rate_hz));
+    };
+    std::vector<const TimeSpan*> meeting;
     for (const TimeSpan& s : map.spans()) {
-        w.u64(static_cast<std::uint64_t>(s.kind));
-        put(w, s.source_start);
-        put(w, s.source_end);
-        put(w, s.output_start);
-        put(w, s.output_end);
+        if (sample_of(s.output_end) >= lo && sample_of(s.output_start) <= hi) {
+            meeting.push_back(&s);
+        }
+    }
+    w.u64(meeting.size());
+    for (const TimeSpan* s : meeting) {
+        w.u64(static_cast<std::uint64_t>(s->kind));
+        put(w, s->source_start);
+        put(w, s->source_end);
+        put(w, s->output_start);
+        put(w, s->output_end);
     }
 }
 
@@ -188,6 +204,9 @@ void put(Writer& w, const StretchParams* p) {
     w.f64(p->min_slope.value());
     w.f64(p->max_slope.value());
     w.u64(p->voiced_classes.bits());
+    w.u64(static_cast<std::uint64_t>(p->engine));
+    w.u64(static_cast<std::uint64_t>(p->vibrato));
+    w.f64(p->voiced_bridge.value());
 }
 
 }  // namespace
@@ -199,6 +218,30 @@ std::string note_fingerprint(const Note& note) {
     out.u64(w.hash_a());
     out.u64(w.hash_b());
     return out.data();
+}
+
+/// Edited gaps whose silence regions meet the region (ADR-0024), with the gate's fade.
+void put_gates(Writer& w, const RenderKeyInputs& in) {
+    std::vector<const GateInput*> gated;
+    for (const GateInput& g : in.gates) {
+        if (std::ranges::any_of(g.spans, [&](const GatedSpan& s) {
+                return s.first < in.region_end && s.last > in.region_begin;
+            })) {
+            gated.push_back(&g);
+        }
+    }
+    w.u64(gated.size());
+    w.i64(gated.empty() ? 0 : in.gate_fade_samples);
+    for (const GateInput* g : gated) {
+        w.text(g->gap->id.value);
+        w.f64(g->eff.gain.value());
+        w.u64(g->spans.size());
+        for (const GatedSpan& s : g->spans) {
+            w.i64(s.first);
+            w.i64(s.last);
+            w.u64((s.ramp_start ? 1U : 0U) | (s.ramp_end ? 2U : 0U));
+        }
+    }
 }
 
 std::string make_render_key(const RenderKeyInputs& in) {
@@ -214,7 +257,9 @@ std::string make_render_key(const RenderKeyInputs& in) {
     w.i64(in.region_begin);
     w.i64(in.region_end);
     w.f64(in.sample_rate_hz);
-    put(w, *in.time_map);
+    const std::int64_t reach = in.margin_samples + in.splice_fade_samples;
+    put(w, *in.time_map, in.region_begin - reach, in.region_end + reach, in.sample_rate_hz);
+    w.i64(in.splice_fade_samples);
     put(w, in.stretch);
 
     const auto name_of = [&](int index) {
@@ -251,6 +296,8 @@ std::string make_render_key(const RenderKeyInputs& in) {
         put(w, e->eff);
         w.text(note_fingerprint(*e->note));
     }
+
+    put_gates(w, in);
     return w.data();
 }
 

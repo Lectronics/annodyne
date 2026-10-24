@@ -16,7 +16,26 @@
 
 namespace anno {
 
+/// What happens to a vibrato in a stretched run (ADR-0023 amendment 3): `preserve` regenerates it
+/// at the source's rate and depth (phase-continuous, the rate within 0.5 / L Hz of the source's for
+/// an output run of L seconds that joins slope-1 audio, exactly the source's otherwise); `retime`
+/// re-times the contour with the audio, so the rate scales with 1 / slope (the Phase 5 behaviour).
+enum class VibratoMode : std::uint8_t { preserve, retime };
+
+/// Which renderer makes a stretched voiced span: this module's TD-PSOLA path (mono only; keeps
+/// the vibrato rate, `vibrato`) or Rubber Band R3 (ADR-0026: any channel count, a phase vocoder;
+/// the engine renders use, see RenderParams). The other fields below, `vibrato` and `voiced_bridge`
+/// included, apply to the PSOLA path only. StretchParams itself defaults to psola so the module's
+/// unit tests stay on the path they test; RenderParams overrides it.
+enum class StretchEngine : std::uint8_t { psola, rubberband };
+
 struct StretchParams {
+    StretchEngine engine = StretchEngine::psola;
+    VibratoMode vibrato = VibratoMode::preserve;
+    // A stretch of non-voiced frames shorter than this (source time) with voiced frames on both
+    // sides stays in the voiced run: a one-frame dropout of the classifier must not switch the
+    // renderer to the noise path and back (a step at each switch). >= 0, finite.
+    Seconds voiced_bridge{0.015};
     // Equal-power crossfade where voiced frames meet the others; >= 0, finite.
     Seconds class_edge_fade{0.004};
     // Unvoiced grain length (sine window, 50 % overlap); finite, > 0.
@@ -61,10 +80,10 @@ struct StretchParams {
 ///    noise_seed, the span's first output sample and the grain index, so the samples of a range do
 ///    not depend on which range was asked for). Digital silence stays exactly zero.
 ///  - Voiced and noise paths are joined with an equal-power crossfade of class_edge_fade.
-/// Mono only. Errors: invalid_argument (bad params; `span` not a warp; `out_range` outside the
-/// span; a note whose frame_class has the wrong size), not_implemented (stereo; slope outside
-/// [min_slope, max_slope]). Source samples outside the recording read as zero. Pure; thread-safe;
-/// not real-time safe.
+/// Mono only with engine psola (any channel count with rubberband). Errors: invalid_argument (bad
+/// params; `span` not a warp; `out_range` outside the span; a note whose frame_class has the wrong
+/// size), not_implemented (stereo; slope outside [min_slope, max_slope]). Source samples outside
+/// the recording read as zero. Pure; thread-safe; not real-time safe.
 [[nodiscard]] Result<OutputAudio> stretch_span(const AudioSource& src,
                                                const AnalysisResult& analysis, const TimeSpan& span,
                                                OutputRange out_range, const StretchParams& params);

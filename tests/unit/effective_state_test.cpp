@@ -278,7 +278,8 @@ double field_of(const EffectiveNote& e, const Note& note, EditParam p) {
     case EditParam::length_scale: return e.length_scale.value();
     case EditParam::attack_time_scale: return e.attack_time_scale.value();
     case EditParam::fade_shape:
-    case EditParam::time_handle: break;
+    case EditParam::time_handle:
+    case EditParam::gap_gain: break;  // not note parameters (gap_gain: effective_gap, ADR-0024)
     }
     return 0.0;
 }
@@ -292,8 +293,9 @@ EditValue value_of_kind(ValueKind kind, double v) {
     }
 }
 
+/// A scalar parameter of a note (gap_gain belongs to gaps and is folded by effective_gap).
 bool is_scalar(EditParam p) {
-    return p != EditParam::fade_shape && p != EditParam::time_handle;
+    return p != EditParam::fade_shape && p != EditParam::time_handle && p != EditParam::gap_gain;
 }
 
 }  // namespace

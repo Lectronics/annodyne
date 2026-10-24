@@ -10,8 +10,9 @@
 namespace anno::cli {
 
 struct AnalysisJsonOptions {
-    bool include_pitch_track = false;  // the per-frame f0, voicing and confidence arrays (large)
-    double source_duration_s = 0.0;    // written as source.duration_s when > 0
+    bool include_pitch_track =
+        false;                       // the per-frame f0, voicing, confidence and floor-curve arrays
+    double source_duration_s = 0.0;  // written as source.duration_s when > 0
 };
 
 /// Pretty-printed JSON (2 spaces), ending in a newline:
@@ -22,6 +23,11 @@ struct AnalysisJsonOptions {
 ///                "pitch_center_cents", "loudness_lufs", "confidence",
 ///                "separation_in": "hard"|"soft"}],
 ///     "onsets": [{"time_s", "strength", "kind"}],
+///     "gaps": [{"id", "before"|null, "after"|null, "start_s", "end_s", "floor_dbfs",
+///                "regions": [{"kind", "start_s", "end_s"}]}],  // only if the analysis has a
+///                timeline
+///     "noise_floor": {"hop_s", "start_s", "n_frames", "band_centre_hz": [], "band_dbfs": [],
+///                "curve_dbfs": []},  // only if present; the curve only with the option
 ///     "pitch": {"hop_s", "start_s", "n_frames", "f0_cents": [number|null], "voicing": [],
 ///     "confidence": []}  // only with the option }
 /// Times are source seconds, pitch is absolute cents (A4 = 6900), NaN is written as null. Pure;
