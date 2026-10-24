@@ -43,11 +43,12 @@ The vector is a **derived curve for consumers**, not the classifier's metric (S1
 [[nodiscard]] Result<void> validate(const NoiseTrack& track);
 
 /// core/dsp: splits `x` at a time-varying cut-off. low = STFT low-pass with a smooth transition
-/// (raised cosine in frequency, `transition_hz` wide, never narrower than 1.5 x the pitch), high =
+/// (raised cosine in frequency, `transition_hz` wide; the caller chooses it, the Rubber Band engine uses at least 1.5 x the note's pitch), high =
 /// x - low (exact by construction, so low + high == x to float rounding: amplitude-complementary
 /// masks, M_lo + M_hi = 1, not power-complementary). 2048-point Hann analysis, hop 512, synthesis
-/// window and overlap-add normalised by the window sum. cutoff_hz has one value per sample (the
-/// caller interpolates the frame curve); a cut-off of 0 gives low = 0.
+/// window and overlap-add normalised by the window sum. cutoff_hz has one value per sample, a raw-double span
+/// because it is a per-sample kernel buffer (the unit is in the name; the caller interpolates the
+/// frame curve from the `Hz` vector); a cut-off of 0 gives low = 0.
 struct BandSplit { std::vector<float> low; std::vector<float> high; };
 [[nodiscard]] Result<BandSplit> split_band(std::span<const float> x, Hz sample_rate,
                                            std::span<const double> cutoff_hz, Hz transition_hz);
@@ -73,6 +74,7 @@ Per frame the harmonics `k` with `k f0 < MVF - f0/2` are shifted in full, those 
 - **Zone and context.** The MVF curve is the note's, interpolated linearly between frame centres per sample, held from the edge frame beyond the note's first/last frame (same convention as the pitch curves), 0 where the note has no frames. A zero cut-off gives low = 0, so frames with no periodic part are returned unchanged and the cut-off sweeping to 0 over one hop is the fade between shifted and unshifted audio (no extra cross-fade; B5). Where two touching notes' zones overlap (ADR-0030) each uses its own MVF; the renderer's ramp blends two signals that agree above their cut-offs and below (same pitch curve); measured, not assumed (Test 8).
 - **Empty `max_voiced_hz`** (not measured): the engine falls back to the full-band shift (the default scope behaviour); it is not an error.
 - A shift below `k_neutral_snap_offset` returns the original samples exactly in this scope too.
+- **Alignment.** The shifted low band is aligned to the input exactly as the full-band path aligns its output (same context and start-delay handling), so the sum with `x - LP(x)` does not comb. Test 7 includes a null test: a shift just above the snap threshold stays close to the original within a stated dB, set from the first measurement.
 
 ## Effect on audio
 None until an option is on. The field is analysis data; no default render reads it; an unedited note never reaches an engine (rule 5).
@@ -89,7 +91,7 @@ None until an option is on. The field is analysis data; no default render reads 
 3. **Classes unchanged.** Frame classes are byte-identical before and after the change on the synthetic scenes and the committed `vocadito` tracks (the classifier reads the raw metric).
 4. **`analyse()`** end to end: `note.noise.max_voiced_hz.size() == n_frames`.
 5. **`validate`:** accepts empty; rejects a wrong length, NaN and a negative value. **Fingerprint:** two notes differing only in `max_voiced_hz` hash differently; the key version is 9.
-6. **`split_band`** (dsp): `low + high == x` to float rounding for constant and for moving cut-offs; a cut-off of 0 gives low = 0 and high = x exactly; the Hann/OLA normalisation gives a unit gain on a steady tone below the cut-off; the transition is never narrower than 1.5 f0.
+6. **`split_band`** (dsp): `low + high == x` to float rounding for constant and for moving cut-offs; a cut-off of 0 gives low = 0 and high = x exactly; the Hann/OLA normalisation gives a unit gain on a steady tone below the cut-off; a wider transition leaves a steady tone below the cut-off at unit gain. (The 1.5 x f0 floor is the engine's choice, tested in item 7.)
 7. **Rubber Band `below_mvf`:** a below-snap shift is bit-exact; for shifts of +-100, +-300 and +-1200 cents on a harmonic-plus-noise tone the band above `MVF + transition` is unchanged within a stated dB (set from the first measurement, then fixed), the shifted harmonics below the cut-off land at the right pitch (autocorrelation), no energy appears above the cut-off from shifted harmonics (upward case), and the downward gap is the documented size; `formant_offset` with the scope is `invalid_argument`; an empty field falls back to the full-band shift; stereo; the live-shifter path; a click check at a cut-off change.
 8. **Neighbours:** two touching notes with different MVFs and offsets render without a level step larger than the full-band render's at the boundary.
 9. **Harmonic-noise engine:** the noise above the MVF stays within 1 dB of the original in a breathy synthetic frame; the harmonic weights at `MVF +- f0/2` are as specified.
