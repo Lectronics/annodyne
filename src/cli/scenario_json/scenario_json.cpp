@@ -394,6 +394,27 @@ Result<ScenarioMacro> parse_macro(const Json& j, const std::string& path) {
     return macro;
 }
 
+/// The "stretch_vibrato" and "stretch_engine" keys (absent: the defaults).
+Result<void> parse_stretch_keys(const Json& root, Scenario& scenario) {
+    auto vibrato = string_field(root, "stretch_vibrato", "$", false);
+    if (!vibrato) {
+        return Unexpected{vibrato.error()};
+    }
+    if (!vibrato->empty() && *vibrato != "retime" && *vibrato != "preserve") {
+        return bad("$.stretch_vibrato", R"(must be "preserve" or "retime")");
+    }
+    scenario.stretch_vibrato_retime = *vibrato == "retime";
+    auto engine = string_field(root, "stretch_engine", "$", false);
+    if (!engine) {
+        return Unexpected{engine.error()};
+    }
+    if (!engine->empty() && *engine != "psola" && *engine != "rubberband") {
+        return bad("$.stretch_engine", R"(must be "psola" or "rubberband")");
+    }
+    scenario.stretch_psola = *engine == "psola";
+    return {};
+}
+
 /// Fills the Rubber Band engine settings from the "rubberband" object (absent: defaults).
 Result<void> parse_rubberband(const Json& root, Scenario& scenario) {
     const auto rb = root.find("rubberband");
@@ -528,22 +549,9 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
     scenario.name = *name;
     scenario.source = resolve_source(*source, base_dir, repo_root);
     scenario.algorithm = algorithm->empty() ? "melodic" : *algorithm;
-    auto vibrato = string_field(root, "stretch_vibrato", "$", false);
-    if (!vibrato) {
-        return Unexpected{vibrato.error()};
+    if (auto parsed = parse_stretch_keys(root, scenario); !parsed) {
+        return Unexpected{parsed.error()};
     }
-    if (!vibrato->empty() && *vibrato != "retime" && *vibrato != "preserve") {
-        return bad("$.stretch_vibrato", R"(must be "preserve" or "retime")");
-    }
-    scenario.stretch_vibrato_retime = *vibrato == "retime";
-    auto engine = string_field(root, "stretch_engine", "$", false);
-    if (!engine) {
-        return Unexpected{engine.error()};
-    }
-    if (!engine->empty() && *engine != "psola" && *engine != "rubberband") {
-        return bad("$.stretch_engine", R"(must be "psola" or "rubberband")");
-    }
-    scenario.stretch_psola = *engine == "psola";
     auto analysis = string_field(root, "analysis", "$", false);
     if (!analysis) {
         return Unexpected{analysis.error()};

@@ -71,7 +71,7 @@ public:
     [[nodiscard]] Result<OutputAudio>
     render_note_in_context(const AudioSource& src, const Note& note, const EffectiveNote& eff,
                            const TimeMap& time_map, OutputRange out_range,
-                           const TouchingNotes& context) const override;
+                           const TouchingNotes& touching) const override;
 
 private:
     RubberBandPitchParams params_;
