@@ -9,7 +9,6 @@
 #include "core/types/time_range.h"
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -17,28 +16,6 @@
 // Design: docs/design/phase2-render-skeleton.md.
 
 namespace anno {
-
-/// A touching neighbour of an edited note (its gap to this note is at most k_touching_gap): the
-/// pitch offset it ends up with and whether an engine renders it (a pitch-edited note) or the base
-/// audio plays there (an unedited, timing-only or level-only note; offset 0 then).
-struct NeighbourOffset {
-    Cents offset;
-    bool rendered = false;
-
-    friend bool operator==(const NeighbourOffset&, const NeighbourOffset&) = default;
-};
-
-/// The notes touching an edited note, so a pitch engine can glide between offsets instead of
-/// stepping at the boundary (ADR-0030). Empty: no touching neighbour on that side.
-struct TouchingNotes {
-    std::optional<NeighbourOffset> previous;
-    std::optional<NeighbourOffset> next;
-
-    friend bool operator==(const TouchingNotes&, const TouchingNotes&) = default;
-};
-
-/// Notes closer than this (end to start, seconds) count as touching.
-inline constexpr Seconds k_touching_gap{0.030};
 
 class SynthesisEngine {
 public:
@@ -68,16 +45,6 @@ public:
                                                           const EffectiveNote& eff,
                                                           const TimeMap& time_map,
                                                           OutputRange out_range) const = 0;
-
-    /// render_note with the touching neighbours of `note` (ADR-0030). The default ignores the
-    /// context; an engine that can follow a pitch curve through a boundary overrides it. The
-    /// renderer always calls this one. Same contract and errors as render_note.
-    [[nodiscard]] virtual Result<OutputAudio>
-    render_note_in_context(const AudioSource& src, const Note& note, const EffectiveNote& eff,
-                           const TimeMap& time_map, OutputRange out_range,
-                           const TouchingNotes& /*context*/) const {
-        return render_note(src, note, eff, time_map, out_range);
-    }
 };
 
 }  // namespace anno

@@ -221,40 +221,6 @@ bool gate_meets_region(const GateInput& g, std::int64_t begin, std::int64_t end)
                                [&](const GatedSpan& s) { return s.first < end && s.last > begin; });
 }
 
-/// What the pitch engine learns about the notes touching `index` (ADR-0030): their offsets and
-/// whether an engine renders them.
-std::optional<NeighbourOffset> neighbour_of(const Note& neighbour, const EditList& edits) {
-    const EffectiveNote eff = effective_state(neighbour, edits);
-    const bool rendered =
-        eff.is_edited && !only_timing_edited(without_level(eff), neighbour.pitch_center);
-    return NeighbourOffset{.offset = rendered ? eff.center - neighbour.pitch_center : Cents{},
-                           .rendered = rendered};
-}
-
-TouchingNotes context_of(const std::vector<Note>& notes, std::size_t index, const EditList& edits) {
-    TouchingNotes context;
-    const Note& note = notes[index];
-    for (std::size_t k = index; k-- > 0;) {
-        if (!notes[k].is_active) {
-            continue;
-        }
-        if ((note.source_start - notes[k].source_end) <= k_touching_gap) {
-            context.previous = neighbour_of(notes[k], edits);
-        }
-        break;
-    }
-    for (std::size_t k = index + 1; k < notes.size(); ++k) {
-        if (!notes[k].is_active) {
-            continue;
-        }
-        if ((notes[k].source_start - note.source_end) <= k_touching_gap) {
-            context.next = neighbour_of(notes[k], edits);
-        }
-        break;
-    }
-    return context;
-}
-
 Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderParams& params,
                        std::pair<std::int64_t, std::int64_t> region) {
     Plan plan;
@@ -264,8 +230,7 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
     plan.region_begin = region.first;
     plan.region_end = region.second;
     plan.margin = to_samples(params.crossfade_length, plan.sample_rate, Rounding::nearest).value();
-    for (std::size_t index = 0; index < in.analysis->notes.size(); ++index) {
-        const Note& note = in.analysis->notes[index];
+    for (const Note& note : in.analysis->notes) {
         if (!note.is_active) {
             continue;
         }
@@ -303,10 +268,8 @@ Result<Plan> make_plan(const RenderInputs& in, const TimeMap& map, const RenderP
                             "' has a pitch, level or formant edit and its zone meets a cut or "
                             "insert of the layout (combining them is not implemented yet)");
         }
-        plan.edited.push_back({.note = &note,
-                               .eff = std::move(eff),
-                               .span = {.begin = begin, .end = end},
-                               .context = context_of(in.analysis->notes, index, *in.edits)});
+        plan.edited.push_back(
+            {.note = &note, .eff = std::move(eff), .span = {.begin = begin, .end = end}});
     }
     std::vector<SampleSpan> spans;
     spans.reserve(plan.edited.size());
@@ -428,8 +391,7 @@ Result<Zone> render_zone(const RenderInputs& in, const TimeMap& map, const Synth
     }
     std::optional<OutputAudio> rendered;
     if (pitch_edited) {
-        auto from_engine =
-            engine.render_note_in_context(in.source, *e.note, engine_eff, map, range, e.context);
+        auto from_engine = engine.render_note(in.source, *e.note, engine_eff, map, range);
         if (!from_engine) {
             return Unexpected{from_engine.error()};
         }

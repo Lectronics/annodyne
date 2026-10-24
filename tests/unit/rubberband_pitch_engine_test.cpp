@@ -251,47 +251,52 @@ double pitch_between(const OutputAudio& out, double from_s, double to_s) {
 
 }  // namespace
 
-TEST_CASE("an_unedited_touching_neighbour_makes_the_offset_glide_in_and_out",
-          "[rubberband_pitch]") {
-    // A steady 220 Hz tone 0.2 .. 1.4 s; the note under edit is 0.6 .. 1.0 s, +300 cents, with
-    // unedited notes touching it on both sides. Outside the note the pitch must stay 220 Hz, inside
-    // (after the 40 ms glide) 220 x 2^(300/1200).
+TEST_CASE("only_the_notes_core_is_corrected_and_the_ends_stay_as_sung", "[rubberband_pitch]") {
+    // A steady 220 Hz tone 0.2 .. 1.4 s; the note under edit is 0.5 .. 1.1 s with its settled core
+    // 0.7 .. 0.9 s, +300 cents. Outside the core the pitch stays 220 Hz (the approach and release
+    // are not corrected); inside, after the 40 ms ramp, it is 220 x 2^(300/1200).
     const Fixture fx = steady_voice();
     Note note = fx.note;
-    note.source_start = SourceTime::unchecked_from_origin(Seconds{0.6});
-    note.source_end = SourceTime::unchecked_from_origin(Seconds{1.0});
+    note.source_start = SourceTime::unchecked_from_origin(Seconds{0.5});
+    note.source_end = SourceTime::unchecked_from_origin(Seconds{1.1});
+    note.pitch_target.core = SourceRange::make(SourceTime::unchecked_from_origin(Seconds{0.7}),
+                                               SourceTime::unchecked_from_origin(Seconds{0.9}))
+                                 .value();
+    note.noise.frame_class.clear();  // every frame counts as shifted
+    note.noise.grid = FrameGrid{};
     const RubberBandPitchEngine engine;
-    TouchingNotes touching;
-    touching.previous = NeighbourOffset{.offset = Cents{0.0}, .rendered = false};
-    touching.next = NeighbourOffset{.offset = Cents{0.0}, .rendered = false};
     const auto out = engine
-                         .render_note_in_context(
-                             fx.src, note, fx.effective(300.0), fx.map,
-                             OutputRange::from_start(OutputTime{}, Seconds{k_total_s}), touching)
+                         .render_note(fx.src, note, fx.effective(300.0), fx.map,
+                                      OutputRange::from_start(OutputTime{}, Seconds{k_total_s}))
                          .value();
     const double shifted = 220.0 * std::pow(2.0, 300.0 / 1200.0);
-    CHECK(std::abs(pitch_between(out, 0.40, 0.55) / 220.0 - 1.0) < 0.015);
-    CHECK(std::abs(pitch_between(out, 0.72, 0.90) / shifted - 1.0) < 0.015);
-    CHECK(std::abs(pitch_between(out, 1.08, 1.25) / 220.0 - 1.0) < 0.015);
+    CHECK(std::abs(pitch_between(out, 0.40, 0.66) / 220.0 - 1.0) < 0.015);
+    CHECK(std::abs(pitch_between(out, 0.76, 0.84) / shifted - 1.0) < 0.02);
+    CHECK(std::abs(pitch_between(out, 0.95, 1.30) / 220.0 - 1.0) < 0.015);
 }
 
-TEST_CASE("no_touching_neighbour_or_equal_offsets_render_exactly_like_render_note",
-          "[rubberband_pitch]") {
+TEST_CASE("frames_of_a_class_that_is_not_shifted_stay_where_they_were", "[rubberband_pitch]") {
     const Fixture fx = steady_voice();
-    const RubberBandPitchEngine engine;
+    const RubberBandPitchEngine voiced_only;  // default: voiced and breathy frames are shifted
+    RubberBandPitchParams none_shifted;
+    none_shifted.shifted_classes = FrameClassSet{};
+    const RubberBandPitchEngine nothing{none_shifted};
     const OutputRange all = OutputRange::from_start(OutputTime{}, Seconds{k_total_s});
-    const auto plain = samples_of(fx.render(engine, fx.effective(200.0)).value());
-    const auto none = samples_of(
-        engine.render_note_in_context(fx.src, fx.note, fx.effective(200.0), fx.map, all, {})
-            .value());
-    CHECK(std::memcmp(plain.data(), none.data(), plain.size() * sizeof(float)) == 0);
-    TouchingNotes same;
-    same.previous = NeighbourOffset{.offset = Cents{200.0}, .rendered = true};
-    same.next = NeighbourOffset{.offset = Cents{200.0}, .rendered = true};
-    const auto equal = samples_of(
-        engine.render_note_in_context(fx.src, fx.note, fx.effective(200.0), fx.map, all, same)
-            .value());
-    CHECK(std::memcmp(plain.data(), equal.data(), plain.size() * sizeof(float)) == 0);
+    EffectiveNote e = fx.effective(300.0);
+    const auto shifted_out = nothing.render_note(fx.src, fx.note, e, fx.map, all).value();
+    const auto default_out = voiced_only.render_note(fx.src, fx.note, e, fx.map, all).value();
+    CHECK(std::abs(pitch_between(shifted_out, 0.5, 1.1) / 220.0 - 1.0) < 0.015);
+    CHECK(std::abs(pitch_between(default_out, 0.5, 1.1) / (220.0 * std::pow(2.0, 0.25)) - 1.0) <
+          0.02);
+}
+
+TEST_CASE("core_only_off_corrects_the_whole_zone_by_a_constant_offset", "[rubberband_pitch]") {
+    const Fixture fx = steady_voice();
+    RubberBandPitchParams whole;
+    whole.core_only = false;
+    const RubberBandPitchEngine engine{whole};
+    const auto out = fx.render(engine, fx.effective(300.0)).value();
+    CHECK(std::abs(pitch_between(out, 0.25, 0.4) / (220.0 * std::pow(2.0, 0.25)) - 1.0) < 0.015);
 }
 
 TEST_CASE("a_negative_glide_time_is_an_invalid_argument", "[rubberband_pitch]") {

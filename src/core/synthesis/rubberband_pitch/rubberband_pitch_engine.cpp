@@ -18,6 +18,11 @@ namespace anno {
 
 namespace {
 
+// The shifted audio is blended in over these fractions of the full offset (see render_note): none
+// below k_zero_below, all at k_zero_below + k_blend_width.
+constexpr double k_zero_below = 0.02;
+constexpr double k_blend_width = 0.08;
+
 constexpr std::size_t k_block = 2048;  // frames per study/process call
 
 struct SilentLogger final : RubberBand::RubberBandStretcher::Logger {
@@ -125,13 +130,15 @@ struct SilentShifterLogger final : RubberBand::RubberBandLiveShifter::Logger {
     void log(const char* /*message*/, double /*a*/, double /*b*/) override {}
 };
 
-/// How the offset moves at the note's boundaries (ADR-0030). Positions are output samples.
-struct Glide {
+/// Where and how much the note is corrected (ADR-0032). Positions are output samples.
+struct Window {
     double own_cents = 0.0;
-    double note_first = 0.0;  // the note's first output sample
-    double note_last = 0.0;   // one past its last
-    double time_samples = 0.0;
-    TouchingNotes context;
+    double first = 0.0;  // the corrected span: the note's settled core, or the whole note
+    double last = 0.0;
+    double ramp = 1.0;  // samples over which the offset rises and falls inside the span
+    bool core_only = true;
+    std::vector<double> class_position;  // frame centres
+    std::vector<double> class_weight;    // 1: a shifted class, 0: left as it is
 };
 
 double raised_cosine(double x) {
@@ -139,54 +146,45 @@ double raised_cosine(double x) {
     return 0.5 * (1.0 - std::cos(std::numbers::pi * c));
 }
 
-/// True if a touching neighbour's offset differs from the note's own (so a constant offset would
-/// step at that boundary).
-bool needs_glide(const TouchingNotes& context, double own_cents) {
-    const auto differs = [&](const std::optional<NeighbourOffset>& n) {
-        return n && std::abs(own_cents - (n->rendered ? n->offset.value() : 0.0)) >
-                        k_neutral_snap_offset;
-    };
-    return differs(context.previous) || differs(context.next);
+/// 1 where frames are shifted, 0 where not, linear between frame centres, held beyond the ends.
+double class_weight_at(const Window& w, double n) {
+    if (w.class_position.empty()) {
+        return 1.0;
+    }
+    if (n <= w.class_position.front()) {
+        return w.class_weight.front();
+    }
+    if (n >= w.class_position.back()) {
+        return w.class_weight.back();
+    }
+    const auto upper = std::ranges::upper_bound(w.class_position, n);
+    const auto k = static_cast<std::size_t>(upper - w.class_position.begin());
+    const double t =
+        (n - w.class_position[k - 1]) / (w.class_position[k] - w.class_position[k - 1]);
+    return (1.0 - t) * w.class_weight[k - 1] + t * w.class_weight[k];
 }
 
-/// The offset (cents) at output sample `n`: the note's own, moved toward a touching neighbour's
-/// across the boundary. A rendered neighbour follows the same curve, so the glide is centred on the
-/// boundary (each note renders its half); an unrendered one plays the base audio, so the note
-/// ramps from 0 at the boundary.
-double offset_at(const Glide& g, double n) {
-    double value = g.own_cents;
-    const double half = 0.5 * g.time_samples;
-    if (g.context.previous) {
-        const NeighbourOffset& p = *g.context.previous;
-        if (p.rendered) {
-            value =
-                p.offset.value() + (g.own_cents - p.offset.value()) *
-                                       raised_cosine((n - (g.note_first - half)) / g.time_samples);
-        } else {
-            value = g.own_cents * raised_cosine((n - g.note_first) / g.time_samples);
-        }
+/// The offset (cents) at output sample `n`: the note's own offset inside its core, rising and
+/// falling over `ramp` samples inside the core, so what is sung before and after the core (an
+/// approach, a scoop, a release) stays as it was, and zero on frames of a class that is not shifted
+/// (sibilants, breaths, plosives, silence).
+double offset_at(const Window& w, double n) {
+    if (!w.core_only) {
+        return w.own_cents;
     }
-    if (g.context.next) {
-        const NeighbourOffset& x = *g.context.next;
-        if (x.rendered) {
-            value += (x.offset.value() - value) *
-                     raised_cosine((n - (g.note_last - half)) / g.time_samples);
-        } else {
-            value *= 1.0 - raised_cosine((n - (g.note_last - g.time_samples)) / g.time_samples);
-        }
-    }
-    return value;
+    return w.own_cents * raised_cosine((n - w.first) / w.ramp) *
+           raised_cosine((w.last - n) / w.ramp) * class_weight_at(w, n);
 }
 
 /// Pitch change in cents at each of `count` samples starting at output sample `first`: the static
 /// centre offset plus (mod_scale - 1) x the note's modulation and (drift_scale - 1) x its drift,
 /// both read from the note's frames (linear between frame centres, zero outside the note).
-std::vector<double> curve_cents(const Note& note, const EffectiveNote& eff, const Glide& glide,
+std::vector<double> curve_cents(const Note& note, const EffectiveNote& eff, const Window& window,
                                 std::int64_t first, std::int64_t count, double rate_hz,
                                 std::int64_t shift_samples, double gain) {
-    std::vector<double> out(static_cast<std::size_t>(count), glide.own_cents);
+    std::vector<double> out(static_cast<std::size_t>(count), window.own_cents);
     for (std::int64_t i = 0; i < count; ++i) {
-        out[static_cast<std::size_t>(i)] = offset_at(glide, static_cast<double>(first + i));
+        out[static_cast<std::size_t>(i)] = offset_at(window, static_cast<double>(first + i));
     }
     const double mod_extra = (eff.mod_scale.value() - 1.0) * gain;
     const double drift_extra = (eff.drift_scale.value() - 1.0) * gain;
@@ -303,6 +301,57 @@ Result<void> check_request(const RubberBandPitchParams& params, const Note& note
     return {};
 }
 
+/// The span the note is corrected over and the frame weights (ADR-0032).
+Window make_window(const Note& note, double own_cents, std::int64_t shift_samples, double rate_hz,
+                   const RubberBandPitchParams& params) {
+    Window w;
+    w.own_cents = own_cents;
+    w.core_only = params.core_only;
+    const auto at = [&](SourceTime t) {
+        return (t - SourceTime{}).value() * rate_hz + static_cast<double>(shift_samples);
+    };
+    w.first = at(note.source_start);
+    w.last = at(note.source_end);
+    const SourceRange& core = note.pitch_target.core;
+    if (core.end() > core.start()) {  // an unset core is empty: the whole note
+        w.first = std::max(w.first, at(core.start()));
+        w.last = std::min(w.last, at(core.end()));
+    }
+    w.ramp = std::max(1.0, params.glide_time.value() * rate_hz);
+    if (note.noise.grid.n_frames > 0 &&
+        note.noise.frame_class.size() == static_cast<std::size_t>(note.noise.grid.n_frames)) {
+        for (std::int64_t i = 0; i < note.noise.grid.n_frames; ++i) {
+            w.class_position.push_back(at(frame_time(note.noise.grid, i)));
+            w.class_weight.push_back(
+                params.shifted_classes.contains(note.noise.frame_class[static_cast<std::size_t>(i)])
+                    ? 1.0
+                    : 0.0);
+        }
+    }
+    return w;
+}
+
+/// Where the offset is effectively zero (outside the core, on unshifted classes) the original
+/// samples are kept: the shifter smears an attack even at a ratio of 1, and a note's start is often
+/// one. The shifted audio fades in once the offset is a few percent of its full value, while the
+/// two signals are still almost the same.
+void keep_original_where_unshifted(const AudioBuffer& original, const Window& window,
+                                   std::int64_t original_first,
+                                   std::vector<std::vector<float>>& shifted) {
+    const double own = std::max(std::abs(window.own_cents), 1e-9);
+    for (std::size_t c = 0; c < shifted.size(); ++c) {
+        const auto source = original.channel(static_cast<int>(c));
+        for (std::size_t i = 0; i < shifted[c].size(); ++i) {
+            const double strength = std::abs(offset_at(window, static_cast<double>(original_first) +
+                                                                   static_cast<double>(i))) /
+                                    own;
+            const double keep = std::clamp((strength - k_zero_below) / k_blend_width, 0.0, 1.0);
+            shifted[c][i] = static_cast<float>(keep * static_cast<double>(shifted[c][i]) +
+                                               (1.0 - keep) * static_cast<double>(source[i]));
+        }
+    }
+}
+
 }  // namespace
 
 std::string RubberBandPitchEngine::settings_key() const {
@@ -312,19 +361,15 @@ std::string RubberBandPitchEngine::settings_key() const {
            ";lead=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_lead.value())) +
            ";gain=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_gain.value())) +
            ";glide=" + hex64(std::bit_cast<std::uint64_t>(params_.glide_time.value())) +
-           ";fpath=" + (params_.formant_path == FormantPath::live ? "l" : "o");
+           ";fpath=" + (params_.formant_path == FormantPath::live ? "l" : "o") +
+           ";core=" + (params_.core_only ? "1" : "0") +
+           ";classes=" + hex64(params_.shifted_classes.bits());
 }
 
 Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, const Note& note,
                                                        const EffectiveNote& eff,
                                                        const TimeMap& time_map,
                                                        OutputRange out_range) const {
-    return render_note_in_context(src, note, eff, time_map, out_range, TouchingNotes{});
-}
-
-Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
-    const AudioSource& src, const Note& note, const EffectiveNote& eff, const TimeMap& time_map,
-    OutputRange out_range, const TouchingNotes& touching) const {
     if (auto ok = check_params(params_); !ok) {
         return Unexpected{ok.error()};
     }
@@ -357,22 +402,17 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
         return Unexpected{result.error()};
     }
     const auto offset = static_cast<std::ptrdiff_t>(first.value() - ext_first);
-    const bool gliding = needs_glide(touching, shift_cents);
     const double formant_scale =
         eff.formant_offset.value() != 0.0 ? std::exp2(eff.formant_offset.value() / 1200.0) : 0.0;
-    // A pitch that changes through the zone needs the live shifter; a constant pitch and formant
-    // offset use the offline stretcher (standard window, better quality).
-    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 || gliding ||
+    const bool pitch_edit = std::abs(shift_cents) > k_neutral_snap_offset;
+    // A pitch that changes through the zone needs the live shifter: the core window and the class
+    // weights (ADR-0032), the modulation and drift scales; a constant offset (core_only off) and a
+    // constant formant offset use the offline stretcher (standard window, better quality).
+    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 ||
+                        (pitch_edit && params_.core_only) ||
                         (formant_scale != 0.0 && params_.formant_path == FormantPath::live);
-    const Glide glide{.own_cents = shift_cents,
-                      .note_first = (note.source_start - SourceTime{}).value() * rate.value() +
-                                    static_cast<double>(*shift_samples),
-                      .note_last = (note.source_end - SourceTime{}).value() * rate.value() +
-                                   static_cast<double>(*shift_samples),
-                      .time_samples = std::max(1.0, params_.glide_time.value() * rate.value()),
-                      .context = gliding ? touching : TouchingNotes{}};
-    const bool neutral =
-        std::abs(shift_cents) <= k_neutral_snap_offset && !curved && formant_scale == 0.0;
+    const bool neutral = !pitch_edit && !curved && formant_scale == 0.0;
+    const Window window = make_window(note, shift_cents, *shift_samples, rate.value(), params_);
     std::vector<std::vector<float>> shifted;
     if (!neutral && last > first) {
         std::vector<std::vector<float>> in;
@@ -383,12 +423,20 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
         shifted = curved
                       ? shift_curve(
                             in, rate.value(),
-                            curve_cents(note, eff, glide, ext_first, ext_last - ext_first,
+                            curve_cents(note, eff, window, ext_first, ext_last - ext_first,
                                         rate.value(), *shift_samples, params_.curve_gain.value()),
                             params_.formants,
                             std::llround(params_.curve_lead.value() * rate.value()), formant_scale)
                       : shift(in, rate.value(), std::exp2(shift_cents / 1200.0), params_.formants,
                               formant_scale);
+    }
+    // Where the offset is effectively zero (outside the core, on unshifted classes) the original
+    // samples are kept (see keep_original_where_unshifted).
+    const bool keep_original_at_zero = curved && params_.core_only && pitch_edit &&
+                                       eff.mod_scale.value() == 1.0 &&
+                                       eff.drift_scale.value() == 1.0 && formant_scale == 0.0;
+    if (keep_original_at_zero && !neutral && last > first) {
+        keep_original_where_unshifted(*ext, window, ext_first, shifted);
     }
     for (int c = 0; c < result->channel_count(); ++c) {
         auto out = result->channel(c);

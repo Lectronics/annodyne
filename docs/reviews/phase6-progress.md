@@ -18,6 +18,9 @@ Written while the owner was away; nothing here is a phase close-out. Branch `pha
 - Demos asked for: `audition/phase6-fade` (1.2 s fade up, 0.64 s fade down, then a cut back to full level), `audition/phase6-formant-file` (formant +-300 cents on every note of the file; scenario macro `formant`).
 - Hitches in the Rubber Band Correct Pitch render at 4.322 s and 6.61-6.63 s traced to the boundary between two corrected notes with different offsets; touching notes now glide (ADR-0030, `TouchingNotes`, key version 8). 4.322 s is clear of cycle-similarity dips; 6.61-6.63 s is not (both notes are breathy): next step is shifting voiced frames only and/or a longer glide.
 
+## Core-only correction (ADR-0032, ADR-0031 items 4 and 6)
+After the owner heard the three glides as identical and described gain dips in open vowels: the Rubber Band engine now corrects only the settled core of a note (offset ramps in and out over 40 ms inside it), leaves unpitched frames unshifted, and keeps the original samples where the offset is effectively zero. Level dips under 6 dB in the full-song correction: 19 -> 8 (PSOLA 4). The glide A/B packages (`audition/phase6-glide`) are obsolete. Not done: ADR-0031 item 1's formant check as a C++ objective check, a per-frame maximum voiced frequency in the analysis, and the six remaining in-note dips.
+
 ## Tests
 debug-asan: 1023/1023 on the build before the sibilant slice and the CI fixes (the later slices and fixes were run as unit tests: `level_test`, `expression_tools_test`, `stretch_span_test`, `scenario_test`; clang-tidy and `check_includes` clean). PR #4 CI: see the PR.
 
