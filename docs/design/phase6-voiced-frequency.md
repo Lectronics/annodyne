@@ -1,7 +1,7 @@
 # Design note: the maximum voiced frequency per frame (MVF)
 
 - **Phase:** 6
-- **Status:** draft, revision 1 (structure review round 1: 7 blocking findings B1-B7 and 8 should-fix S1-S8 answered below). Nothing implemented.
+- **Status:** approved (structure review round 2, ADR-0033 accepted by the owner 2026-10-23); implementing in slices
 - **Spec sections:** `docs/specs/annodyne-implementation-guide.md` (voicing, the harmonic + noise model); ADR-0017 (frame classes; item 4 and the amendment of 2026-10-21 that deferred the per-frame MVF), ADR-0018, ADR-0031 item 4, ADR-0033 (written with this note), `docs/design/vocal-resynthesis-research.md` (line 172 defines an MVF from band aperiodicity)
 - **Folders / targets:** `src/core/types` (`NoiseTrack`, layer 0), `src/core/analysis/harmonic_noise` (layer 1, produces it), `src/core/dsp` (the band split, layer 0), consumers `src/core/synthesis/harmonic_noise` and `src/core/synthesis/rubberband_pitch` (layer 2)
 

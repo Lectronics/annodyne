@@ -1,7 +1,7 @@
 # ADR-0033: store the maximum voiced frequency per frame in NoiseTrack
 
 - **Date:** 2026-10-23
-- **Status:** proposed
+- **Status:** accepted (owner, 2026-10-23)
 - **Phase:** 6
 
 ## Context
