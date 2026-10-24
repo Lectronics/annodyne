@@ -55,7 +55,8 @@ Result<void> check_params(const RubberBandPitchParams& p) {
 
 /// `in` (one vector per channel) through R3 with the pitch scale and time ratio 1, exactly as long.
 std::vector<std::vector<float>> shift(const std::vector<std::vector<float>>& in, double rate_hz,
-                                      double pitch_scale, PitchFormants formants) {
+                                      double pitch_scale, PitchFormants formants,
+                                      double formant_scale) {
     namespace rb = RubberBand;
     const std::size_t n = in.front().size();
     const std::size_t channels = in.size();
@@ -72,6 +73,9 @@ std::vector<std::vector<float>> shift(const std::vector<std::vector<float>>& in,
     rb::RubberBandStretcher stretcher(static_cast<std::size_t>(std::llround(rate_hz)), channels,
                                       std::make_shared<SilentLogger>(), options, 1.0, pitch_scale);
     stretcher.setDebugLevel(0);
+    if (formant_scale != 0.0) {
+        stretcher.setFormantScale(formant_scale);
+    }
     stretcher.setExpectedInputDuration(n);
     std::vector<const float*> input(channels);
     const auto point_at = [&](std::size_t at) {
@@ -348,8 +352,11 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
     }
     const auto offset = static_cast<std::ptrdiff_t>(first.value() - ext_first);
     const bool gliding = needs_glide(touching, shift_cents);
-    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 ||
-                        eff.formant_offset.value() != 0.0 || gliding;
+    const double formant_scale =
+        eff.formant_offset.value() != 0.0 ? std::exp2(eff.formant_offset.value() / 1200.0) : 0.0;
+    // A pitch that changes through the zone needs the live shifter; a constant pitch and formant
+    // offset use the offline stretcher (standard window, better quality).
+    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 || gliding;
     const Glide glide{.own_cents = shift_cents,
                       .note_first = (note.source_start - SourceTime{}).value() * rate.value() +
                                     static_cast<double>(*shift_samples),
@@ -357,7 +364,8 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
                                    static_cast<double>(*shift_samples),
                       .time_samples = std::max(1.0, params_.glide_time.value() * rate.value()),
                       .context = gliding ? touching : TouchingNotes{}};
-    const bool neutral = std::abs(shift_cents) <= k_neutral_snap_offset && !curved;
+    const bool neutral =
+        std::abs(shift_cents) <= k_neutral_snap_offset && !curved && formant_scale == 0.0;
     std::vector<std::vector<float>> shifted;
     if (!neutral && last > first) {
         std::vector<std::vector<float>> in;
@@ -365,17 +373,15 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
         for (int c = 0; c < ext->channel_count(); ++c) {
             in.emplace_back(ext->channel(c).begin(), ext->channel(c).end());
         }
-        shifted =
-            curved
-                ? shift_curve(in, rate.value(),
-                              curve_cents(note, eff, glide, ext_first, ext_last - ext_first,
-                                          rate.value(), *shift_samples, params_.curve_gain.value()),
-                              params_.formants,
-                              std::llround(params_.curve_lead.value() * rate.value()),
-                              eff.formant_offset.value() != 0.0
-                                  ? std::exp2(eff.formant_offset.value() / 1200.0)
-                                  : 0.0)
-                : shift(in, rate.value(), std::exp2(shift_cents / 1200.0), params_.formants);
+        shifted = curved
+                      ? shift_curve(
+                            in, rate.value(),
+                            curve_cents(note, eff, glide, ext_first, ext_last - ext_first,
+                                        rate.value(), *shift_samples, params_.curve_gain.value()),
+                            params_.formants,
+                            std::llround(params_.curve_lead.value() * rate.value()), formant_scale)
+                      : shift(in, rate.value(), std::exp2(shift_cents / 1200.0), params_.formants,
+                              formant_scale);
     }
     for (int c = 0; c < result->channel_count(); ++c) {
         auto out = result->channel(c);
