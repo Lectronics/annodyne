@@ -33,3 +33,18 @@ debug-asan: 1023/1023 on the build before the sibilant slice and the CI fixes (t
 
 ## Not started
 `tools/pitch` transitions and continuous curves (needs an `AmountCurve` type and an ADR), the voiced noise gain, the breath chain and macros, and the ADR-0019 SPTK trial.
+
+## Maximum voiced frequency (ADR-0033), state at 2026-10-23
+
+Done (design note `docs/design/phase6-voiced-frequency.md`, approved after two structure reviews):
+- `NoiseTrack::max_voiced_hz` filled by `split_harmonic_noise` (derived curve, `mvf_floor` 500 Hz), validated, hashed in the note fingerprint; render key version 9; analysis JSON writes `mvf_hz` per sound-class run. Frame classes unchanged (the classifier still reads the raw metric); full debug-asan run passed 1043/1043 after the analysis slice.
+- `split_band` (core/dsp): time-varying STFT low/high split, `low + high == x`.
+- `RubberBandPitchEngine` `ShiftScope::below_mvf` (engine version 4, off by default), scenario key `rubberband.scope`.
+- Finding: the metric cannot exceed about 60 f0 (partials are masked only up to `max_harmonics`); harmless for the 0.5-3 kHz cut-offs consumers use.
+- Finding: a phase-vocoder shifter's output phases depend on its whole input, so the scoped low band is not waveform-equal to the full-band shift; the alignment test compares onset timing instead.
+
+Next steps, in order:
+1. **Listen** to `audition/phase6-mvf/` (local): `macro_correct_pitch_chromatic` (full band) against `..._below_mvf`. The scoped render has more failing structural checks than the default (62 against 48 of 112, on real vocals where both fail many); the checks do not track what you hear, but look at which notes differ before trusting the option.
+2. **Bench the estimate (design note test 10):** compare the stored MVF against WORLD D4C (pyworld, offline, table only) on vocadito; if the estimate is off by more than about 500 Hz, re-tune it before any more consumers.
+3. **Harmonic+noise engine consumer** (design note consumer 1): shift only harmonics below the MVF in breathy frames; not started.
+4. Still open from before: a programmatic PSOLA-versus-Rubber-Band rule (needs your per-note labels, `audition/phase6-macros-rb/NOTES.md`), the SPTK/REAPER trial (ADR-0019), breath chain, `pitch_target_mode` (ADR-0015), the phase review.
