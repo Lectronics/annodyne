@@ -1,5 +1,6 @@
 #include "core/synthesis/rubberband_pitch/rubberband_pitch_engine.h"
 
+#include "core/dsp/band_split.h"
 #include "core/synthesis/engine/engine_support.h"
 #include "core/synthesis/engine/source_through_map.h"
 #include "core/types/frame_grid.h"
@@ -269,6 +270,100 @@ std::vector<std::vector<float>> shift_curve(const std::vector<std::vector<float>
     return result;
 }
 
+/// The note's maximum voiced frequency (Hz) for every sample of the extended read: linear between
+/// frame centres, held from the first/last frame beyond them. `shift_samples` is the
+/// whole-sample shift of the zone (source sample = output sample - shift).
+std::vector<double> mvf_per_sample(const Note& note, std::int64_t ext_first, std::int64_t count,
+                                   std::int64_t shift_samples, double rate_hz) {
+    const auto& curve = note.noise.max_voiced_hz;
+    const auto n = static_cast<std::int64_t>(curve.size());
+    std::vector<double> out(static_cast<std::size_t>(count));
+    const double start_s = (note.grid.start - SourceTime{}).value();
+    for (std::int64_t i = 0; i < count; ++i) {
+        const double source_s = static_cast<double>(ext_first + i - shift_samples) / rate_hz;
+        const double pos = (source_s - start_s) / note.grid.hop.value();
+        double value = 0.0;
+        if (pos <= 0.0) {
+            value = curve.front().value();
+        } else if (pos >= static_cast<double>(n - 1)) {
+            value = curve.back().value();
+        } else {
+            const auto k = static_cast<std::size_t>(pos);
+            const double frac = pos - static_cast<double>(k);
+            value = curve[k].value() * (1.0 - frac) + curve[k + 1].value() * frac;
+        }
+        out[static_cast<std::size_t>(i)] = value;
+    }
+    return out;
+}
+
+/// Width of the split's transition: at least 1.5 x the note's pitch so a harmonic is never cut in
+/// half by the slope, never narrower than 200 Hz.
+Hz scope_transition(const Note& note) {
+    return Hz{std::max(200.0, 1.5 * to_hz(note.pitch_center, k_a4_standard_hz).value())};
+}
+
+/// ShiftScope::below_mvf applies: asked for, and the note has a measured curve.
+bool scoped_by(const RubberBandPitchParams& params, const Note& note) {
+    return params.scope == ShiftScope::below_mvf && note.grid.n_frames > 0 &&
+           note.noise.max_voiced_hz.size() == static_cast<std::size_t>(note.grid.n_frames);
+}
+
+/// below_mvf: only the periodic part goes through the shifter, then it is low-passed again at the
+/// MVF so a harmonic the shift pushed above it is not counted twice (design note, B4); the part
+/// above the MVF is the original, exactly. Inactive (no cut-off) it does nothing.
+struct ScopeSplit {
+    std::vector<double> cutoff;
+    Hz transition;
+    std::vector<std::vector<float>> rest;
+
+    /// Replaces each channel of `in` by its part below the cut-off and keeps the rest.
+    Result<void> take_rest(std::vector<std::vector<float>>& in, Hz rate, std::vector<double> cut,
+                           Hz width) {
+        cutoff = std::move(cut);
+        transition = width;
+        for (auto& channel : in) {
+            auto split = split_band(channel, rate, cutoff, transition);
+            if (!split) {
+                return Unexpected{split.error()};
+            }
+            channel = std::move(split->low);
+            rest.push_back(std::move(split->high));
+        }
+        return {};
+    }
+
+    /// shifted = LP(shifted) + rest; nothing when inactive.
+    Result<void> rejoin(std::vector<std::vector<float>>& shifted, Hz rate) const {
+        if (cutoff.empty()) {
+            return {};
+        }
+        for (std::size_t c = 0; c < shifted.size(); ++c) {
+            auto split = split_band(shifted[c], rate, cutoff, transition);
+            if (!split) {
+                return Unexpected{split.error()};
+            }
+            for (std::size_t i = 0; i < shifted[c].size(); ++i) {
+                shifted[c][i] = split->low[i] + rest[c][i];
+            }
+        }
+        return {};
+    }
+};
+
+/// The zone's samples: the unshifted read when `original`, else the shifted channels, both from
+/// `offset` into the extended read.
+void copy_zone(AudioBuffer& result, const AudioBuffer& ext,
+               const std::vector<std::vector<float>>& shifted, std::ptrdiff_t offset,
+               bool original) {
+    const auto length = result.frame_count().value();
+    for (int c = 0; c < result.channel_count(); ++c) {
+        const auto from = original ? ext.channel(c).begin() + offset
+                                   : shifted[static_cast<std::size_t>(c)].begin() + offset;
+        std::copy_n(from, length, result.channel(c).begin());
+    }
+}
+
 /// What the engine can realise: errors in the order not_implemented (other edits, an inactive
 /// note, a shift above max_shift) and invalid_argument (non-finite values).
 Result<void> check_request(const RubberBandPitchParams& params, const Note& note,
@@ -297,6 +392,11 @@ Result<void> check_request(const RubberBandPitchParams& params, const Note& note
         return fail(ErrorCode::invalid_argument,
                     "RubberBandPitchEngine: a formant offset needs PitchFormants::preserved");
     }
+    if (params.scope == ShiftScope::below_mvf && eff.formant_offset.value() != 0.0) {
+        return fail(ErrorCode::invalid_argument,
+                    "RubberBandPitchEngine: a formant offset cannot be combined with "
+                    "ShiftScope::below_mvf");
+    }
     if (std::abs((eff.center - note.pitch_center).value()) > params.max_shift.value()) {
         return no("the shift is larger than max_shift");
     }
@@ -312,7 +412,8 @@ std::string RubberBandPitchEngine::settings_key() const {
            ";lead=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_lead.value())) +
            ";gain=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_gain.value())) +
            ";glide=" + hex64(std::bit_cast<std::uint64_t>(params_.glide_time.value())) +
-           ";fpath=" + (params_.formant_path == FormantPath::live ? "l" : "o");
+           ";fpath=" + (params_.formant_path == FormantPath::live ? "l" : "o") +
+           ";scope=" + (params_.scope == ShiftScope::below_mvf ? "mvf" : "full");
 }
 
 Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, const Note& note,
@@ -380,6 +481,15 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
         for (int c = 0; c < ext->channel_count(); ++c) {
             in.emplace_back(ext->channel(c).begin(), ext->channel(c).end());
         }
+        ScopeSplit scope;
+        if (scoped_by(params_, note)) {
+            auto cutoff =
+                mvf_per_sample(note, ext_first, ext_last - ext_first, *shift_samples, rate.value());
+            if (auto ok = scope.take_rest(in, rate, std::move(cutoff), scope_transition(note));
+                !ok) {
+                return Unexpected{ok.error()};
+            }
+        }
         shifted = curved
                       ? shift_curve(
                             in, rate.value(),
@@ -389,17 +499,11 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
                             std::llround(params_.curve_lead.value() * rate.value()), formant_scale)
                       : shift(in, rate.value(), std::exp2(shift_cents / 1200.0), params_.formants,
                               formant_scale);
-    }
-    for (int c = 0; c < result->channel_count(); ++c) {
-        auto out = result->channel(c);
-        if (neutral || last == first) {
-            std::ranges::copy_n(ext->channel(c).begin() + offset, (last - first).value(),
-                                out.begin());
-        } else {
-            std::ranges::copy_n(shifted[static_cast<std::size_t>(c)].begin() + offset,
-                                (last - first).value(), out.begin());
+        if (auto ok = scope.rejoin(shifted, rate); !ok) {
+            return Unexpected{ok.error()};
         }
     }
+    copy_zone(*result, *ext, shifted, offset, neutral || last == first);
     return OutputAudio{.audio = std::move(*result),
                        .start = to_time_point<OutputAxis>(first, rate)};
 }

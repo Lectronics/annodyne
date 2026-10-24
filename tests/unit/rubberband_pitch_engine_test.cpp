@@ -1,3 +1,4 @@
+#include "core/dsp/band_split.h"
 #include "core/synthesis/rubberband_pitch/rubberband_pitch_engine.h"
 #include "support/engine_fixture.h"
 #include "support/synth_signals.h"
@@ -318,4 +319,161 @@ TEST_CASE("a_formant_offset_without_preserved_formants_is_refused_not_ignored",
         RubberBandPitchEngine{shifted}.render_note(fx.src, fx.note, e, fx.map, all).error().code ==
         ErrorCode::invalid_argument);
     CHECK(RubberBandPitchEngine{}.render_note(fx.src, fx.note, e, fx.map, all).has_value());
+}
+
+namespace {
+
+constexpr double k_mvf_cutoff_hz = 3000.0;
+constexpr double k_high_tone_hz = 5000.0;
+constexpr double k_high_tone_amp = 0.05;
+
+/// A harmonic voice (f0 220, 10 partials, up to 2.2 kHz) plus a steady 5 kHz tone above the
+/// stored maximum voiced frequency (3 kHz), which stands for the noise of a breathy voice.
+Fixture breathy_voice() {
+    auto x = voice([](double) { return 220.0; }, harmonic_amps(10, 0.5));
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        x[i] +=
+            static_cast<float>(k_high_tone_amp * std::sin(2.0 * std::numbers::pi * k_high_tone_hz *
+                                                          static_cast<double>(i) / k_rate));
+    }
+    Fixture fx{std::move(x)};
+    fx.note.noise.max_voiced_hz.assign(static_cast<std::size_t>(fx.note.grid.n_frames),
+                                       Hz{k_mvf_cutoff_hz});
+    return fx;
+}
+
+RubberBandPitchEngine below_mvf_engine() {
+    RubberBandPitchParams p;
+    p.scope = ShiftScope::below_mvf;
+    return RubberBandPitchEngine{p};
+}
+
+/// Amplitude of the tone at `hz` over the middle half of `x` (single-bin correlation).
+double tone_amplitude(const std::vector<float>& x, double hz) {
+    const std::size_t from = x.size() / 4;
+    const std::size_t to = 3 * x.size() / 4;
+    double c = 0.0;
+    double s = 0.0;
+    for (std::size_t i = from; i < to; ++i) {
+        const double ph = 2.0 * std::numbers::pi * hz * static_cast<double>(i) / k_rate;
+        c += static_cast<double>(x[i]) * std::cos(ph);
+        s += static_cast<double>(x[i]) * std::sin(ph);
+    }
+    return 2.0 * std::hypot(c, s) / static_cast<double>(to - from);
+}
+
+double rms_of(const std::vector<float>& x, std::size_t from, std::size_t to) {
+    double sum = 0.0;
+    for (std::size_t i = from; i < to; ++i) {
+        sum += static_cast<double>(x[i]) * static_cast<double>(x[i]);
+    }
+    return std::sqrt(sum / static_cast<double>(to - from));
+}
+
+std::vector<float> high_part(const std::vector<float>& x, double cutoff_hz) {
+    const std::vector<double> cut(x.size(), cutoff_hz);
+    return split_band(x, Hz{k_rate}, cut, Hz{330.0}).value().high;
+}
+
+}  // namespace
+
+TEST_CASE("the_scope_is_part_of_the_engine_key_and_its_version", "[rubberband_pitch]") {
+    CHECK(below_mvf_engine().settings_key() != RubberBandPitchEngine{}.settings_key());
+}
+
+TEST_CASE("below_the_voiced_limit_only_the_periodic_part_is_shifted", "[rubberband_pitch]") {
+    const Fixture fx = breathy_voice();
+    const auto full = samples_of(fx.render(RubberBandPitchEngine{}, fx.effective(300.0)).value());
+    const auto scoped = samples_of(fx.render(below_mvf_engine(), fx.effective(300.0)).value());
+    REQUIRE(scoped.size() == fx.mono.size());
+    // The tone above the limit stays where it was; a full-band shift moves it away.
+    CHECK(tone_amplitude(scoped, k_high_tone_hz) > 0.9 * k_high_tone_amp);
+    CHECK(tone_amplitude(full, k_high_tone_hz) < 0.3 * k_high_tone_amp);
+    // The periodic part lands on the requested pitch.
+    const auto q = static_cast<std::ptrdiff_t>(scoped.size() / 4);
+    const std::vector<float> middle(scoped.begin() + q, scoped.begin() + 3 * q);
+    CHECK(std::abs(autocorrelation_hz(middle, k_rate) / (220.0 * std::pow(2.0, 300.0 / 1200.0)) -
+                   1.0) < 0.01);
+}
+
+TEST_CASE("shifted_harmonics_do_not_cross_the_voiced_limit", "[rubberband_pitch]") {
+    // +/-100, +/-300 and +/-1200 cents: the energy above the limit (plus the 5 kHz tone) is
+    // that of the original, whichever way the harmonics moved.
+    const Fixture fx = breathy_voice();
+    const auto original_high = high_part(fx.mono, 3500.0);
+    const auto n = original_high.size();
+    const double reference = rms_of(original_high, n / 4, 3 * n / 4);
+    for (const double cents : {-1200.0, -300.0, -100.0, 100.0, 300.0, 1200.0}) {
+        const auto out = samples_of(fx.render(below_mvf_engine(), fx.effective(cents)).value());
+        const auto high = high_part(out, 3500.0);
+        const double ratio = rms_of(high, n / 4, 3 * n / 4) / reference;
+        INFO("cents " << cents << " ratio " << ratio);
+        CHECK(ratio < 1.10);
+        CHECK(ratio > 0.90);
+    }
+}
+
+TEST_CASE("a_neutral_offset_is_bit_exact_in_the_scoped_mode_too", "[rubberband_pitch]") {
+    const Fixture fx = breathy_voice();
+    const auto out = samples_of(fx.render(below_mvf_engine(), fx.effective(0.0)).value());
+    CHECK(std::memcmp(out.data(), fx.mono.data(), out.size() * sizeof(float)) == 0);
+}
+
+/// Index where the 5 ms-smoothed rectified signal first reaches half of its maximum.
+std::size_t half_level_index(const std::vector<float>& x) {
+    const auto taps = static_cast<std::size_t>(0.005 * k_rate);
+    std::vector<double> env(x.size(), 0.0);
+    double acc = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        acc += std::abs(static_cast<double>(x[i]));
+        if (i >= taps) {
+            acc -= std::abs(static_cast<double>(x[i - taps]));
+        }
+        env[i] = acc / static_cast<double>(taps);
+    }
+    const double peak = *std::ranges::max_element(env);
+    return static_cast<std::size_t>(
+        std::ranges::find_if(env, [&](double v) { return v >= 0.5 * peak; }) - env.begin());
+}
+
+TEST_CASE("the_scoped_low_band_is_aligned_in_time_with_the_full_band_shift", "[rubberband_pitch]") {
+    // The onset of the shifted periodic part must land where the full-band shift puts it (same
+    // shifter, same delay handling), or the sum with the untouched rest would comb. Waveform
+    // equality is not expected: a phase vocoder's output phases depend on its whole input.
+    const Fixture fx = breathy_voice();
+    const auto scoped = samples_of(fx.render(below_mvf_engine(), fx.effective(300.0)).value());
+    const auto full = samples_of(fx.render(RubberBandPitchEngine{}, fx.effective(300.0)).value());
+    const auto low = [](const std::vector<float>& x) {
+        return split_band(x, Hz{k_rate}, std::vector<double>(x.size(), 2500.0), Hz{330.0})
+            .value()
+            .low;
+    };
+    const auto a = static_cast<std::ptrdiff_t>(half_level_index(low(scoped)));
+    const auto b = static_cast<std::ptrdiff_t>(half_level_index(low(full)));
+    INFO("onset " << a << " vs " << b << " samples");
+    CHECK(std::abs(a - b) <= static_cast<std::ptrdiff_t>(0.002 * k_rate));
+}
+
+TEST_CASE("the_scoped_mode_refuses_a_formant_offset_and_falls_back_without_a_stored_limit",
+          "[rubberband_pitch]") {
+    Fixture fx = breathy_voice();
+    EffectiveNote with_formant = fx.effective(200.0);
+    with_formant.formant_offset = Cents{100.0};
+    CHECK(fx.render(below_mvf_engine(), with_formant).error().code == ErrorCode::invalid_argument);
+    fx.note.noise.max_voiced_hz.clear();
+    const auto scoped = samples_of(fx.render(below_mvf_engine(), fx.effective(200.0)).value());
+    const auto full = samples_of(fx.render(RubberBandPitchEngine{}, fx.effective(200.0)).value());
+    CHECK(std::memcmp(scoped.data(), full.data(), scoped.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("the_scoped_mode_works_with_a_modulation_scale", "[rubberband_pitch]") {
+    const Fixture fx = breathy_voice();
+    EffectiveNote eff = fx.effective(200.0);
+    eff.mod_scale = Ratio{1.5};
+    const auto out = samples_of(fx.render(below_mvf_engine(), eff).value());
+    REQUIRE(out.size() == fx.mono.size());
+    for (const float v : out) {
+        REQUIRE(std::isfinite(v));
+    }
+    CHECK(tone_amplitude(out, k_high_tone_hz) > 0.9 * k_high_tone_amp);
 }

@@ -24,7 +24,13 @@ enum class PitchFormants : std::uint8_t {
 /// the objective measures slightly favour the live shifter (fewer waveform-cycle dips).
 enum class FormantPath : std::uint8_t { offline, live };
 
+/// What a pitch shift moves. below_mvf moves only the periodic part of the note, below its stored
+/// maximum voiced frequency (NoiseTrack::max_voiced_hz, ADR-0033, design
+/// docs/design/phase6-voiced-frequency.md), and leaves the rest as it was.
+enum class ShiftScope : std::uint8_t { full_band, below_mvf };
+
 struct RubberBandPitchParams {
+    ShiftScope scope = ShiftScope::full_band;  // below_mvf needs a measured curve, else full_band
     FormantPath formant_path = FormantPath::offline;
     PitchFormants formants = PitchFormants::preserved;
     Seconds context{0.100};   // source read beyond each end of the zone so the stretcher's start-up
@@ -49,6 +55,9 @@ struct RubberBandPitchParams {
 /// centre offset plus (mod_scale - 1) x the note's modulation and (drift_scale - 1) x its drift
 /// (cents, per analysis frame, zero outside the note), applied by Rubber Band's live shifter in
 /// blocks (its pitch scale changes per block, so a 5 ms-hop curve is followed at the block rate).
+/// With ShiftScope::below_mvf and a measured max_voiced_hz the zone is split at the MVF (a
+/// raised-cosine transition at least 1.5 x the note's pitch wide): out = LP(shift(LP(x))) + (x -
+/// LP(x)); a formant offset is then invalid_argument. A zero MVF leaves those frames untouched.
 /// Supported: effective values neutral except `center`, `onset_shift`, `mod_scale` and
 /// `drift_scale`; an active note; a zone inside one slope-1 warp with a whole-sample shift.
 /// Errors: invalid_argument (bad params, a negative range, a non-finite center); not_implemented
@@ -60,7 +69,7 @@ public:
     explicit RubberBandPitchEngine(RubberBandPitchParams params = {}) : params_{params} {}
 
     [[nodiscard]] std::string_view name() const noexcept override { return "rubberband"; }
-    [[nodiscard]] std::uint32_t version() const noexcept override { return 3; }
+    [[nodiscard]] std::uint32_t version() const noexcept override { return 4; }
     [[nodiscard]] std::string settings_key() const override;
     [[nodiscard]] Result<OutputAudio> render_note(const AudioSource& src, const Note& note,
                                                   const EffectiveNote& eff, const TimeMap& time_map,
