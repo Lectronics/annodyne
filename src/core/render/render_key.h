@@ -24,7 +24,8 @@ namespace anno {
 struct EditedNote {
     const Note* note = nullptr;
     EffectiveNote eff;
-    SampleSpan span;  // snapped to whole samples
+    SampleSpan span;        // snapped to whole samples
+    TouchingNotes context;  // the touching neighbours (ADR-0030); part of the cache key
 };
 
 /// An edited gap taking part in a render (ADR-0024).
