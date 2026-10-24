@@ -1,9 +1,11 @@
 #include "cli/analysis_json/analysis_json.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <nlohmann/json.hpp>
 #include <utility>
+#include <vector>
 
 namespace anno::cli {
 
@@ -77,8 +79,17 @@ Json sound_classes_json(const Note& n) {
         const auto frame_s = [&](std::size_t k) {
             return seconds(n.grid.start) + static_cast<double>(k) * n.grid.hop.value();
         };
-        runs.push_back(
-            {{"class", to_text(classes[i])}, {"start_s", frame_s(i)}, {"end_s", frame_s(j)}});
+        Json run = {{"class", to_text(classes[i])}, {"start_s", frame_s(i)}, {"end_s", frame_s(j)}};
+        if (n.noise.max_voiced_hz.size() == classes.size()) {
+            std::vector<double> values;
+            for (std::size_t k = i; k < j; ++k) {
+                values.push_back(n.noise.max_voiced_hz[k].value());
+            }
+            const auto mid = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+            std::ranges::nth_element(values, mid);
+            run["mvf_hz"] = *mid;
+        }
+        runs.push_back(std::move(run));
         i = j;
     }
     return runs;

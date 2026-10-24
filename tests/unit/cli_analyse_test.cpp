@@ -91,6 +91,11 @@ TEST_CASE("analyse_writes_json_with_the_documented_keys", "[cli_analyse]") {
     for (const char* key : {"class", "start_s", "end_s"}) {
         CHECK(n0["sound_classes"][0].contains(key));
     }
+    // ADR-0033: the median of the stored maximum voiced frequency over the run, in Hz (write-only).
+    for (const auto& run : n0["sound_classes"]) {
+        REQUIRE(run.contains("mvf_hz"));
+        CHECK(run["mvf_hz"].get<double>() >= 0.0);
+    }
     CHECK(n0["harmonic_count"].get<int>() >= 1);
     CHECK(std::abs(n0["start_s"].get<double>() - 0.2) <= 0.02);
     CHECK(std::abs(n0["pitch_target"]["target_cents"].get<double>() -
