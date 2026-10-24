@@ -12,6 +12,7 @@ In a breathy or mixed-voice frame only the low part of the spectrum is periodic.
 - `mvf_hz` is per 5 ms frame: `max(lower edge of the first aperiodic band, 0.75 f0)` (`:324-338`), `edges.back()` (= `min(0.45 rate, 20 kHz)`) when every significant band is periodic, and 0 when `voicing_prob < k_voiced_probability`. It is not floored at 500 Hz.
 - It is 0 for probability-unvoiced frames, not for classes: frames classed `silence` or `plosive` can carry a non-zero value, and the median/run smoothing can label a probability-unvoiced frame `voiced`.
 - It is tested only by `tests/unit/harmonic_noise_test.cpp:312` (a clean vowel: `mvf_hz > 1500`); there is no accuracy test against a known cut-off. Test 1 below is the first.
+- Limit found in implementation: harmonics are masked only up to `PartialsParams::max_harmonics` (60), so a voice whose partials extend past 60 f0 (13 kHz at 220 Hz) reads as aperiodic above that and the metric cannot exceed about 60 f0. Harmless for the 500 Hz-3 kHz cut-offs consumers care about; Test 1's fully-harmonic case uses 50 partials.
 - The classes use the **raw** metric; they must go on doing so (S2).
 
 ## Public types

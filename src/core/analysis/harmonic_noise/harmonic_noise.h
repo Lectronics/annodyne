@@ -57,6 +57,11 @@ struct HarmonicNoiseParams {
     // min_segment join their longer neighbour; plosive bursts are never smoothed away.
     int median_frames = 5;
     Seconds min_segment{0.020};
+
+    // The stored maximum voiced frequency (NoiseTrack::max_voiced_hz, ADR-0033) never falls below
+    // this where the frame has a periodic part: finite, > 0, below the analysis ceiling
+    // (min(0.45 rate, 20 kHz)). A guess; the first harmonics of a bass voice sit near it.
+    Hz mvf_floor{500.0};
 };
 
 /// What the pitch tracker says about each frame of the note, on curves.grid.

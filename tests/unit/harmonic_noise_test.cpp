@@ -1,9 +1,11 @@
 #include "core/analysis/harmonic_noise/harmonic_noise.h"
 #include "core/analysis/partials/partials.h"
+#include "core/dsp/band_split.h"
 #include "support/synth_signals.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <vector>
@@ -311,4 +313,120 @@ TEST_CASE("rumble_below_the_voice_does_not_lower_the_maximum_voiced_frequency",
     const auto mid = Scene::frame_at(0.6);
     CHECK(m.mvf_hz[mid] > 1500.0);
     CHECK(run(sc).frame_class[mid] == FrameClass::voiced);
+}
+
+namespace {
+
+/// Width of the mel band that holds `hz` for the default 32 bands over 0..0.45 * rate (mirrors the
+/// analysis' band layout; HTK mel).
+double mel_band_width_hz(double hz) {
+    const auto mel = [](double f) { return 2595.0 * std::log10(1.0 + f / 700.0); };
+    const double per_band = mel(std::min(0.45 * k_rate, 20000.0)) / 32.0;
+    return (700.0 + hz) * std::numbers::ln10 / 2595.0 * per_band;
+}
+
+/// Equal partials of k_f0 up to the Nyquist margin plus white noise above `cutoff_hz` (high-passed
+/// with the library's band split); noise_rms is the white noise's RMS before the high-pass.
+Scene cutoff_scene(double cutoff_hz, double noise_rms, int partials = 80) {
+    auto sc = make_scene({{.begin_s = 0.1, .end_s = 1.2, .kind = Kind::vowel}});
+    const double total_s = static_cast<double>(sc.mono.size()) / k_rate;
+    sc.mono = make_harmonic([](double) { return k_f0; }, total_s, k_rate,
+                            std::vector<double>(static_cast<std::size_t>(partials), 0.02));
+    if (noise_rms > 0.0) {
+        const auto noise = white(total_s, noise_rms, 7);
+        const std::vector<double> cut(noise.size(), cutoff_hz);
+        const auto split = split_band(noise, Hz{k_rate}, cut, Hz{200.0}).value();
+        for (std::size_t i = 0; i < sc.mono.size(); ++i) {
+            sc.mono[i] += split.high[i];
+        }
+    }
+    return sc;
+}
+
+}  // namespace
+
+TEST_CASE("the_stored_maximum_voiced_frequency_follows_a_known_cutoff", "[harmonic_noise]") {
+    const auto mid = Scene::frame_at(0.6);
+    for (const double cutoff : {1500.0, 3000.0, 5000.0}) {
+        const auto sc = cutoff_scene(cutoff, 0.3);
+        const auto n = run(sc);
+        REQUIRE(n.max_voiced_hz.size() == n.frame_class.size());
+        const double tol = std::max(k_f0, 1.5 * mel_band_width_hz(cutoff));
+        INFO("cutoff " << cutoff << " got " << n.max_voiced_hz[mid].value());
+        CHECK(std::abs(n.max_voiced_hz[mid].value() - cutoff) <= tol);
+    }
+}
+
+TEST_CASE("a_fully_harmonic_frame_stores_the_ceiling_and_noise_or_silence_stores_zero",
+          "[harmonic_noise]") {
+    const double ceiling = std::min(0.45 * k_rate, 20000.0);
+    const auto clean = run(cutoff_scene(
+        1500.0, 0.0, 50));  // within max_harmonics (60): partials above it count as noise
+    CHECK(std::abs(clean.max_voiced_hz[Scene::frame_at(0.6)].value() - ceiling) <
+          1e-3);  // mel round trip
+    const auto sc =
+        make_scene({{.begin_s = 0.1, .end_s = 0.5, .kind = Kind::vowel},
+                    {.begin_s = 0.5, .end_s = 0.8, .kind = Kind::sibilant, .level = 0.3},
+                    {.begin_s = 0.8, .end_s = 1.2, .kind = Kind::silence}});
+    const auto n = run(sc);
+    for (const double t : {0.6, 0.7, 1.0}) {
+        CHECK(n.max_voiced_hz[Scene::frame_at(t)].value() == 0.0);
+    }
+}
+
+TEST_CASE("the_stored_curve_is_zero_exactly_where_there_is_no_periodic_part", "[harmonic_noise]") {
+    const auto sc = make_scene({{.begin_s = 0.1, .end_s = 0.6, .kind = Kind::vowel},
+                                {.begin_s = 0.6, .end_s = 0.9, .kind = Kind::breath, .level = 0.2},
+                                {.begin_s = 0.9, .end_s = 1.2, .kind = Kind::vowel}});
+    const HarmonicNoiseParams params;
+    const auto n = run(sc, params);
+    REQUIRE(validate(n).has_value());
+    const double ceiling = std::min(0.45 * k_rate, 20000.0);
+    for (std::size_t i = 0; i < n.max_voiced_hz.size(); ++i) {
+        const double v = n.max_voiced_hz[i].value();
+        const auto cls = n.frame_class[i];
+        const bool none = cls == FrameClass::silence || cls == FrameClass::plosive ||
+                          cls == FrameClass::sibilant || cls == FrameClass::breath ||
+                          sc.voicing[i] < 0.5;
+        if (none) {
+            CHECK(v == 0.0);
+        } else {
+            CHECK(v >= params.mvf_floor.value());
+            CHECK(v <= ceiling);
+        }
+    }
+}
+
+TEST_CASE("the_classes_still_come_from_the_raw_metric", "[harmonic_noise]") {
+    const auto sc =
+        make_scene({{.begin_s = 0.1, .end_s = 0.6, .kind = Kind::vowel},
+                    {.begin_s = 0.6, .end_s = 1.2, .kind = Kind::vowel_plus_noise, .level = 0.2}});
+    const auto h = analyse_partials(sc.mono, Hz{k_rate}, sc.curves(), {}).value();
+    const auto metrics =
+        measure_frames(sc.mono, Hz{k_rate}, sc.curves(), h, sc.evidence(), {}).value();
+    const auto expect = classify_frames(metrics, sc.voicing, sc.grid.hop, {}).value();
+    CHECK(run(sc).frame_class == expect);
+}
+
+TEST_CASE("a_note_shorter_than_the_median_window_still_gets_a_curve", "[harmonic_noise]") {
+    auto sc = cutoff_scene(3000.0, 0.3);
+    sc.grid.n_frames = 3;
+    sc.drift.resize(3);
+    sc.mod.resize(3);
+    sc.voicing.resize(3);
+    sc.alternate.resize(3);
+    const auto n = run(sc);
+    REQUIRE(n.max_voiced_hz.size() == 3);
+}
+
+TEST_CASE("the_maximum_voiced_frequency_floor_is_range_checked", "[harmonic_noise]") {
+    const auto sc = cutoff_scene(3000.0, 0.3);
+    const auto h = analyse_partials(sc.mono, Hz{k_rate}, sc.curves(), {}).value();
+    for (const double bad : {0.0, -1.0, 30000.0, std::nan("")}) {
+        HarmonicNoiseParams p;
+        p.mvf_floor = Hz{bad};
+        CHECK(split_harmonic_noise(sc.mono, Hz{k_rate}, sc.curves(), h, sc.evidence(), p)
+                  .error()
+                  .code == ErrorCode::invalid_argument);
+    }
 }

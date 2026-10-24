@@ -40,6 +40,9 @@ Result<void> validate_params(const HarmonicNoiseParams& p) {
     if (p.median_frames < 1 || p.median_frames > 9 || p.median_frames % 2 == 0) {
         return bad("median_frames must be odd and in 1..9");
     }
+    if (!std::isfinite(p.mvf_floor.value()) || p.mvf_floor.value() <= 0.0) {
+        return bad("mvf_floor must be finite and > 0");
+    }
     if (!in_range(p.octave_ratio_min, 1.0, p.octave_ratio_max)) {
         return bad("octave_ratio_min must be in 1..octave_ratio_max");
     }
@@ -621,6 +624,60 @@ Result<std::vector<FrameClass>> classify_frames(const FrameMetrics& metrics,
     return labels;
 }
 
+namespace {
+
+/// Top of the analysed range: the value `max_voiced_frequency` returns when every band is periodic.
+double mvf_ceiling_hz(Hz rate) {
+    return std::min(k_nyquist_margin * rate.value(), k_band_max_hz);
+}
+
+/// The consumer-facing curve (ADR-0033): 0 where the frame has no periodic part, else the raw
+/// metric clamped to [floor, ceiling] and median-filtered within each run of such frames (zeros
+/// never mix into values, so the voiced/unvoiced edge stays sharp). The window shrinks
+/// symmetrically at a run's ends.
+std::vector<Hz> derive_max_voiced(const FrameMetrics& metrics,
+                                  const std::vector<FrameClass>& classes,
+                                  std::span<const double> voicing_prob, Hz rate,
+                                  const HarmonicNoiseParams& params) {
+    const std::size_t n = classes.size();
+    const double ceiling = mvf_ceiling_hz(rate);
+    std::vector<double> clamped(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        const FrameClass c = classes[i];
+        const bool periodic = voicing_prob[i] >= k_voiced_probability && c != FrameClass::silence &&
+                              c != FrameClass::plosive && c != FrameClass::sibilant &&
+                              c != FrameClass::breath;
+        if (periodic) {
+            clamped[i] = std::clamp(metrics.mvf_hz[i], params.mvf_floor.value(), ceiling);
+        }
+    }
+    std::vector<Hz> out(n, Hz{0.0});
+    const auto half = static_cast<std::size_t>(params.median_frames / 2);
+    std::size_t begin = 0;
+    while (begin < n) {
+        if (clamped[begin] == 0.0) {
+            ++begin;
+            continue;
+        }
+        std::size_t end = begin;
+        while (end < n && clamped[end] != 0.0) {
+            ++end;
+        }
+        for (std::size_t i = begin; i < end; ++i) {
+            const std::size_t reach = std::min({half, i - begin, end - 1 - i});
+            std::vector<double> window(clamped.begin() + static_cast<std::ptrdiff_t>(i - reach),
+                                       clamped.begin() +
+                                           static_cast<std::ptrdiff_t>(i + reach + 1));
+            std::ranges::nth_element(window, window.begin() + static_cast<std::ptrdiff_t>(reach));
+            out[i] = Hz{window[reach]};
+        }
+        begin = end;
+    }
+    return out;
+}
+
+}  // namespace
+
 Result<NoiseTrack> split_harmonic_noise(std::span<const float> mono, Hz sample_rate,
                                         const NoteCurves& curves, const HarmonicTrack& harmonics,
                                         const PitchEvidence& evidence,
@@ -633,9 +690,16 @@ Result<NoiseTrack> split_harmonic_noise(std::span<const float> mono, Hz sample_r
     if (!classes) {
         return Unexpected{classes.error()};
     }
+    if (params.mvf_floor.value() >= mvf_ceiling_hz(sample_rate)) {
+        return fail(ErrorCode::invalid_argument,
+                    "harmonic_noise: mvf_floor must be below the analysis ceiling");
+    }
+    auto max_voiced =
+        derive_max_voiced(*metrics, *classes, evidence.voicing_prob, sample_rate, params);
     return NoiseTrack{.grid = curves.grid,
                       .band_energy_linear = std::move(metrics->noise_band_power),
-                      .frame_class = std::move(*classes)};
+                      .frame_class = std::move(*classes),
+                      .max_voiced_hz = std::move(max_voiced)};
 }
 
 }  // namespace anno
