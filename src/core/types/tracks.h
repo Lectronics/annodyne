@@ -57,6 +57,10 @@ struct NoiseTrack {
     FrameGrid grid;
     FrameMatrix band_energy_linear;  // frames x bands
     std::vector<FrameClass> frame_class;
+    /// Per frame of `grid`, source time: the frequency below which the frame is periodic; 0 = no
+    /// periodic part; empty = not measured. A derived curve for consumers (ADR-0033), not the
+    /// classifier's raw metric.
+    std::vector<Hz> max_voiced_hz;
 };
 
 /// Smooth spectral envelope of one note.
@@ -68,8 +72,8 @@ struct EnvelopeTrack {
 
 /// Each validate checks the grid and that every array/matrix has grid.n_frames rows/entries (an
 /// empty track, n_frames == 0 with empty arrays, is valid; NoiseTrack::frame_class may also be
-/// empty when the band matrix has rows), and probabilities lie in 0..1.
-/// Errors: invalid_argument. Pure; thread-safe.
+/// empty when the band matrix has rows; NoiseTrack::max_voiced_hz is empty or finite, >= 0 and
+/// grid.n_frames long), and probabilities lie in 0..1. Errors: invalid_argument. Pure; thread-safe.
 [[nodiscard]] Result<void> validate(const PitchTrack& track);
 [[nodiscard]] Result<void> validate(const OnsetList& onsets);
 [[nodiscard]] Result<void> validate(const HarmonicTrack& track);

@@ -186,6 +186,16 @@ Result<void> validate(const NoiseTrack& track) {
     if (!track.frame_class.empty() && !matches(track.grid, track.frame_class.size())) {
         return invalid("noise frame classes must have grid.n_frames entries");
     }
+    if (!track.max_voiced_hz.empty()) {
+        if (!matches(track.grid, track.max_voiced_hz.size())) {
+            return invalid("noise max_voiced_hz must have grid.n_frames entries");
+        }
+        for (const Hz f : track.max_voiced_hz) {
+            if (!std::isfinite(f.value()) || f.value() < 0.0) {
+                return invalid("noise max_voiced_hz must be finite and >= 0");
+            }
+        }
+    }
     return {};
 }
 

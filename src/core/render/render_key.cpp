@@ -12,9 +12,10 @@ namespace {
 
 // Every new hashed field bumps the version.
 constexpr std::uint32_t k_key_format_version =
-    8;  // 8: the touching neighbours of an edited note; 7: the stretch engine, voiced_bridge and
-        // the vibrato mode (6); 5: local map spans, the splice fade; 4: edited gaps; 3: the stretch
-        // settings; 2: the whole TimeMap is part of the key
+    9;  // 9: NoiseTrack::max_voiced_hz (ADR-0033; the unmerged branch phase-6-core-only also used
+        // 9); 8: the touching neighbours of an edited note; 7: the stretch engine, voiced_bridge
+        // and the vibrato mode (6); 5: local map spans, the splice fade; 4: edited gaps; 3: the
+        // stretch settings; 2: the whole TimeMap is part of the key
 
 constexpr std::uint64_t k_fnv_basis_a = 0xcbf29ce484222325ULL;
 constexpr std::uint64_t k_fnv_prime_a = 0x100000001b3ULL;
@@ -184,6 +185,7 @@ void put(Writer& w, const Note& n) {
     put(w, n.noise.grid);
     put(w, n.noise.band_energy_linear);
     put_all(w, n.noise.frame_class);
+    put_all(w, n.noise.max_voiced_hz);
     put(w, n.envelope.grid);
     put(w, n.envelope.log_mag_db);
     put_all(w, n.envelope.freqs);

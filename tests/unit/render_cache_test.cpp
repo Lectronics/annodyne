@@ -1,4 +1,6 @@
 #include "core/render/render_cache.h"
+#include "core/render/render_key.h"
+#include "core/types/note.h"
 #include "support/audio_checks.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -85,4 +87,15 @@ TEST_CASE("concurrent_use_is_safe", "[render_cache]") {
         th.join();
     }
     CHECK(cache.size_bytes() <= 200'000);
+}
+
+TEST_CASE("the_note_fingerprint_covers_the_maximum_voiced_frequency", "[render_cache]") {
+    Note a;
+    Note b = a;
+    CHECK(note_fingerprint(a) == note_fingerprint(b));
+    b.noise.max_voiced_hz = {Hz{1500.0}};
+    CHECK(note_fingerprint(a) != note_fingerprint(b));  // empty (not measured) differs from a value
+    Note c = a;
+    c.noise.max_voiced_hz = {Hz{1600.0}};
+    CHECK(note_fingerprint(b) != note_fingerprint(c));
 }

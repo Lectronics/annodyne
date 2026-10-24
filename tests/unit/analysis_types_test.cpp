@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <limits>
 
 using namespace anno;
@@ -174,6 +175,20 @@ TEST_CASE("harmonic_noise_and_envelope_tracks_check_their_shapes", "[analysis_ty
     CHECK(validate(n).has_value());
     n.frame_class.assign(3, FrameClass::breath);
     CHECK_FALSE(validate(n).has_value());
+
+    // The maximum voiced frequency (ADR-0033): empty = not measured, else one finite value >= 0 per
+    // frame.
+    n.frame_class.assign(2, FrameClass::breathy);
+    CHECK(validate(n).has_value());
+    n.max_voiced_hz = {Hz{1500.0}, Hz{0.0}};
+    CHECK(validate(n).has_value());
+    n.max_voiced_hz = {Hz{1500.0}};
+    CHECK_FALSE(validate(n).has_value());
+    n.max_voiced_hz = {Hz{1500.0}, Hz{-1.0}};
+    CHECK_FALSE(validate(n).has_value());
+    n.max_voiced_hz = {Hz{1500.0}, Hz{std::nan("")}};
+    CHECK_FALSE(validate(n).has_value());
+    n.max_voiced_hz.clear();
 
     EnvelopeTrack e;
     e.grid = grid;
