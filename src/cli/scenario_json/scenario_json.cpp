@@ -394,6 +394,35 @@ Result<ScenarioMacro> parse_macro(const Json& j, const std::string& path) {
     return macro;
 }
 
+/// Fills the Rubber Band engine settings from the "rubberband" object (absent: defaults).
+Result<void> parse_rubberband(const Json& root, Scenario& scenario) {
+    const auto rb = root.find("rubberband");
+    if (rb == root.end()) {
+        return {};
+    }
+    if (!rb->is_object()) {
+        return bad("$.rubberband", "must be an object");
+    }
+    for (const auto& [key, value] : rb->items()) {
+        if (key == "glide_ms") {
+            auto v = number(value, "$.rubberband.glide_ms");
+            if (!v) {
+                return Unexpected{v.error()};
+            }
+            scenario.rubberband_glide_ms = *v;
+        } else if (key == "formant_path") {
+            if (!value.is_string() ||
+                (value.get<std::string>() != "offline" && value.get<std::string>() != "live")) {
+                return bad("$.rubberband.formant_path", R"(must be "offline" or "live")");
+            }
+            scenario.rubberband_formant_live = value.get<std::string>() == "live";
+        } else {
+            return bad("$.rubberband." + key, "unknown key");
+        }
+    }
+    return {};
+}
+
 /// Fills scenario.macros from the "macros" array (absent: none). Needs "analysis": "analyse".
 Result<void> parse_macros(const Json& root, Scenario& scenario) {
     const auto macros = root.find("macros");
@@ -476,8 +505,8 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         return bad("$", "must be an object");
     }
     static const std::set<std::string> keys{
-        "name",  "source", "algorithm",       "analysis",       "notes",
-        "edits", "expect", "stretch_vibrato", "stretch_engine", "macros"};
+        "name",   "source",          "algorithm",      "analysis", "notes",     "edits",
+        "expect", "stretch_vibrato", "stretch_engine", "macros",   "rubberband"};
     for (const auto& [key, value] : root.items()) {
         if (!keys.contains(key)) {
             return bad("$." + key, "unknown key");
@@ -523,6 +552,9 @@ Result<Scenario> parse_scenario(std::string_view json_text, const std::filesyste
         scenario.analysis = ScenarioAnalysis::analyse;
     } else if (!analysis->empty() && *analysis != "given") {
         return bad("$.analysis", R"(must be "given" or "analyse")");
+    }
+    if (auto parsed = parse_rubberband(root, scenario); !parsed) {
+        return Unexpected{parsed.error()};
     }
     if (auto parsed = parse_macros(root, scenario); !parsed) {
         return Unexpected{parsed.error()};

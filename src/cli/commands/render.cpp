@@ -88,12 +88,13 @@ std::string_view to_string(EngineChoice engine) noexcept {
     return "passthrough";
 }
 
-std::unique_ptr<const SynthesisEngine> make_engine(EngineChoice engine) {
+std::unique_ptr<const SynthesisEngine> make_engine(EngineChoice engine,
+                                                   const RubberBandPitchParams& rubberband) {
     switch (engine) {
     case EngineChoice::passthrough: return std::make_unique<PassthroughEngine>();
     case EngineChoice::harmonic_noise: return std::make_unique<HarmonicNoiseEngine>();
     case EngineChoice::psola: return std::make_unique<PsolaEngine>();
-    case EngineChoice::rubberband: return std::make_unique<RubberBandPitchEngine>();
+    case EngineChoice::rubberband: return std::make_unique<RubberBandPitchEngine>(rubberband);
     }
     return std::make_unique<PassthroughEngine>();
 }
@@ -244,6 +245,8 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
                           .name = scenario->name,
                           .algorithm = scenario->algorithm,
                           .stretch_vibrato_retime = scenario->stretch_vibrato_retime,
+                          .rubberband_glide_ms = scenario->rubberband_glide_ms,
+                          .rubberband_formant_live = scenario->rubberband_formant_live,
                           .stretch_psola = scenario->stretch_psola,
                           .edits_json = scenario->edits_json,
                           .expect_json = scenario->expect_json};
@@ -260,6 +263,17 @@ RenderParams render_params_of(const LoadedScenario& scenario) {
     return params;
 }
 
+RubberBandPitchParams rubberband_params_of(const LoadedScenario& scenario) {
+    RubberBandPitchParams params;
+    if (scenario.rubberband_glide_ms >= 0.0) {
+        params.glide_time = Seconds{scenario.rubberband_glide_ms / 1000.0};
+    }
+    if (scenario.rubberband_formant_live) {
+        params.formant_path = FormantPath::live;
+    }
+    return params;
+}
+
 Result<void> run_render(const std::filesystem::path& scenario_path,
                         const std::filesystem::path& out_wav, EngineChoice engine,
                         const std::filesystem::path& repo_root) {
@@ -267,7 +281,8 @@ Result<void> run_render(const std::filesystem::path& scenario_path,
     if (!run) {
         return Unexpected{run.error()};
     }
-    const std::unique_ptr<const SynthesisEngine> chosen_engine = make_engine(engine);
+    const std::unique_ptr<const SynthesisEngine> chosen_engine =
+        make_engine(engine, rubberband_params_of(*run));
     const SynthesisEngine& chosen = *chosen_engine;
     const OutputRange whole = OutputRange::from_start(
         OutputTime{}, to_seconds(run->source.frame_count(), run->source.sample_rate()));

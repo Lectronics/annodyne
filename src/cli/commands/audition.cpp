@@ -242,7 +242,8 @@ Result<AuditionSummary> run_audition(const std::filesystem::path& scenario_path,
     if (!run) {
         return Unexpected{run.error()};
     }
-    const std::unique_ptr<const SynthesisEngine> chosen_engine = make_engine(engine);
+    const std::unique_ptr<const SynthesisEngine> chosen_engine =
+        make_engine(engine, rubberband_params_of(*run));
     const SynthesisEngine& chosen = *chosen_engine;
 
     const AudioSource& source = run->source;

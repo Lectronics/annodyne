@@ -19,7 +19,13 @@ enum class PitchFormants : std::uint8_t {
     shifted     // the envelope moves with the pitch (a resampled voice)
 };
 
+/// How a constant formant offset is made: the offline stretcher (standard window) or the live
+/// shifter (short window, the path of the time-varying curves). ADR-0031 asks for an A/B by ear;
+/// the objective measures slightly favour the live shifter (fewer waveform-cycle dips).
+enum class FormantPath : std::uint8_t { offline, live };
+
 struct RubberBandPitchParams {
+    FormantPath formant_path = FormantPath::offline;
     PitchFormants formants = PitchFormants::preserved;
     Seconds context{0.100};   // source read beyond each end of the zone so the stretcher's start-up
                               // and tail lie outside it; >= 0, finite

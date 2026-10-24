@@ -2,6 +2,7 @@
 
 #include "core/render/render.h"
 #include "core/synthesis/engine/synthesis_engine.h"
+#include "core/synthesis/rubberband_pitch/rubberband_pitch_engine.h"
 #include "core/types/result.h"
 
 #include <filesystem>
@@ -21,11 +22,14 @@ enum class EngineChoice { passthrough, harmonic_noise, psola, rubberband };
 /// The engine's name as parse_engine reads it. Pure.
 [[nodiscard]] std::string_view to_string(EngineChoice engine) noexcept;
 /// A default-parameter engine of that kind; never null. Not real-time safe (allocates).
-[[nodiscard]] std::unique_ptr<const SynthesisEngine> make_engine(EngineChoice engine);
+[[nodiscard]] std::unique_ptr<const SynthesisEngine>
+make_engine(EngineChoice engine, const RubberBandPitchParams& rubberband = {});
 
 /// Everything a render or audition run needs, loaded from a scenario file.
 /// The render parameters a scenario asks for (only the stretch vibrato mode so far).
 struct LoadedScenario;
+/// The Rubber Band engine settings a scenario asks for (glide time, formant path).
+[[nodiscard]] RubberBandPitchParams rubberband_params_of(const LoadedScenario& scenario);
 [[nodiscard]] RenderParams render_params_of(const LoadedScenario& scenario);
 
 struct LoadedScenario {
@@ -35,9 +39,11 @@ struct LoadedScenario {
     std::string name;
     std::string algorithm;
     bool stretch_vibrato_retime = false;  // from the scenario's "stretch_vibrato"
-    bool stretch_psola = false;           // "stretch_engine": "psola" (the default is Rubber Band)
-    std::string edits_json;               // the scenario's "edits" array as written
-    std::string expect_json;              // the scenario's "expect" object as written, or empty
+    double rubberband_glide_ms = -1.0;    // from the scenario's "rubberband" object
+    bool rubberband_formant_live = false;
+    bool stretch_psola = false;  // "stretch_engine": "psola" (the default is Rubber Band)
+    std::string edits_json;      // the scenario's "edits" array as written
+    std::string expect_json;     // the scenario's "expect" object as written, or empty
 };
 
 /// Reads the scenario and its source WAV, builds the analysis (the synthetic one for the given

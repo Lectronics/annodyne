@@ -311,7 +311,8 @@ std::string RubberBandPitchEngine::settings_key() const {
            ";max=" + hex64(std::bit_cast<std::uint64_t>(params_.max_shift.value())) +
            ";lead=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_lead.value())) +
            ";gain=" + hex64(std::bit_cast<std::uint64_t>(params_.curve_gain.value())) +
-           ";glide=" + hex64(std::bit_cast<std::uint64_t>(params_.glide_time.value()));
+           ";glide=" + hex64(std::bit_cast<std::uint64_t>(params_.glide_time.value())) +
+           ";fpath=" + (params_.formant_path == FormantPath::live ? "l" : "o");
 }
 
 Result<OutputAudio> RubberBandPitchEngine::render_note(const AudioSource& src, const Note& note,
@@ -361,7 +362,8 @@ Result<OutputAudio> RubberBandPitchEngine::render_note_in_context(
         eff.formant_offset.value() != 0.0 ? std::exp2(eff.formant_offset.value() / 1200.0) : 0.0;
     // A pitch that changes through the zone needs the live shifter; a constant pitch and formant
     // offset use the offline stretcher (standard window, better quality).
-    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 || gliding;
+    const bool curved = eff.mod_scale.value() != 1.0 || eff.drift_scale.value() != 1.0 || gliding ||
+                        (formant_scale != 0.0 && params_.formant_path == FormantPath::live);
     const Glide glide{.own_cents = shift_cents,
                       .note_first = (note.source_start - SourceTime{}).value() * rate.value() +
                                     static_cast<double>(*shift_samples),

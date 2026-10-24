@@ -273,3 +273,21 @@ TEST_CASE("macros_and_the_stretch_keys_parse_and_name_their_errors", "[scenario]
               .error()
               .message.find("$.stretch_engine") != std::string::npos);
 }
+
+TEST_CASE("the_rubberband_object_sets_the_glide_and_the_formant_path", "[scenario]") {
+    const auto good = parse(R"({"name": "r", "source": "x.wav",
+      "rubberband": {"glide_ms": 80, "formant_path": "live"}})");
+    REQUIRE(good.has_value());
+    CHECK(good->rubberband_glide_ms == 80.0);
+    CHECK(good->rubberband_formant_live);
+    const auto none = parse(R"({"name": "r", "source": "x.wav"})");
+    REQUIRE(none.has_value());
+    CHECK(none->rubberband_glide_ms < 0.0);
+    CHECK_FALSE(none->rubberband_formant_live);
+    CHECK(parse(R"({"name": "r", "source": "x.wav", "rubberband": {"formant_path": "magic"}})")
+              .error()
+              .message.find("$.rubberband.formant_path") != std::string::npos);
+    CHECK(parse(R"({"name": "r", "source": "x.wav", "rubberband": {"bogus": 1}})")
+              .error()
+              .message.find("$.rubberband.bogus") != std::string::npos);
+}
