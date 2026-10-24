@@ -437,6 +437,12 @@ Result<void> parse_rubberband(const Json& root, Scenario& scenario) {
                 return bad("$.rubberband.formant_path", R"(must be "offline" or "live")");
             }
             scenario.rubberband_formant_live = value.get<std::string>() == "live";
+        } else if (key == "scope") {
+            if (!value.is_string() || (value.get<std::string>() != "full_band" &&
+                                       value.get<std::string>() != "below_mvf")) {
+                return bad("$.rubberband.scope", R"(must be "full_band" or "below_mvf")");
+            }
+            scenario.rubberband_below_mvf = value.get<std::string>() == "below_mvf";
         } else {
             return bad("$.rubberband." + key, "unknown key");
         }

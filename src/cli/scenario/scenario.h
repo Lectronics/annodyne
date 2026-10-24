@@ -63,9 +63,11 @@ struct Scenario {
     std::vector<ScenarioPitchDrag>
         drags;  // the edits of an analyse-mode scenario (never mixed with `edits`)
     std::vector<ScenarioMacro> macros;  // the "macros" array (analyse-mode scenarios only)
-    // "rubberband": {"glide_ms": n, "formant_path": "offline"|"live"} (A/B of the pitch engine)
+    // "rubberband": {"glide_ms": n, "formant_path": "offline"|"live", "scope":
+    // "full_band"|"below_mvf"} (A/B of the pitch engine)
     double rubberband_glide_ms = -1.0;  // < 0: the engine default
     bool rubberband_formant_live = false;
+    bool rubberband_below_mvf = false;    // "scope": "below_mvf" (ADR-0033)
     bool stretch_psola = false;           // "stretch_engine": "psola" (the default is Rubber Band)
     bool stretch_vibrato_retime = false;  // "stretch_vibrato": "retime" (A/B against the default)
     std::string edits_json;               // the "edits" array as written, for the audition package

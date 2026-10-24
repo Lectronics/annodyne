@@ -247,6 +247,7 @@ Result<LoadedScenario> load_run(const std::filesystem::path& scenario_path,
                           .stretch_vibrato_retime = scenario->stretch_vibrato_retime,
                           .rubberband_glide_ms = scenario->rubberband_glide_ms,
                           .rubberband_formant_live = scenario->rubberband_formant_live,
+                          .rubberband_below_mvf = scenario->rubberband_below_mvf,
                           .stretch_psola = scenario->stretch_psola,
                           .edits_json = scenario->edits_json,
                           .expect_json = scenario->expect_json};
@@ -270,6 +271,9 @@ RubberBandPitchParams rubberband_params_of(const LoadedScenario& scenario) {
     }
     if (scenario.rubberband_formant_live) {
         params.formant_path = FormantPath::live;
+    }
+    if (scenario.rubberband_below_mvf) {
+        params.scope = ShiftScope::below_mvf;
     }
     return params;
 }

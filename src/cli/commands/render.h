@@ -41,6 +41,7 @@ struct LoadedScenario {
     bool stretch_vibrato_retime = false;  // from the scenario's "stretch_vibrato"
     double rubberband_glide_ms = -1.0;    // from the scenario's "rubberband" object
     bool rubberband_formant_live = false;
+    bool rubberband_below_mvf = false;
     bool stretch_psola = false;  // "stretch_engine": "psola" (the default is Rubber Band)
     std::string edits_json;      // the scenario's "edits" array as written
     std::string expect_json;     // the scenario's "expect" object as written, or empty

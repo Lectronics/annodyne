@@ -287,6 +287,14 @@ TEST_CASE("the_rubberband_object_sets_the_glide_and_the_formant_path", "[scenari
     CHECK(parse(R"({"name": "r", "source": "x.wav", "rubberband": {"formant_path": "magic"}})")
               .error()
               .message.find("$.rubberband.formant_path") != std::string::npos);
+    const auto scoped =
+        parse(R"({"name": "r", "source": "x.wav", "rubberband": {"scope": "below_mvf"}})");
+    REQUIRE(scoped.has_value());
+    CHECK(scoped->rubberband_below_mvf);
+    CHECK_FALSE(none->rubberband_below_mvf);
+    CHECK(parse(R"({"name": "r", "source": "x.wav", "rubberband": {"scope": "x"}})")
+              .error()
+              .message.find("$.rubberband.scope") != std::string::npos);
     CHECK(parse(R"({"name": "r", "source": "x.wav", "rubberband": {"bogus": 1}})")
               .error()
               .message.find("$.rubberband.bogus") != std::string::npos);
