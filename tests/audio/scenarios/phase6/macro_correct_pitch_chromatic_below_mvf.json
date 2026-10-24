@@ -1,0 +1,19 @@
+{
+  "name": "macro_correct_pitch_chromatic_below_mvf",
+  "source": "tests/golden/vocals/vocadito/Audio/vocadito_2.wav",
+  "analysis": "analyse",
+  "macros": [
+    {
+      "macro": "correct_pitch",
+      "scale": "chromatic",
+      "center_amount": 1.0,
+      "min_deviation_cents": 10.0
+    }
+  ],
+  "expect": {
+    "macro": "as macro_correct_pitch_chromatic, but only the periodic part below the stored maximum voiced frequency is shifted (ADR-0033); compare by ear against macro_correct_pitch_chromatic with the default engine"
+  },
+  "rubberband": {
+    "scope": "below_mvf"
+  }
+}
