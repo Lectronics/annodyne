@@ -304,3 +304,18 @@ TEST_CASE("a_negative_glide_time_is_an_invalid_argument", "[rubberband_pitch]") 
               .error()
               .code == ErrorCode::invalid_argument);
 }
+
+TEST_CASE("a_formant_offset_without_preserved_formants_is_refused_not_ignored",
+          "[rubberband_pitch]") {
+    const Fixture fx = steady_voice();
+    RubberBandPitchParams shifted;
+    shifted.formants = PitchFormants::shifted;
+    EffectiveNote e = fx.effective(0.0);
+    e.formant_offset = Cents{200.0};
+    e.is_edited = true;
+    const OutputRange all = OutputRange::from_start(OutputTime{}, Seconds{k_total_s});
+    CHECK(
+        RubberBandPitchEngine{shifted}.render_note(fx.src, fx.note, e, fx.map, all).error().code ==
+        ErrorCode::invalid_argument);
+    CHECK(RubberBandPitchEngine{}.render_note(fx.src, fx.note, e, fx.map, all).has_value());
+}

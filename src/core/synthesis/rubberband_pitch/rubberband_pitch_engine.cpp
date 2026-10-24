@@ -292,6 +292,11 @@ Result<void> check_request(const RubberBandPitchParams& params, const Note& note
     if (!note.is_active) {
         return no("the note is inactive");
     }
+    // Rubber Band R3 ignores setFormantScale unless OptionFormantPreserved is set (ADR-0031 F2).
+    if (eff.formant_offset.value() != 0.0 && params.formants != PitchFormants::preserved) {
+        return fail(ErrorCode::invalid_argument,
+                    "RubberBandPitchEngine: a formant offset needs PitchFormants::preserved");
+    }
     if (std::abs((eff.center - note.pitch_center).value()) > params.max_shift.value()) {
         return no("the shift is larger than max_shift");
     }
