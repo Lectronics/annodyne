@@ -70,7 +70,7 @@ TEST_CASE("split_band_keeps_a_tone_below_the_cutoff_at_unit_gain_and_drops_one_a
     const auto above = split_band(tone(6000.0, 30000), Hz{k_rate}, cutoff, Hz{400.0});
     REQUIRE(below.has_value());
     REQUIRE(above.has_value());
-    const double in_rms = 0.5 / std::sqrt(2.0);
+    const double in_rms = 0.5 / std::numbers::sqrt2;
     CHECK(std::abs(rms(below->low, 4000, 26000) / in_rms - 1.0) < 1e-3);
     CHECK(rms(below->high, 4000, 26000) < 1e-3 * in_rms);
     CHECK(rms(above->low, 4000, 26000) < 1e-3 * in_rms);
